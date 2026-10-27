@@ -1,5 +1,5 @@
-# FlightMode
+# FlightMode（僅介面殼）
 
 - 負責：Edward 本人
-- 範圍：僅介面佔位。狀態機邏輯由 Edward 實作，Bot 不得撰寫
-- 狀態：骨架（TODO）
+- 本目錄只放空殼與埠佔位（`FlightModeId`、`ModePort` 見 `RocketTypes/`）。
+- **Bot 不得撰寫轉移邏輯、觸發、抑制窗或計時器。**

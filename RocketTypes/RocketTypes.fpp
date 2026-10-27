@@ -13,12 +13,19 @@ module RocketTypes {
   @ 驅動握手狀態（只走遙測，不放進樣本）
   enum DrvState { OFF, INIT, SELFTEST, READY, FAULT }
 
-  @ IMU 原始樣本（機體系，已套機體→IMU DCM 之前為感測器軸）
+  @ IMU 原始樣本（機體系）
   struct ImuSample {
     hdr: SampleHeader
     acc_mps2: [3] F32
     gyro_rads: [3] F32
     gyroSat: bool
+  }
+
+  @ US MPU6050：感測器原生軸例外（只記錄）
+  struct Mpu6050Sample {
+    hdr: SampleHeader
+    accel_sensor_mps2: [3] F32
+    gyro_sensor_rads: [3] F32
   }
 
   @ 氣壓樣本（只供速度／高度估計，不直接觸發轉移）

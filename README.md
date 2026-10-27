@@ -6,7 +6,7 @@
 - `RocketTypes/`：共用型別與埠（介面合約 v0.1）
 - `Components/<組>/<元件>/`：各組元件
 - `Deployments/DownStage`、`Deployments/UpStage`
-- `docs/`：協作規則與慣例
+- `docs/`：協作規則（CONTRIBUTING.md）與慣例（conventions.md）
 
 ## 慣例
 ENU 世界系；機體 X 前／Y 右／Z 上；Hamilton 純量在前四元數；SI 單位加後綴；時間只來自 F´ 時間服務。
