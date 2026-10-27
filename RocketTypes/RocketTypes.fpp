@@ -1,5 +1,5 @@
 # 01RocketPlan 共用型別（依介面合約 v0.1 與已核可勘誤）
-# 慣例：世界系 ENU；機體系 X 前／Y 右／Z 上；四元數 Hamilton 純量在前 (w,x,y,z)；
+# 慣例：世界系 ENU；機體系 Z 沿長軸指向鼻錐、X／Y 橫向（右手系）；四元數 Hamilton 純量在前 (w,x,y,z)；
 #       SI 單位，名稱帶後綴 _m _mps _mps2 _rad _rads _s _V _A。時間只取自 F´ 時間服務。
 module RocketTypes {
 

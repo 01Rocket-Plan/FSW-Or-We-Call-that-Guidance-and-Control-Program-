@@ -9,6 +9,6 @@
 - `docs/`：協作規則（CONTRIBUTING.md）與慣例（conventions.md）
 
 ## 慣例
-ENU 世界系；機體 X 前／Y 右／Z 上；Hamilton 純量在前四元數；SI 單位加後綴；時間只來自 F´ 時間服務。
+ENU 世界系；機體 Z 沿箭體長軸指向鼻錐（平行導軌）、X／Y 為兩個橫向軸（右手系）；Hamilton 純量在前四元數；SI 單位加後綴；時間只來自 F´ 時間服務。
 
 測試順序：SIL → PIL → HIL。
