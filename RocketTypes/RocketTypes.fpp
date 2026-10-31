@@ -43,6 +43,13 @@ module RocketTypes {
     gas_ohm: F32
   }
 
+  @ US DHT22 溫濕度：只送 Recorder（rg1Hz 每 2 tick 一筆；v2 定義，SI 單位）
+  struct HumTempSample {
+    hdr: SampleHeader
+    temp_K: F32
+    humidity_frac: F32
+  }
+
   enum FixType { NO_FIX, FIX_2D, FIX_3D }
 
   @ GNSS 定位：只接 tlmSend、sdLogger，不進 estimator；缺垂直速度時 U 軸填 NaN
@@ -116,6 +123,7 @@ module RocketTypes {
   port ImuData(s: ImuSample)
   port BaroData(s: BaroSample)
   port EnvData(s: EnvSample)
+  port HumTempData(s: HumTempSample)
   port GnssData(fix: GnssFix)
   port StateData(s: StateOut)
   port FinCmdPort(c: FinCmd)
