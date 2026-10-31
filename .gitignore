@@ -1,0 +1,12 @@
+build-*/
+build/
+*.pyc
+__pycache__/
+.venv/
+*.bin
+*.elf
+sdkconfig
+# 密鑰一律不入庫
+*.key
+secrets*
+.env
