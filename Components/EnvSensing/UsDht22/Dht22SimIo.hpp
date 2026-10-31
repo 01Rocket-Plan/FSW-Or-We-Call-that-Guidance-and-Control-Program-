@@ -2,7 +2,7 @@
 #ifndef ENVSENSING_DHT22SIMIO_HPP
 #define ENVSENSING_DHT22SIMIO_HPP
 #include "Components/EnvSensing/UsDht22/Dht22Core.hpp"
-namespace EnvSensing {
+namespace Components {
 enum class Dht22SimFault : uint8_t { NONE = 0, NO_RESPONSE = 1, BAD_CHECKSUM = 2, STUCK = 3, OUT_OF_RANGE = 4, SHORT_FRAME = 5 };
 class Dht22SimIo : public IDht22Io {
  public:
@@ -21,5 +21,5 @@ class Dht22SimIo : public IDht22Io {
   bool m_haveFrozen = false;
   unsigned m_n = 0;
 };
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

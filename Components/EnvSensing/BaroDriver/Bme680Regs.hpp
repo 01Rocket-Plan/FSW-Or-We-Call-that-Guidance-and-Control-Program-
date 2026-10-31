@@ -2,7 +2,7 @@
 #ifndef ENVSENSING_BME680REGS_HPP
 #define ENVSENSING_BME680REGS_HPP
 #include <cstdint>
-namespace EnvSensing {
+namespace Components {
 namespace Bme680Reg {
 constexpr uint8_t I2C_ADDR_PRIMARY = 0x76;  // SDO 接地
 constexpr uint8_t I2C_ADDR_SECONDARY = 0x77;
@@ -30,5 +30,5 @@ constexpr uint8_t GAS_VALID = 0x20;   // 0x2B bit5
 constexpr uint8_t HEAT_STAB = 0x10;   // 0x2B bit4
 constexpr uint8_t RUN_GAS = 0x10;
 }  // namespace Bme680Reg
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

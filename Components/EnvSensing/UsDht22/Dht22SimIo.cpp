@@ -1,7 +1,7 @@
 #include "Components/EnvSensing/UsDht22/Dht22SimIo.hpp"
 #include <cmath>
 
-namespace EnvSensing {
+namespace Components {
 
 void Dht22SimIo::encode(float t, float h, uint8_t b[5]) {
   int hr = static_cast<int>(std::lround(h * 10.0f));
@@ -41,4 +41,4 @@ int Dht22SimIo::fetchHighs(uint16_t* out, int max) {
   return n;
 }
 
-}  // namespace EnvSensing
+}  // namespace Components

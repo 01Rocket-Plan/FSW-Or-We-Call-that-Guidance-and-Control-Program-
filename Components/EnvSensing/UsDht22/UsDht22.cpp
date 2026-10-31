@@ -1,6 +1,6 @@
 #include "Components/EnvSensing/UsDht22/UsDht22.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 static RocketTypes::DrvState toFpp(DhtState s) {
   return RocketTypes::DrvState(static_cast<RocketTypes::DrvState::T>(static_cast<U8>(s)));
@@ -32,4 +32,4 @@ void UsDht22::onStateChange(DhtState from, DhtState to) { this->log_ACTIVITY_HI_
 
 void UsDht22::onFault(DhtFault code, uint32_t detail) { this->log_WARNING_HI_Fault(static_cast<U8>(code), detail); }
 
-}  // namespace EnvSensing
+}  // namespace Components

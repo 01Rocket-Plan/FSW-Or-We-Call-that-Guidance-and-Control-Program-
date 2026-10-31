@@ -5,7 +5,7 @@
 #include "Components/EnvSensing/BaroDriver/BaroDriverComponentAc.hpp"
 #include "Components/EnvSensing/BaroDriver/Bme680Core.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 class BaroDriver final : public BaroDriverComponentBase, private IBme680Bus, private IBme680Sink {
  public:
@@ -34,5 +34,5 @@ class BaroDriver final : public BaroDriverComponentBase, private IBme680Bus, pri
   U32 m_tlmDiv;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

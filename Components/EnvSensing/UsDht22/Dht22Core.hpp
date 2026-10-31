@@ -5,7 +5,7 @@
 #define ENVSENSING_DHT22CORE_HPP
 #include <cstdint>
 
-namespace EnvSensing {
+namespace Components {
 
 enum class DhtState : uint8_t { OFF = 0, INIT = 1, SELFTEST = 2, READY = 3, FAULT = 4 };
 
@@ -91,5 +91,5 @@ class Dht22Core {
   uint32_t m_seq = 0;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

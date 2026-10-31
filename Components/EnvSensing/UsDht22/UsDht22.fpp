@@ -1,4 +1,4 @@
-module EnvSensing {
+module Components {
 
   @ DHT22 模擬器故障注入
   enum DhtSimFault { NONE, NO_RESPONSE, BAD_CHECKSUM, STUCK, OUT_OF_RANGE, SHORT_FRAME }

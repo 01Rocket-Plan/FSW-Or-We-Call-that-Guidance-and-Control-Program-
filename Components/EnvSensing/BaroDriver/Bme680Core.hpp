@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace EnvSensing {
+namespace Components {
 
 // 與 RocketTypes.DrvState 順序一致
 enum class DrvState : uint8_t { OFF = 0, INIT = 1, SELFTEST = 2, READY = 3, FAULT = 4 };
@@ -144,5 +144,5 @@ class Bme680Core {
   uint32_t m_envSeq = 0;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

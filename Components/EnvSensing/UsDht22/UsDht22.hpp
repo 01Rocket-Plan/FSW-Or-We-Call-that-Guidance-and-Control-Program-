@@ -5,7 +5,7 @@
 #include "Components/EnvSensing/UsDht22/UsDht22ComponentAc.hpp"
 #include "Components/EnvSensing/UsDht22/Dht22Core.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 class UsDht22 final : public UsDht22ComponentBase, private IDht22Io, private IDht22Sink {
  public:
@@ -27,5 +27,5 @@ class UsDht22 final : public UsDht22ComponentBase, private IDht22Io, private IDh
   Dht22Core m_core;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

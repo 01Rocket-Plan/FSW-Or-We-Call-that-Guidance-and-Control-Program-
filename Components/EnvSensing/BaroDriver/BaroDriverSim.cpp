@@ -1,7 +1,7 @@
 #include "Components/EnvSensing/BaroDriver/BaroDriverSim.hpp"
 #include <cmath>
 
-namespace EnvSensing {
+namespace Components {
 
 static RocketTypes::DrvState toFppS(DrvState s) {
   return RocketTypes::DrvState(static_cast<RocketTypes::DrvState::T>(static_cast<U8>(s)));
@@ -46,7 +46,7 @@ void BaroDriverSim::SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void BaroDriverSim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const EnvSensing::BaroSimFault& fault) {
+void BaroDriverSim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const Components::BaroSimFault& fault) {
   m_dev.setFault(static_cast<Bme680SimFault>(fault.e));
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
@@ -70,4 +70,4 @@ void BaroDriverSim::onFault(BaroFault code, uint32_t detail) {
   this->log_WARNING_HI_Fault(static_cast<U8>(code), detail);
 }
 
-}  // namespace EnvSensing
+}  // namespace Components

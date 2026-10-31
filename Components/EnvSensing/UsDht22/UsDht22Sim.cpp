@@ -1,6 +1,6 @@
 #include "Components/EnvSensing/UsDht22/UsDht22Sim.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 static RocketTypes::DrvState toFppS(DhtState s) {
   return RocketTypes::DrvState(static_cast<RocketTypes::DrvState::T>(static_cast<U8>(s)));
@@ -22,7 +22,7 @@ void UsDht22Sim::SIM_SET_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C,
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void UsDht22Sim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const EnvSensing::DhtSimFault& fault) {
+void UsDht22Sim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const Components::DhtSimFault& fault) {
   m_io.setFault(static_cast<Dht22SimFault>(fault.e));
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
@@ -36,4 +36,4 @@ void UsDht22Sim::onStateChange(DhtState from, DhtState to) { this->log_ACTIVITY_
 
 void UsDht22Sim::onFault(DhtFault code, uint32_t detail) { this->log_WARNING_HI_Fault(static_cast<U8>(code), detail); }
 
-}  // namespace EnvSensing
+}  // namespace Components
