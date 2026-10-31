@@ -26,8 +26,11 @@
 - `SepCmd`：帶 `valid`；SEP 通道逾時或故障一律不動，每通道只釋放一次並鎖在 nvFlags（E7）。
 
 ## 4. 部署
-- `Deployments/DownStage`（DownStageDeployment）、`Deployments/UpStage`（UpStageDeployment）。同一份原始碼，兩個部署。
-- DS Core 1 只跑 1 kHz 鏈與 flightMode 快速路徑；其餘在 Core 0。
+四份獨立部署（同一份元件庫）：
+- `Deployments/DsMcu`（DsMcuDeployment）：DS 飛控 MCU，含控制律；Core 1 只跑 1 kHz 鏈與 flightMode 快速路徑，其餘在 Core 0。
+- `Deployments/UsMcu`（UsMcuDeployment）：US 飛控 MCU，**不含**控制律（無 Controller／ActuatorMgr／尾翼 ServoDriver）。
+- `Deployments/DsCam`（DsCamDeployment）：ESP32-CAM 獨立板，不併入 DsMcu。
+- `Deployments/UsCam`（UsCamDeployment）：OV3640 獨立板，不併入 UsMcu。
 
 ## 5. Base ID 分配（暫定，MCU 組可提修改）
 | 範圍 | 用途 |
@@ -41,7 +44,7 @@
 | 0x6000–0x6FFF | 電源（PowerMonitor 0x6000、NvFlags 0x6100） |
 | 0x7000–0x7FFF | 相機（DsCam 0x7000、UsCam 0x7100） |
 | 0x8000–0x8FFF | 無線（TlmSend 0x8000、Framer 0x8100、ComQueue 0x8200、UplinkAuth 0x8300） |
-Sim 驅動用同元件基底 +0x80。DS／US 兩部署可重用同一表。
+Sim 驅動用同元件基底 +0x80。四部署可重用同一表（相機部署只用 0x7000 段）。
 
 ## 6. 禁止事項
 - 不得有實際作用的 FTS 輸出腳位。
