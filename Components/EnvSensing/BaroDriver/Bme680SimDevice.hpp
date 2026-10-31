@@ -5,7 +5,7 @@
 #include "Components/EnvSensing/BaroDriver/Bme680Core.hpp"
 #include <cstdint>
 
-namespace EnvSensing {
+namespace Components {
 
 enum class Bme680SimFault : uint8_t { NONE = 0, NACK = 1, STUCK = 2, OUT_OF_RANGE = 3, BAD_CHIP_ID = 4, NO_DATA = 5 };
 
@@ -32,5 +32,5 @@ class Bme680SimDevice : public IBme680Bus {
   uint32_t m_rng = 12345u;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

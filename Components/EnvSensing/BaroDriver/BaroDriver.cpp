@@ -1,7 +1,7 @@
 #include "Components/EnvSensing/BaroDriver/BaroDriver.hpp"
 #include "Components/EnvSensing/BaroDriver/Bme680Regs.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 static RocketTypes::DrvState toFpp(DrvState s) {
   return RocketTypes::DrvState(static_cast<RocketTypes::DrvState::T>(static_cast<U8>(s)));
@@ -75,4 +75,4 @@ void BaroDriver::onFault(BaroFault code, uint32_t detail) {
   this->log_WARNING_HI_Fault(static_cast<U8>(code), detail);
 }
 
-}  // namespace EnvSensing
+}  // namespace Components

@@ -3,7 +3,7 @@
 #include <cmath>
 #include <limits>
 
-namespace EnvSensing {
+namespace Components {
 using namespace Bme680Reg;
 
 namespace Bme680Math {
@@ -323,4 +323,4 @@ void Bme680Core::handleData(const uint8_t* d, bool gas) {
   }
 }
 
-}  // namespace EnvSensing
+}  // namespace Components

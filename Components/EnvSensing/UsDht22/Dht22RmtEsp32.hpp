@@ -11,7 +11,7 @@
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
 
-namespace EnvSensing {
+namespace Components {
 
 class Dht22RmtEsp32 : public IDht22Io {
  public:
@@ -32,6 +32,6 @@ class Dht22RmtEsp32 : public IDht22Io {
   bool m_configured = false;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif  // ESP_PLATFORM
 #endif

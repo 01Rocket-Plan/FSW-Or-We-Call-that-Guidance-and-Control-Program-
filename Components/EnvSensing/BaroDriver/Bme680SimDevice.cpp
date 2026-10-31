@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace EnvSensing {
+namespace Components {
 using namespace Bme680Reg;
 
 void Bme680SimDevice::typicalCoeff(uint8_t* a) {
@@ -132,4 +132,4 @@ void Bme680SimDevice::complete() {
   m_reg[FIELD0] = STATUS_NEW_DATA;
 }
 
-}  // namespace EnvSensing
+}  // namespace Components

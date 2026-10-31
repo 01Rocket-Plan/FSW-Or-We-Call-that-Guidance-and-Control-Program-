@@ -2,7 +2,7 @@
 #ifdef ESP_PLATFORM
 #include "esp_attr.h"
 
-namespace EnvSensing {
+namespace Components {
 
 static constexpr uint32_t RES_HZ = 1000000;  // 1 tick = 1 µs
 static constexpr uint16_t START_LOW_US = 1100;  // DHT22 要求主機拉低 ≥ 1 ms
@@ -75,5 +75,5 @@ int Dht22RmtEsp32::fetchHighs(uint16_t* out, int max) {
   return n;
 }
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif  // ESP_PLATFORM

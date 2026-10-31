@@ -6,7 +6,7 @@
 #include "Components/EnvSensing/BaroDriver/Bme680Core.hpp"
 #include "Components/EnvSensing/BaroDriver/Bme680SimDevice.hpp"
 
-namespace EnvSensing {
+namespace Components {
 
 class BaroDriverSim final : public BaroDriverSimComponentBase, private IBme680Sink {
  public:
@@ -17,7 +17,7 @@ class BaroDriverSim final : public BaroDriverSimComponentBase, private IBme680Si
   void schedIn_handler(FwIndexType portNum, U32 context) override;
   void SIM_SET_ALT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 alt_m) override;
   void SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C, F32 humidity_pct, F32 gas_ohm) override;
-  void SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const EnvSensing::BaroSimFault& fault) override;
+  void SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const Components::BaroSimFault& fault) override;
 
   void onBaro(const BaroOut& s) override;
   void onEnv(const EnvOut& s) override;
@@ -33,5 +33,5 @@ class BaroDriverSim final : public BaroDriverSimComponentBase, private IBme680Si
   U32 m_tlmDiv;
 };
 
-}  // namespace EnvSensing
+}  // namespace Components
 #endif

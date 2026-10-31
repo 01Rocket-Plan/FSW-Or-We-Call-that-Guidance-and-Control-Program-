@@ -1,4 +1,4 @@
-module EnvSensing {
+module Components {
 
   @ BME680 模擬器故障注入
   enum BaroSimFault { NONE, NACK, STUCK, OUT_OF_RANGE, BAD_CHIP_ID, NO_DATA }

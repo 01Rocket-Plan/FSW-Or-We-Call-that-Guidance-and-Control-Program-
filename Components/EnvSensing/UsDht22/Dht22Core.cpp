@@ -1,6 +1,6 @@
 #include "Components/EnvSensing/UsDht22/Dht22Core.hpp"
 
-namespace EnvSensing {
+namespace Components {
 namespace Dht22Decode {
 
 bool bitsFromHighs(const uint16_t* h, int n, uint16_t thr, uint8_t out[5]) {
@@ -114,4 +114,4 @@ void Dht22Core::decode() {
   if (m_state == DhtState::SELFTEST && ++m_good >= m_cfg.selftestN) setState(DhtState::READY);
 }
 
-}  // namespace EnvSensing
+}  // namespace Components
