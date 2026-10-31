@@ -39,6 +39,8 @@ bool mpu_core_tick(Mpu6050Core* c, double t_s, MpuSampleOut* out);
 ImuDrvState mpu_core_state(const Mpu6050Core* c);
 ImuFaultReason mpu_core_fault(const Mpu6050Core* c);
 uint32_t mpu_core_seq(const Mpu6050Core* c);
+uint32_t mpu_core_bus_err(const Mpu6050Core* c);
+uint32_t mpu_core_stuck(const Mpu6050Core* c);
 
 #ifdef __cplusplus
 }

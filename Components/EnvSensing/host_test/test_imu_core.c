@@ -2,21 +2,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "../Components/EnvSensing/ImuDriver/imu_core.h"
-#include "../Components/EnvSensing/UsMpu6050/mpu6050_core.h"
+#include "../ImuDriver/imu_core.h"
+#include "../UsMpu6050/mpu6050_core.h"
 
 enum { REG_BANK_SEL=0x7F, BANK0_WHOAMI=0x00, BANK0_ACCEL=0x2D,
+       BANK1_ST_XG=0x02, BANK1_ST_YG=0x03, BANK1_ST_ZG=0x04,
+       BANK1_ST_XA=0x0E, BANK1_ST_YA=0x0F, BANK1_ST_ZA=0x10,
+       BANK2_GYRO_CFG2=0x02, BANK2_ACCEL_CFG2=0x15,
        WHO_20948=0xEA, WHO_20648=0xE0, MPU_WHO=0x75, MPU_ACCEL=0x3B,
        WHO_MPU=0x68 };
 static const float ACCEL_SENS = 2048.0f;
 static const float G0 = 9.80665f;
+/* OTP code 100 → FT ≈ 2620*1.01^99 ≈ ~7025 LSB */
+enum { ST_OTP = 100, ST_DELTA = 7000 };
 
 typedef enum { INJ_NORMAL=0, INJ_STUCK=1, INJ_GYROSAT=2, INJ_BUSERR=3,
-               INJ_WHOAMI=4, INJ_ACCELSAT=5 } Inject;
+               INJ_WHOAMI=4, INJ_ACCELSAT=5, INJ_STFAIL=6 } Inject;
 
 typedef struct {
   Inject inject;
   uint8_t bank;
+  uint8_t gyroSt;
+  uint8_t accelSt;
   int16_t accelRaw[3];
   int16_t gyroRaw[3];
   int busFailBudget;
@@ -31,6 +38,8 @@ static bool fake_write(void* ctx, uint8_t addr, uint8_t reg, const uint8_t* data
   FakeBus* b = (FakeBus*)ctx; (void)addr; (void)len;
   if (b->inject == INJ_BUSERR && b->busFailBudget > 0) { b->busFailBudget--; return false; }
   if (reg == REG_BANK_SEL && data) b->bank = (uint8_t)((data[0] >> 4) & 3);
+  if (b->bank == 2 && reg == BANK2_GYRO_CFG2 && data) b->gyroSt = data[0];
+  if (b->bank == 2 && reg == BANK2_ACCEL_CFG2 && data) b->accelSt = data[0];
   return true;
 }
 static void put16(uint8_t* d, int off, int16_t v) {
@@ -39,12 +48,20 @@ static void put16(uint8_t* d, int off, int16_t v) {
 static bool fake_read(void* ctx, uint8_t addr, uint8_t reg, uint8_t* data, uint8_t len) {
   FakeBus* b = (FakeBus*)ctx; int i;
   int16_t a[3], g[3];
+  int delta = (b->inject == INJ_STFAIL) ? 10 : ST_DELTA;
   if (b->inject == INJ_BUSERR && b->busFailBudget > 0) { b->busFailBudget--; return false; }
   memset(data, 0, len);
   if (!b->is_mpu && b->bank == 0 && reg == BANK0_WHOAMI && len >= 1) {
     data[0] = (addr == 0x69) ? (uint8_t)WHO_20948 : (uint8_t)WHO_20648;
     if (b->inject == INJ_WHOAMI) data[0] ^= 0xFF;
     return true;
+  }
+  if (!b->is_mpu && b->bank == 1 && len >= 1) {
+    if (reg == BANK1_ST_XG || reg == BANK1_ST_YG || reg == BANK1_ST_ZG ||
+        reg == BANK1_ST_XA || reg == BANK1_ST_YA || reg == BANK1_ST_ZA) {
+      data[0] = (uint8_t)ST_OTP;
+      return true;
+    }
   }
   if (b->is_mpu && reg == MPU_WHO && len >= 1) {
     data[0] = (b->inject == INJ_WHOAMI) ? (uint8_t)(WHO_MPU ^ 0xFF) : (uint8_t)WHO_MPU;
@@ -54,6 +71,12 @@ static bool fake_read(void* ctx, uint8_t addr, uint8_t reg, uint8_t* data, uint8
   g[0]=b->gyroRaw[0]; g[1]=b->gyroRaw[1]; g[2]=b->gyroRaw[2];
   if (b->inject == INJ_GYROSAT) g[0] = 32000;
   if (b->inject == INJ_ACCELSAT) a[0] = 32000;
+  if (!b->is_mpu && (b->gyroSt & 0x38)) {
+    for (i=0;i<3;++i) g[i] = (int16_t)(g[i] + delta);
+  }
+  if (!b->is_mpu && (b->accelSt & 0x1C)) {
+    for (i=0;i<3;++i) a[i] = (int16_t)(a[i] + delta);
+  }
   if (!b->is_mpu && b->bank == 0 && reg == BANK0_ACCEL && len >= 12) {
     for (i=0;i<3;++i) put16(data, 2*i, a[i]);
     for (i=0;i<3;++i) put16(data, 6+2*i, g[i]);
@@ -69,11 +92,12 @@ static bool fake_read(void* ctx, uint8_t addr, uint8_t reg, uint8_t* data, uint8
 
 static void drive_ready(ImuCore* core, FakeBus* bus, double* t) {
   ImuSampleOut out; int i;
-  bus->inject = INJ_NORMAL;
-  for (i = 0; i < 5000; ++i) {
+  if (bus->inject != INJ_STFAIL) bus->inject = INJ_NORMAL;
+  for (i = 0; i < 20000; ++i) {
     *t += 0.001;
     imu_core_tick(core, *t, &out);
     if (imu_core_state(core) == IMU_DRV_READY) return;
+    if (imu_core_state(core) == IMU_DRV_FAULT) return;
   }
 }
 
@@ -86,7 +110,7 @@ static void test_happy(void) {
   p = imu_params_default(); p.selftestSamples = 5; p.stuckN = 20;
   imu_core_set_params(core, &p); imu_core_reset(core);
   drive_ready(core, &bus, &t);
-  CHECK(imu_core_state(core) == IMU_DRV_READY, "reach READY");
+  CHECK(imu_core_state(core) == IMU_DRV_READY, "reach READY via bank1 ST + rest-pose");
   for (i = 0; i < 10; ++i) {
     bus.accelRaw[0] = (int16_t)i; t += 0.001;
     imu_core_tick(core, t, &out);
@@ -95,6 +119,29 @@ static void test_happy(void) {
     prev = out.seq;
     CHECK(fabsf(out.acc_mps2[2] - G0) < 0.5f, "Z accel ~1g");
   }
+  imu_core_destroy(core);
+}
+
+static void test_st_fail_failover(void) {
+  FakeBus bus = {0}; ImuBusOps ops; ImuCore* core; ImuParams p; ImuSampleOut out;
+  double t = 0; int i;
+  bus.accelRaw[2] = (int16_t)ACCEL_SENS;
+  ops.writeReg = fake_write; ops.readReg = fake_read; ops.ctx = &bus;
+  core = imu_core_create(ops);
+  p = imu_params_default(); p.selftestSamples = 3; p.busErrThreshold = 99;
+  imu_core_set_params(core, &p); imu_core_reset(core);
+  bus.inject = INJ_STFAIL;
+  for (i = 0; i < 20000; ++i) {
+    t += 0.001; imu_core_tick(core, t, &out);
+    if (imu_core_active(core) == IMU_SENS_BACKUP) break;
+  }
+  CHECK(imu_core_active(core) == IMU_SENS_BACKUP, "ST fail → backup");
+  bus.inject = INJ_NORMAL;
+  for (i = 0; i < 20000; ++i) {
+    t += 0.001; imu_core_tick(core, t, &out);
+    if (imu_core_state(core) == IMU_DRV_READY) break;
+  }
+  CHECK(imu_core_state(core) == IMU_DRV_READY, "backup READY after ST fail");
   imu_core_destroy(core);
 }
 
@@ -111,7 +158,7 @@ static void test_whoami_failover(void) {
     if (imu_core_active(core) == IMU_SENS_BACKUP) break; }
   CHECK(imu_core_active(core) == IMU_SENS_BACKUP, "failover to backup");
   bus.inject = INJ_NORMAL;
-  for (i = 0; i < 5000; ++i) { t += 0.001; imu_core_tick(core, t, &out);
+  for (i = 0; i < 20000; ++i) { t += 0.001; imu_core_tick(core, t, &out);
     if (imu_core_state(core) == IMU_DRV_READY) break; }
   CHECK(imu_core_state(core) == IMU_DRV_READY, "backup READY");
   CHECK(imu_core_failover(core) >= 1, "failover counted");
@@ -196,6 +243,7 @@ static void test_mpu_whoami(void) {
 
 int main(void) {
   test_happy();
+  test_st_fail_failover();
   test_whoami_failover();
   test_stuck();
   test_gyro_sat();

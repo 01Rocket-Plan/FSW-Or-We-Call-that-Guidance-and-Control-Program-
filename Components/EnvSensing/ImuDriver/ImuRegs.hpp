@@ -12,6 +12,14 @@ constexpr uint8_t BANK0_PWR_MGMT_2 = 0x07;
 constexpr uint8_t BANK0_ACCEL_XOUT_H = 0x2D;
 constexpr uint8_t BANK0_GYRO_XOUT_H  = 0x33;
 
+// Bank 1 — factory self-test OTP codes
+constexpr uint8_t BANK1_SELF_TEST_X_GYRO  = 0x02;
+constexpr uint8_t BANK1_SELF_TEST_Y_GYRO  = 0x03;
+constexpr uint8_t BANK1_SELF_TEST_Z_GYRO  = 0x04;
+constexpr uint8_t BANK1_SELF_TEST_X_ACCEL = 0x0E;
+constexpr uint8_t BANK1_SELF_TEST_Y_ACCEL = 0x0F;
+constexpr uint8_t BANK1_SELF_TEST_Z_ACCEL = 0x10;
+
 constexpr uint8_t BANK2_GYRO_CONFIG_1  = 0x01;
 constexpr uint8_t BANK2_GYRO_CONFIG_2  = 0x02;
 constexpr uint8_t BANK2_GYRO_SMPLRT_DIV = 0x00;
@@ -27,14 +35,20 @@ constexpr uint8_t PWR1_DEVICE_RESET = 0x80;
 constexpr uint8_t PWR1_SLEEP        = 0x40;
 constexpr uint8_t PWR1_CLKSEL_AUTO  = 0x01;
 
-// Gyro: ±2000 dps, DLPF enable (bit0), GYRO_FS_SEL=3 << 1
-constexpr uint8_t GYRO_CFG1_2000DPS_DLPF = 0x07;
-// Accel: ±16 g, ACCEL_FS_SEL=3 << 1, DLPF
-constexpr uint8_t ACCEL_CFG_16G_DLPF = 0x07;
+// Flight ranges
+constexpr uint8_t GYRO_CFG1_2000DPS_DLPF = 0x07;  // FS=3, DLPF on
+constexpr uint8_t ACCEL_CFG_16G_DLPF     = 0x07;  // FS=3, DLPF on
+// Self-test ranges (FS=0): ±250 dps / ±2 g
+constexpr uint8_t GYRO_CFG1_250DPS_DLPF  = 0x01;
+constexpr uint8_t ACCEL_CFG_2G_DLPF      = 0x01;
+// ST enable masks (XG/YG/ZG_ST = bits 5:3; XA/YA/ZA_ST = bits 4:2 on ACCEL_CONFIG_2)
+constexpr uint8_t GYRO_ST_ENABLE_XYZ  = 0x38;
+constexpr uint8_t ACCEL_ST_ENABLE_XYZ = 0x1C;
 
-// Sensitivity
-constexpr float GYRO_SENS_2000_DPS = 16.4f;      // LSB/(deg/s)
-constexpr float ACCEL_SENS_16G     = 2048.0f;    // LSB/g
+constexpr float GYRO_SENS_2000_DPS = 16.4f;
+constexpr float ACCEL_SENS_16G     = 2048.0f;
+constexpr float GYRO_SENS_250_DPS  = 131.0f;
+constexpr float ACCEL_SENS_2G      = 16384.0f;
 constexpr float DEG2RAD = 0.017453292519943295f;
 constexpr float G0_MPS2 = 9.80665f;
 

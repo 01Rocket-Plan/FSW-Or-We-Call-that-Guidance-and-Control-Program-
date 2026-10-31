@@ -65,6 +65,8 @@ void mpu_core_reset(Mpu6050Core* c) {
 ImuDrvState mpu_core_state(const Mpu6050Core* c) { return c->state; }
 ImuFaultReason mpu_core_fault(const Mpu6050Core* c) { return c->faultReason; }
 uint32_t mpu_core_seq(const Mpu6050Core* c) { return c->seq; }
+uint32_t mpu_core_bus_err(const Mpu6050Core* c) { return c->busErrCount; }
+uint32_t mpu_core_stuck(const Mpu6050Core* c) { return c->stuckCount; }
 
 static int write_u8(Mpu6050Core* c, uint8_t reg, uint8_t val) {
   return c->bus.writeReg(c->bus.ctx, c->params.i2cAddr, reg, &val, 1);

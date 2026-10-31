@@ -1,5 +1,5 @@
 # Host fpp-check stubs until lib/fprime is vendored (MCU group).
-# Special port names match F´ conventions (Fw.Time, Fw.LogText, …).
+# Signatures aligned with F´ v4.4.1 Drv/Fw ports where applicable.
 
 module Fw {
 
@@ -13,9 +13,7 @@ module Fw {
   port CmdReg
   port CmdResponse
 
-  struct Buffer {
-    buffSize: U32
-  }
+  type Buffer
 
 }
 
@@ -34,25 +32,33 @@ module Drv {
     I2C_ADDRESS_ERR
     I2C_WRITE_ERR
     I2C_READ_ERR
-    OTHER_ERR
+    I2C_OPEN_ERR
+    I2C_OTHER_ERR
   }
 
   enum SpiStatus {
     SPI_OK
+    SPI_OPEN_ERR
+    SPI_CONFIG_ERR
+    SPI_MISMATCH_ERR
     SPI_WRITE_ERR
-    SPI_READ_ERR
-    OTHER_ERR
+    SPI_OTHER_ERR
   }
 
   port I2c(
     addr: U32
-    writeBuffer: Fw.Buffer
-    readBuffer: Fw.Buffer
+    ref serBuffer: Fw.Buffer
   ) -> I2cStatus
 
-  port Spi(
-    writeBuffer: Fw.Buffer
-    readBuffer: Fw.Buffer
+  port I2cWriteRead(
+    addr: U32
+    ref writeBuffer: Fw.Buffer
+    ref readBuffer: Fw.Buffer
+  ) -> I2cStatus
+
+  port SpiWriteRead(
+    ref writeBuffer: Fw.Buffer
+    ref readBuffer: Fw.Buffer
   ) -> SpiStatus
 
 }

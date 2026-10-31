@@ -17,8 +17,8 @@ module Components {
     output port backupSpiRead: EnvSensingBus.SpiRegRead
     output port primaryI2c: Drv.I2c
     output port backupI2c: Drv.I2c
-    output port primarySpi: Drv.Spi
-    output port backupSpi: Drv.Spi
+    output port primarySpi: Drv.SpiWriteRead
+    output port backupSpi: Drv.SpiWriteRead
 
     output port imuOut: RocketTypes.ImuData
 

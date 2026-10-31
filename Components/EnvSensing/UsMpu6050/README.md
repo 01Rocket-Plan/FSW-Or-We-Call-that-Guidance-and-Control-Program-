@@ -1,7 +1,7 @@
-# UsMpu6050（Base `0x4200`）／UsMpu6050Sim（`0x4280`）
+# UsMpu6050（US）
 
-- **負責：** 環境感測系統組子Bot1
-- **範圍：** US MPU6050，僅記錄；**原生軸**（`accel_sensor_mps2`／`gyro_sensor_rads`）
-- **輸出：** `RocketTypes.Mpu6050Data`（含 `accelSat`／`gyroSat`）
-- **匯流排：** `EnvSensingBus` + `Drv.I2c`
-- **核心：** `Mpu6050Core`；host 單測見 `host_test/`
+- **範圍：** MPU6050；僅 SdLogger；感測器原生軸
+- **Base ID：** `0x4200`；Sim `UsMpu6050Sim` = `0x4280`
+- **FPP module：** `Components`
+- **核心：** `mpu6050_core.c`；F´ 外殼 `UsMpu6050.cpp`／`UsMpu6050Sim.cpp`
+- **單測：** `../host_test/`

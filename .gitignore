@@ -10,4 +10,4 @@ sdkconfig
 *.key
 secrets*
 .env
-host_test/test_imu_core
+Components/EnvSensing/host_test/test_imu_core
