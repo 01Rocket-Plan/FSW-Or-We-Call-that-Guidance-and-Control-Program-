@@ -38,11 +38,17 @@ module RocketTypes {
     alt_m: F32
   }
 
-  @ BME680 濕度／氣體：只送 Recorder
+  @ BME680 濕度：只送 Recorder（加熱器／氣體電阻已移除，見 PR #4）
   struct EnvSample {
     hdr: SampleHeader
     humidity_pct: F32
-    gas_ohm: F32
+  }
+
+  @ US DHT22 溫濕度：只送 Recorder（rg1Hz 每 2 tick 一筆；v2 定義，SI 單位）
+  struct HumTempSample {
+    hdr: SampleHeader
+    temp_K: F32
+    humidity_frac: F32
   }
 
   enum FixType { NO_FIX, FIX_2D, FIX_3D }
@@ -119,6 +125,7 @@ module RocketTypes {
   port Mpu6050Data(s: Mpu6050Sample)
   port BaroData(s: BaroSample)
   port EnvData(s: EnvSample)
+  port HumTempData(s: HumTempSample)
   port GnssData(fix: GnssFix)
   port StateData(s: StateOut)
   port FinCmdPort(c: FinCmd)
