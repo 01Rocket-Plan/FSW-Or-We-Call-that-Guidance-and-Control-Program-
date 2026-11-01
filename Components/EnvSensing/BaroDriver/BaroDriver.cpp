@@ -18,8 +18,6 @@ void BaroDriver::loadParams() {
   c.p0_Pa = this->paramGet_P0_PA(v);
   c.stuckN = this->paramGet_STUCK_N(v);
   c.errMax = this->paramGet_ERR_MAX(v);
-  c.gasWait_ms = this->paramGet_GAS_WAIT_MS(v);
-  c.heaterTemp_C = this->paramGet_HEATER_TEMP_C(v);
   m_core.setConfig(c);
 }
 
@@ -63,7 +61,7 @@ void BaroDriver::onBaro(const BaroOut& s) {
 
 void BaroDriver::onEnv(const EnvOut& s) {
   if (!this->isConnected_envOut_OutputPort(0)) return;
-  this->envOut_out(0, RocketTypes::EnvSample(RocketTypes::SampleHeader(s.t_s, s.seq, s.valid), s.humidity_pct, s.gas_ohm));
+  this->envOut_out(0, RocketTypes::EnvSample(RocketTypes::SampleHeader(s.t_s, s.seq, s.valid), s.humidity_pct));
 }
 
 void BaroDriver::onStateChange(DrvState from, DrvState to) {

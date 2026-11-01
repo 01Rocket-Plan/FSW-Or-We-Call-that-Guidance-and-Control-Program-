@@ -16,7 +16,7 @@ class BaroDriverSim final : public BaroDriverSimComponentBase, private IBme680Si
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
   void SIM_SET_ALT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 alt_m) override;
-  void SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C, F32 humidity_pct, F32 gas_ohm) override;
+  void SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C, F32 humidity_pct) override;
   void SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, const Components::BaroSimFault& fault) override;
 
   void onBaro(const BaroOut& s) override;
@@ -29,7 +29,6 @@ class BaroDriverSim final : public BaroDriverSimComponentBase, private IBme680Si
   F64 m_simP_Pa;
   F64 m_simT_C;
   F64 m_simH_pct;
-  F64 m_simG_ohm;
   U32 m_tlmDiv;
 };
 

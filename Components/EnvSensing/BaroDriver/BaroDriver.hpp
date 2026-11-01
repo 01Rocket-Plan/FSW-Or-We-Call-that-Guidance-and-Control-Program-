@@ -11,7 +11,7 @@ class BaroDriver final : public BaroDriverComponentBase, private IBme680Bus, pri
  public:
   explicit BaroDriver(const char* compName);
   ~BaroDriver() override = default;
-  //! 拓樸設定：I2C 位址（SDO 接地 0x76，接 VDD 0x77）
+  //! 拓樸設定：I2C 位址（預設 0x77＝SDO 接 VDD，gate C12 已確認；SDO 接地為 0x76）
   void configure(U32 i2cAddr);
 
  private:

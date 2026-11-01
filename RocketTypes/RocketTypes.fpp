@@ -38,11 +38,10 @@ module RocketTypes {
     alt_m: F32
   }
 
-  @ BME680 濕度／氣體：只送 Recorder
+  @ BME680 濕度：只送 Recorder（加熱器／氣體電阻已移除，見 PR #4）
   struct EnvSample {
     hdr: SampleHeader
     humidity_pct: F32
-    gas_ohm: F32
   }
 
   @ US DHT22 溫濕度：只送 Recorder（rg1Hz 每 2 tick 一筆；v2 定義，SI 單位）

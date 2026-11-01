@@ -33,12 +33,6 @@ bool parseCalib(const uint8_t* a, Bme680Calib& c) {
   c.h5 = static_cast<int8_t>(a[28]);
   c.h6 = a[29];
   c.h7 = static_cast<int8_t>(a[30]);
-  c.gh1 = static_cast<int8_t>(a[35]);
-  c.gh2 = s16(a[34], a[33]);
-  c.gh3 = static_cast<int8_t>(a[36]);
-  c.resHeatVal = static_cast<int8_t>(a[37]);
-  c.resHeatRange = (a[39] & 0x30) >> 4;
-  c.rangeSwErr = (static_cast<int8_t>(a[41]) & 0xF0) / 16;
   // 全 0 或全 FF 視為讀壞
   return c.t1 != 0 && c.t1 != 0xFFFF && c.p1 != 0 && c.p1 != 0xFFFF;
 }
@@ -77,36 +71,6 @@ double compHum(const Bme680Calib& c, uint16_t adc, double tFine) {
   if (h > 100.0) h = 100.0;
   if (h < 0.0) h = 0.0;
   return h;
-}
-
-double compGas(const Bme680Calib& c, uint16_t adc, uint8_t range) {
-  static const double k1[16] = {0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -0.8, 0.0, 0.0, -0.2, -0.5, 0.0, -1.0, 0.0, 0.0};
-  static const double k2[16] = {0.0, 0.0, 0.0, 0.0, 0.1, 0.7, 0.0, -0.8, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  range &= 0x0F;
-  double v1 = 1340.0 + (5.0 * c.rangeSwErr);
-  double v2 = v1 * (1.0 + k1[range] / 100.0);
-  double v3 = 1.0 + (k2[range] / 100.0);
-  return 1.0 / (v3 * 0.000000125 * static_cast<double>(1u << range) * (((adc - 512.0) / v2) + 1.0));
-}
-
-uint8_t heaterRes(const Bme680Calib& c, double target_C, double amb_C) {
-  if (target_C > 400.0) target_C = 400.0;
-  double v1 = (c.gh1 / 16.0) + 49.0;
-  double v2 = ((c.gh2 / 32768.0) * 0.0005) + 0.00235;
-  double v3 = c.gh3 / 1024.0;
-  double v4 = v1 * (1.0 + (v2 * target_C));
-  double v5 = v4 + (v3 * amb_C);
-  double r = 3.4 * ((v5 * (4.0 / (4.0 + c.resHeatRange)) * (1.0 / (1.0 + (c.resHeatVal * 0.002)))) - 25.0);
-  if (r < 0.0) r = 0.0;
-  if (r > 255.0) r = 255.0;
-  return static_cast<uint8_t>(r);
-}
-
-uint8_t gasWaitCode(uint16_t ms) {
-  if (ms >= 0xFC0) return 0xFF;
-  uint8_t factor = 0;
-  while (ms > 0x3F) { ms /= 4; factor++; }
-  return static_cast<uint8_t>(ms + factor * 64);
 }
 
 double altFromPress(double p, double p0) {
@@ -195,21 +159,18 @@ void Bme680Core::tickInit() {
       return;
     }
     case 3: {
+      // 不設定加熱器／氣體暫存器：軟重置後 run_gas=0，加熱器保持關閉
       bool ok = m_bus.writeReg(CTRL_HUM, 0x00) &&
-                m_bus.writeReg(CONFIG, static_cast<uint8_t>((m_cfg.filter & 0x07) << 2)) &&
-                m_bus.writeReg(CTRL_GAS_1, 0x00) &&
-                m_bus.writeReg(GAS_WAIT_0, Bme680Math::gasWaitCode(m_cfg.gasWait_ms)) &&
-                m_bus.writeReg(RES_HEAT_0, Bme680Math::heaterRes(m_cal, m_cfg.heaterTemp_C, m_lastTemp_C));
+                m_bus.writeReg(CONFIG, static_cast<uint8_t>((m_cfg.filter & 0x07) << 2));
       if (!ok) { busErr(); return; }
       m_humOn = false;
-      m_gasOn = false;
       m_measuring = false;
       m_consecErr = m_consecRange = m_consecTimeout = 0;
       m_stuckCount = 0;
       m_lastPAdc = m_lastTAdc = 0xFFFFFFFF;
       m_selftestGood = 0;
       m_p0Acc = 0.0;
-      m_ticksSinceGas = 0;
+      m_ticksSinceHum = 0;
       setState(DrvState::SELFTEST);
       return;
     }
@@ -218,33 +179,25 @@ void Bme680Core::tickInit() {
   }
 }
 
-bool Bme680Core::trigger(bool gas) {
-  if (gas) {
-    if (!m_humOn && !m_bus.writeReg(CTRL_HUM, 0x01)) return false;
-    m_humOn = true;
-    if (!m_bus.writeReg(RES_HEAT_0, Bme680Math::heaterRes(m_cal, m_cfg.heaterTemp_C, m_lastTemp_C))) return false;
-    if (!m_gasOn && !m_bus.writeReg(CTRL_GAS_1, RUN_GAS)) return false;
-    m_gasOn = true;
-  } else {
-    if (m_humOn && !m_bus.writeReg(CTRL_HUM, 0x00)) return false;
-    m_humOn = false;
-    if (m_gasOn && !m_bus.writeReg(CTRL_GAS_1, 0x00)) return false;
-    m_gasOn = false;
-  }
+bool Bme680Core::trigger(bool hum) {
+  // 濕度只在 1 Hz 那次打開（osrs_h x1，轉換約多 3 ms，仍在一個 tick 內），其餘只量溫壓
+  uint8_t h = hum ? 0x01 : 0x00;
+  if (m_humOn != hum && !m_bus.writeReg(CTRL_HUM, h)) return false;
+  m_humOn = hum;
   uint8_t meas = static_cast<uint8_t>(((m_cfg.osrsT & 0x07) << 5) | ((m_cfg.osrsP & 0x07) << 2) | MODE_FORCED);
   return m_bus.writeReg(CTRL_MEAS, meas);
 }
 
 void Bme680Core::tickMeasure(double t_s) {
-  if (m_ticksSinceGas < 0xFFFF) m_ticksSinceGas++;
+  if (m_ticksSinceHum < 0xFFFF) m_ticksSinceHum++;
   if (!m_measuring) {
-    // 觸發 tick：溫壓與讀取交替，約 50 Hz；每 gasPeriodTicks 插一次溫壓＋氣體
-    bool gas = m_ticksSinceGas >= m_cfg.gasPeriodTicks;
-    if (!trigger(gas)) { busErr(); return; }
+    // 觸發 tick：溫壓與讀取交替，穩定約 50 Hz；每 humPeriodTicks 那次順帶量濕度
+    bool hum = m_ticksSinceHum >= m_cfg.humPeriodTicks;
+    if (!trigger(hum)) { busErr(); return; }
     m_consecErr = 0;
     m_measuring = true;
-    m_measGas = gas;
-    if (gas) m_ticksSinceGas = 0;
+    m_measHum = hum;
+    if (hum) m_ticksSinceHum = 0;
     m_waitTicks = 0;
     m_trigT = t_s;  // 樣本時間取觸發時刻（F´ 時間服務）
     return;
@@ -254,8 +207,7 @@ void Bme680Core::tickMeasure(double t_s) {
   if (!m_bus.readRegs(FIELD0, d, FIELD0_LEN)) { busErr(); return; }
   m_consecErr = 0;
   if (!(d[0] & STATUS_NEW_DATA)) {
-    uint8_t lim = m_measGas ? m_cfg.gasTimeoutTicks : m_cfg.measTimeoutTicks;
-    if (m_waitTicks >= lim) {
+    if (m_waitTicks >= m_cfg.measTimeoutTicks) {
       m_measuring = false;  // 放棄這筆，不輸出假樣本、seq 不加
       m_totalErrors++;
       if (++m_consecTimeout >= m_cfg.errMax) fault(BaroFault::MEAS_TIMEOUT, m_consecTimeout);
@@ -264,16 +216,13 @@ void Bme680Core::tickMeasure(double t_s) {
   }
   m_consecTimeout = 0;
   m_measuring = false;
-  handleData(d, m_measGas);
+  handleData(d, m_measHum);
 }
 
-void Bme680Core::handleData(const uint8_t* d, bool gas) {
+void Bme680Core::handleData(const uint8_t* d, bool hum) {
   uint32_t pAdc = (static_cast<uint32_t>(d[2]) << 12) | (static_cast<uint32_t>(d[3]) << 4) | (d[4] >> 4);
   uint32_t tAdc = (static_cast<uint32_t>(d[5]) << 12) | (static_cast<uint32_t>(d[6]) << 4) | (d[7] >> 4);
   uint16_t hAdc = static_cast<uint16_t>((d[8] << 8) | d[9]);
-  uint16_t gAdc = static_cast<uint16_t>((d[13] << 2) | (d[14] >> 6));
-  uint8_t gRange = d[14] & 0x0F;
-  bool gasOk = (d[14] & GAS_VALID) && (d[14] & HEAT_STAB);
 
   // 卡值：原始溫壓 ADC 連續相同
   if (pAdc == m_lastPAdc && tAdc == m_lastTAdc) {
@@ -297,7 +246,6 @@ void Bme680Core::handleData(const uint8_t* d, bool gas) {
     return;  // 不輸出不合理樣本
   }
   m_consecRange = 0;
-  m_lastTemp_C = tC;
 
   if (m_state == DrvState::SELFTEST) {
     m_selftestGood++;
@@ -309,10 +257,9 @@ void Bme680Core::handleData(const uint8_t* d, bool gas) {
             static_cast<float>(Bme680Math::altFromPress(p, m_p0))};
   m_sink.onBaro(b);
 
-  if (gas) {
+  if (hum) {
     double h = Bme680Math::compHum(m_cal, hAdc, tFine);
-    double g = gasOk ? Bme680Math::compGas(m_cal, gAdc, gRange) : std::numeric_limits<double>::quiet_NaN();
-    EnvOut e{m_trigT, m_envSeq++, valid, static_cast<float>(h), static_cast<float>(g)};
+    EnvOut e{m_trigT, m_envSeq++, valid, static_cast<float>(h)};
     m_sink.onEnv(e);
   }
 

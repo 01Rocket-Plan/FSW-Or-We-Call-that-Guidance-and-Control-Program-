@@ -53,10 +53,6 @@ module Components {
     param STUCK_N: U32 default 50
     @ 連續錯誤門檻
     param ERR_MAX: U8 default 5
-    @ 加熱器等待（datasheet 建議 20–30 ms）
-    param GAS_WAIT_MS: U16 default 30
-    @ 加熱器目標溫度
-    param HEATER_TEMP_C: U16 default 320
   }
 
   @ BaroDriver 的 Sim 版：同一個驅動核心，接 BME680 暫存器層模擬器（base id = BaroDriver + 0x80）
@@ -77,8 +73,8 @@ module Components {
     @ 設定模擬高度（標準大氣，海平面 101325 Pa）
     sync command SIM_SET_ALT(alt_m: F32)
 
-    @ 設定模擬溫度、濕度與氣體電阻
-    sync command SIM_SET_ENV(temp_C: F32, humidity_pct: F32, gas_ohm: F32)
+    @ 設定模擬溫度與濕度
+    sync command SIM_SET_ENV(temp_C: F32, humidity_pct: F32)
 
     @ 注入故障
     sync command SIM_INJECT(fault: BaroSimFault)

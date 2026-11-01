@@ -13,9 +13,8 @@ BaroDriverSim::BaroDriverSim(const char* compName)
       m_simP_Pa(101325.0),
       m_simT_C(25.0),
       m_simH_pct(45.0),
-      m_simG_ohm(50000.0),
       m_tlmDiv(0) {
-  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct, m_simG_ohm);
+  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct);
 }
 
 void BaroDriverSim::schedIn_handler(FwIndexType, U32) {
@@ -34,15 +33,14 @@ void BaroDriverSim::schedIn_handler(FwIndexType, U32) {
 
 void BaroDriverSim::SIM_SET_ALT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 alt_m) {
   m_simP_Pa = 101325.0 * std::pow(1.0 - static_cast<F64>(alt_m) / 44330.0, 5.255);
-  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct, m_simG_ohm);
+  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct);
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void BaroDriverSim::SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C, F32 humidity_pct, F32 gas_ohm) {
+void BaroDriverSim::SIM_SET_ENV_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F32 temp_C, F32 humidity_pct) {
   m_simT_C = temp_C;
   m_simH_pct = humidity_pct;
-  m_simG_ohm = gas_ohm;
-  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct, m_simG_ohm);
+  m_dev.setTruth(m_simP_Pa, m_simT_C, m_simH_pct);
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
@@ -58,7 +56,7 @@ void BaroDriverSim::onBaro(const BaroOut& s) {
 
 void BaroDriverSim::onEnv(const EnvOut& s) {
   if (!this->isConnected_envOut_OutputPort(0)) return;
-  this->envOut_out(0, RocketTypes::EnvSample(RocketTypes::SampleHeader(s.t_s, s.seq, s.valid), s.humidity_pct, s.gas_ohm));
+  this->envOut_out(0, RocketTypes::EnvSample(RocketTypes::SampleHeader(s.t_s, s.seq, s.valid), s.humidity_pct));
 }
 
 void BaroDriverSim::onStateChange(DrvState from, DrvState to) {

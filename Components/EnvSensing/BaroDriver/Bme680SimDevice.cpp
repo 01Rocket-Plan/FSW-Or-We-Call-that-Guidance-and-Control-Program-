@@ -31,12 +31,6 @@ void Bme680SimDevice::typicalCoeff(uint8_t* a) {
   a[24] = static_cast<uint8_t>((h1 & 0x0F) | ((h2 & 0x0F) << 4));
   a[23] = static_cast<uint8_t>(h2 >> 4);
   a[26] = 0;  a[27] = 45;  a[28] = 20;  a[29] = 120;  a[30] = static_cast<uint8_t>(-100);
-  a[35] = static_cast<uint8_t>(-30);   // gh1
-  put16(33, 34, -5969);   // gh2
-  a[36] = 18;             // gh3
-  a[37] = 41;             // res_heat_val
-  a[39] = 0x10;           // res_heat_range = 1
-  a[41] = 0;              // range_sw_err
 }
 
 Bme680SimDevice::Bme680SimDevice() {
@@ -50,7 +44,7 @@ Bme680SimDevice::Bme680SimDevice() {
   m_reg[CHIP_ID] = CHIP_ID_VAL;
 }
 
-void Bme680SimDevice::setTruth(double p, double t, double h, double g) { m_p = p; m_t = t; m_h = h; m_g = g; }
+void Bme680SimDevice::setTruth(double p, double t, double h) { m_p = p; m_t = t; m_h = h; }
 
 void Bme680SimDevice::setAltitude(double alt) { m_p = 101325.0 * std::pow(1.0 - alt / 44330.0, 5.255); }
 
@@ -63,10 +57,10 @@ bool Bme680SimDevice::writeReg(uint8_t reg, uint8_t val) {
   }
   m_reg[reg] = val;
   if (reg == CTRL_MEAS && (val & 0x03) == MODE_FORCED) {
-    m_pendingGas = (m_reg[CTRL_GAS_1] & RUN_GAS) != 0;
-    // 溫壓 x1：約 9 ms，1 tick 內完成；含氣體（30 ms 加熱）約 3–4 tick
-    m_pending = m_pendingGas ? 4 : 1;
-    m_reg[FIELD0] = STATUS_MEASURING | (m_pendingGas ? STATUS_GAS_MEAS : 0);
+    m_pendingHum = (m_reg[CTRL_HUM] & 0x07) != 0;
+    // 溫壓（含濕度）x1：都在 1 tick 內完成
+    m_pending = 1;
+    m_reg[FIELD0] = STATUS_MEASURING;
   }
   return true;
 }
@@ -112,21 +106,12 @@ void Bme680SimDevice::complete() {
     m_reg[0x22] = static_cast<uint8_t>(tAdc >> 12);
     m_reg[0x23] = static_cast<uint8_t>(tAdc >> 4);
     m_reg[0x24] = static_cast<uint8_t>((tAdc & 0x0F) << 4);
-    if (m_pendingGas) {
+    if (m_pendingHum) {
       uint32_t hAdc = invert([&](uint32_t a) { return Bme680Math::compHum(m_cal, static_cast<uint16_t>(a), tf); }, m_h, 0, 0xFFFF, true);
-      // 選一個能涵蓋目標電阻的量程（實機由晶片自動選）
-      uint8_t range = 0;
-      for (uint8_t rr = 0; rr < 16; rr++) {
-        if (Bme680Math::compGas(m_cal, 1023, rr) <= m_g && m_g <= Bme680Math::compGas(m_cal, 0, rr)) { range = rr; break; }
-      }
-      uint32_t gAdc = invert([&](uint32_t a) { return Bme680Math::compGas(m_cal, static_cast<uint16_t>(a), range); }, m_g, 0, 1023, false);
       m_reg[0x25] = static_cast<uint8_t>(hAdc >> 8);
       m_reg[0x26] = static_cast<uint8_t>(hAdc);
-      m_reg[0x2A] = static_cast<uint8_t>(gAdc >> 2);
-      m_reg[0x2B] = static_cast<uint8_t>(((gAdc & 0x03) << 6) | GAS_VALID | HEAT_STAB | range);
     } else {
       m_reg[0x25] = 0x80; m_reg[0x26] = 0x00;  // 濕度跳過
-      m_reg[0x2B] = 0x00;
     }
   }
   m_reg[FIELD0] = STATUS_NEW_DATA;
