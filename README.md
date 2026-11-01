@@ -12,7 +12,7 @@
 | 部署 | 板子 | 控制律 | 備註 |
 |---|---|---|---|
 | DsMcu | DS 飛控 MCU | 有（Controller／ActuatorMgr／ServoDriver） | 1 kHz 即時鏈；級間分離判斷與分離舵機 |
-| UsMcu | US 飛控 MCU | **無** | 感測、紀錄、上級傘 |
+| UsMcu | US 飛控 MCU | **無** | 感測、紀錄、上級傘、相機雲台（2×SG90，地面站操控） |
 | DsCam | ESP32-CAM | — | 不併入 DsMcu |
 | UsCam | OV3640 自有板 | — | 不併入 UsMcu |
 
