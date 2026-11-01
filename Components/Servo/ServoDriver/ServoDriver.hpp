@@ -7,6 +7,7 @@
 #ifndef COMPONENTS_SERVODRIVER_HPP
 #define COMPONENTS_SERVODRIVER_HPP
 
+#include "Components/Servo/Pwm/ServoPwmHal.hpp"
 #include "Components/Servo/ServoDriver/ServoDriverComponentAc.hpp"
 
 namespace Components {
@@ -16,8 +17,9 @@ class ServoDriver final : public ServoDriverComponentBase {
   explicit ServoDriver(const char* compName);
   ~ServoDriver() override = default;
 
-  //! Optional GPIO map for ESP32 LEDC (ignored on host / when unused)
+  //! GPIO／LEDC 通道表（拓樸呼叫）；未呼叫則用 ServoPwmPins 預設（可能仍為未指派）
   void configure(const U8* gpioPins, U8 nPins);
+  void configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId);
 
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
@@ -34,6 +36,7 @@ class ServoDriver final : public ServoDriverComponentBase {
   void emitPwmOut();
   void writeTlm();
   bool pwmSelftestOk() const;
+  void ensurePwmConfigured();
 
   RocketTypes::DrvState::T m_state;
   RocketTypes::UvState m_uv;
@@ -50,8 +53,10 @@ class ServoDriver final : public ServoDriverComponentBase {
   U32 m_dropCount;
   F64 m_stateEnter_s;
   bool m_pwmConfigured;
-  U8 m_gpio[4];
+  U8 m_ledcTimerId;
+  ServoPwmChannel m_chCfg[ServoPwmHal::kMaxChannels];
   U8 m_gpioN;
+  ServoPwmHal m_pwm;
 
   U16 m_neutral_us;
   U16 m_min_us;

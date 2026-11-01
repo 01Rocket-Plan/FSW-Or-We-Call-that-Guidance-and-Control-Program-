@@ -1,4 +1,5 @@
 #include "Components/Servo/ServoDriver/ServoDriver.hpp"
+#include "Components/Servo/Pwm/ServoPwmPins.hpp"
 #include <cstring>
 
 namespace Components {
@@ -25,6 +26,7 @@ ServoDriver::ServoDriver(const char* compName)
       m_dropCount(0),
       m_stateEnter_s(0.0),
       m_pwmConfigured(false),
+      m_ledcTimerId(ServoPwmPins::TAIL_LEDC_TIMER),
       m_gpioN(0),
       m_neutral_us(1500),
       m_min_us(1000),
@@ -36,14 +38,32 @@ ServoDriver::ServoDriver(const char* compName)
   for (U16& p : m_out_us) {
     p = 1500;
   }
-  std::memset(m_gpio, 0, sizeof(m_gpio));
+  for (U8 i = 0; i < ServoPwmHal::kMaxChannels; ++i) {
+    m_chCfg[i].gpio = ServoPwmPins::TAIL_GPIO[i];
+    m_chCfg[i].ledcCh = ServoPwmPins::TAIL_LEDC_CH[i];
+  }
+  m_gpioN = 4;
 }
 
 void ServoDriver::configure(const U8* gpioPins, U8 nPins) {
-  m_gpioN = (nPins > 4) ? 4 : nPins;
+  m_gpioN = (nPins > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : nPins;
   for (U8 i = 0; i < m_gpioN; ++i) {
-    m_gpio[i] = gpioPins[i];
+    m_chCfg[i].gpio = gpioPins[i];
+    m_chCfg[i].ledcCh = ServoPwmPins::TAIL_LEDC_CH[i];
   }
+  m_pwmConfigured = false;
+}
+
+void ServoDriver::configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId) {
+  if (ch == nullptr || n == 0) {
+    return;
+  }
+  m_gpioN = (n > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : n;
+  for (U8 i = 0; i < m_gpioN; ++i) {
+    m_chCfg[i] = ch[i];
+  }
+  m_ledcTimerId = ledcTimerId;
+  m_pwmConfigured = false;
 }
 
 void ServoDriver::loadParams() {
@@ -90,9 +110,23 @@ void ServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
   }
 }
 
+void ServoDriver::ensurePwmConfigured() {
+  U8 n = m_channelCount;
+  if (n == 0 || n > ServoPwmHal::kMaxChannels) {
+    n = m_gpioN;
+  }
+  if (n == 0) {
+    n = 4;
+  }
+  if (m_gpioN > 0 && n > m_gpioN) {
+    n = m_gpioN;
+  }
+  (void)m_pwm.configure(m_pwmHz, m_ledcTimerId, m_chCfg, n);
+}
+
 bool ServoDriver::pwmSelftestOk() const {
-  return m_pwmConfigured && m_channelCount >= 1 && m_channelCount <= 4 && m_pwmHz >= 20 &&
-         m_pwmHz <= 400 && m_min_us < m_max_us;
+  return m_pwmConfigured && m_pwm.ready() && m_channelCount >= 1 && m_channelCount <= 4 &&
+         m_pwmHz >= 20 && m_pwmHz <= 400 && m_min_us < m_max_us;
 }
 
 U16 ServoDriver::clampPulse(U8 ch, U16 raw) {
@@ -118,10 +152,7 @@ void ServoDriver::emitPwmOut() {
 }
 
 void ServoDriver::applyOutputs(bool /*emitTlm*/) {
-  // Software zero-order hold of m_out_us[]. ESP32 LEDC hook:
-#if defined(ESP_PLATFORM)
-  // TODO(ESP32): ledc_set_duty / ledc_update_duty per channel using m_gpio[]
-#endif
+  m_pwm.setPulsesUs(m_out_us, m_channelCount);
   emitPwmOut();
 }
 
@@ -190,11 +221,8 @@ void ServoDriver::schedIn_handler(FwIndexType, U32) {
       enterState(RocketTypes::DrvState::INIT);
       break;
     case RocketTypes::DrvState::INIT:
-      // Configure PWM timer / channels (no position feedback)
-      m_pwmConfigured = (m_channelCount >= 1 && m_channelCount <= 4);
-#if defined(ESP_PLATFORM)
-      // TODO(ESP32): ledc_timer_config + ledc_channel_config for m_gpio[0..n)
-#endif
+      ensurePwmConfigured();
+      m_pwmConfigured = m_pwm.start();
       enterState(RocketTypes::DrvState::SELFTEST);
       break;
     case RocketTypes::DrvState::SELFTEST:

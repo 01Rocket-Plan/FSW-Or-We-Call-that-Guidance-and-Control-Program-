@@ -7,6 +7,7 @@
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP
 #define COMPONENTS_SEPSERVODRIVER_HPP
 
+#include "Components/Servo/Pwm/ServoPwmHal.hpp"
 #include "Components/Servo/SepServoDriver/SepServoDriverComponentAc.hpp"
 
 namespace Components {
@@ -17,6 +18,7 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   ~SepServoDriver() override = default;
 
   void configure(const U8* gpioPins, U8 nPins);
+  void configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId);
 
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
@@ -34,6 +36,7 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   U16 clampUs(U16 raw) const;
   U8 readFiredMask();
   bool tryFireChannel(U8 ch);
+  void ensurePwmConfigured();
 
   RocketTypes::DrvState::T m_state;
   RocketTypes::UvState m_uv;
@@ -46,8 +49,10 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   U32 m_tlmDiv;
   F64 m_stateEnter_s;
   bool m_pwmConfigured;
-  U8 m_gpio[4];
+  U8 m_ledcTimerId;
+  ServoPwmChannel m_chCfg[ServoPwmHal::kMaxChannels];
   U8 m_gpioN;
+  ServoPwmHal m_pwm;
 
   U16 m_lock_us;
   U16 m_fire_us;

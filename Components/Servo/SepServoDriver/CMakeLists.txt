@@ -3,5 +3,8 @@ set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/SepServoDriver.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SepServoDriver.cpp"
 )
-set(MOD_DEPS RocketTypes)
+set(MOD_DEPS
+  RocketTypes
+  Components_Servo_Pwm
+)
 register_fprime_module()

@@ -1,4 +1,5 @@
 #include "Components/Servo/SepServoDriver/SepServoDriver.hpp"
+#include "Components/Servo/Pwm/ServoPwmPins.hpp"
 #include <cstring>
 
 namespace Components {
@@ -20,6 +21,7 @@ SepServoDriver::SepServoDriver(const char* compName)
       m_tlmDiv(0),
       m_stateEnter_s(0.0),
       m_pwmConfigured(false),
+      m_ledcTimerId(ServoPwmPins::SEP_LEDC_TIMER),
       m_gpioN(0),
       m_lock_us(1000),
       m_fire_us(2000),
@@ -30,15 +32,31 @@ SepServoDriver::SepServoDriver(const char* compName)
   for (U8 i = 0; i < 4; ++i) {
     m_out_us[i] = 1000;
     m_fireStart_s[i] = 0.0;
+    m_chCfg[i].gpio = ServoPwmPins::SEP_GPIO[i];
+    m_chCfg[i].ledcCh = ServoPwmPins::SEP_LEDC_CH[i];
   }
-  std::memset(m_gpio, 0, sizeof(m_gpio));
+  m_gpioN = 4;
 }
 
 void SepServoDriver::configure(const U8* gpioPins, U8 nPins) {
-  m_gpioN = (nPins > 4) ? 4 : nPins;
+  m_gpioN = (nPins > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : nPins;
   for (U8 i = 0; i < m_gpioN; ++i) {
-    m_gpio[i] = gpioPins[i];
+    m_chCfg[i].gpio = gpioPins[i];
+    m_chCfg[i].ledcCh = ServoPwmPins::SEP_LEDC_CH[i];
   }
+  m_pwmConfigured = false;
+}
+
+void SepServoDriver::configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId) {
+  if (ch == nullptr || n == 0) {
+    return;
+  }
+  m_gpioN = (n > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : n;
+  for (U8 i = 0; i < m_gpioN; ++i) {
+    m_chCfg[i] = ch[i];
+  }
+  m_ledcTimerId = ledcTimerId;
+  m_pwmConfigured = false;
 }
 
 void SepServoDriver::loadParams() {
@@ -82,6 +100,14 @@ void SepServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
     this->log_WARNING_HI_SepFaultHold(m_lockedMask);
     applyPwm();
   }
+}
+
+void SepServoDriver::ensurePwmConfigured() {
+  U8 n = (m_gpioN > 0) ? m_gpioN : static_cast<U8>(4);
+  if (n > ServoPwmHal::kMaxChannels) {
+    n = ServoPwmHal::kMaxChannels;
+  }
+  (void)m_pwm.configure(/*freqHz=*/50, m_ledcTimerId, m_chCfg, n);
 }
 
 U16 SepServoDriver::clampUs(U16 raw) const {
@@ -139,9 +165,7 @@ void SepServoDriver::emitPwmOut() {
 }
 
 void SepServoDriver::applyPwm() {
-#if defined(ESP_PLATFORM)
-  // TODO(ESP32): ledc_set_duty for SEP channels
-#endif
+  m_pwm.setPulsesUs(m_out_us, 4);
   emitPwmOut();
 }
 
@@ -192,17 +216,15 @@ void SepServoDriver::schedIn_handler(FwIndexType, U32) {
       enterState(RocketTypes::DrvState::INIT);
       break;
     case RocketTypes::DrvState::INIT:
-      m_pwmConfigured = true;
-#if defined(ESP_PLATFORM)
-      // TODO(ESP32): configure LEDC for SEP GPIOs
-#endif
+      ensurePwmConfigured();
+      m_pwmConfigured = m_pwm.start();
       for (U8 i = 0; i < 4; ++i) {
         m_out_us[i] = clampUs(m_lock_us);
       }
       enterState(RocketTypes::DrvState::SELFTEST);
       break;
     case RocketTypes::DrvState::SELFTEST:
-      if (m_pwmConfigured && m_min_us < m_max_us) {
+      if (m_pwmConfigured && m_pwm.ready() && m_min_us < m_max_us) {
         // Seed lockedMask from NV (already-fired stay released state)
         const U8 fired = readFiredMask();
         m_lockedMask = static_cast<U8>((~fired) & kSepBits);
