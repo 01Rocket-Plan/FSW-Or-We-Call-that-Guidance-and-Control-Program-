@@ -1,5 +1,6 @@
 # SepServoDriver
 
 - 負責：伺服組（Evgeny）
-- 範圍：MG996R SEP_1–4，含 Sim 版
-- 狀態：骨架（TODO）
+- 範圍：MG996R SEP_1–4（DsMcu），真驅動；NvFlags 經 `SepNvPlaceholder`（TODO Power v0.1）
+- Sim／單元測試：子Bot1
+- 狀態：實作中（feat/servo-drivers）
