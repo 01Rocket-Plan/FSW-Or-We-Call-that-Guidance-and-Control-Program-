@@ -21,11 +21,13 @@ module RocketTypes {
     gyroSat: bool
   }
 
-  @ US MPU6050：感測器原生軸例外（只記錄）
+  @ US MPU6050：感測器原生軸例外（只記錄）；accelSat/gyroSat 供紀錄組事後分析
   struct Mpu6050Sample {
     hdr: SampleHeader
     accel_sensor_mps2: [3] F32
     gyro_sensor_rads: [3] F32
+    accelSat: bool
+    gyroSat: bool
   }
 
   @ 氣壓樣本（只供速度／高度估計，不直接觸發轉移）
@@ -114,6 +116,7 @@ module RocketTypes {
   }
 
   port ImuData(s: ImuSample)
+  port Mpu6050Data(s: Mpu6050Sample)
   port BaroData(s: BaroSample)
   port EnvData(s: EnvSample)
   port GnssData(fix: GnssFix)
