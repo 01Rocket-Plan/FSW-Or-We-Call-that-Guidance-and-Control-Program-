@@ -6,6 +6,7 @@ DS 飛控 MCU（獨立板），含控制律。
 - MCU：Platform、Estimator、Controller、ActuatorMgr、FlightMode（空殼）
 - 感測：ImuDriver（ICM20948）、BaroDriver、GnssDriver
 - 致動：ServoDriver（4×SG90 尾翼）
+- 分離：SepServoDriver（4×MG996R）；級間分離時機判斷、`SEP_FAIL` 與分離供電都在 DS（gate A9）
 - 紀錄／電源／無線：SdLogger、PowerMonitor、NvFlags、TlmSend、Framer、ComQueue、UplinkAuth
 
 ## 拓樸佔位
