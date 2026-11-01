@@ -15,7 +15,7 @@ namespace Components {
 ServoPwmHal::ServoPwmHal()
     : m_configured(false),
       m_ready(false),
-      m_freqHz(50),
+      m_freqHz(ServoPwmPins::kPwmHz),
       m_timerId(0),
       m_n(0) {
   for (U8 i = 0; i < kMaxChannels; ++i) {
@@ -30,7 +30,7 @@ bool ServoPwmHal::configure(U16 freqHz, U8 ledcTimerId, const ServoPwmChannel* c
     return false;
   }
   if (freqHz == 0) {
-    freqHz = 50;
+    freqHz = ServoPwmPins::kPwmHz;
   }
   m_freqHz = freqHz;
   m_timerId = ledcTimerId;
@@ -48,8 +48,8 @@ bool ServoPwmHal::configure(U16 freqHz, U8 ledcTimerId, const ServoPwmChannel* c
 U32 ServoPwmHal::pulseToDuty(U16 pulseUs) const {
   // duty = pulse_us / period_us * (2^res)
   // period_us = 1e6 / freqHz
-  const U32 maxDuty = (1u << kDefaultResBits);
-  const U32 periodUs = 1000000u / static_cast<U32>(m_freqHz == 0 ? 50 : m_freqHz);
+  const U32 maxDuty = (1u << ServoPwmPins::kResBits);
+  const U32 periodUs = 1000000u / static_cast<U32>(m_freqHz == 0 ? ServoPwmPins::kPwmHz : m_freqHz);
   if (periodUs == 0) {
     return 0;
   }
@@ -71,9 +71,11 @@ bool ServoPwmHal::start() {
     }
   }
 
+  // MCU 組 v0.1：僅 high-speed + timer 0（見 ServoPwmPins）
+  const ledc_mode_t speed = static_cast<ledc_mode_t>(ServoPwmPins::kLedcSpeedMode);
   ledc_timer_config_t tcfg = {};
-  tcfg.speed_mode = LEDC_LOW_SPEED_MODE;
-  tcfg.duty_resolution = static_cast<ledc_timer_bit_t>(kDefaultResBits);
+  tcfg.speed_mode = speed;
+  tcfg.duty_resolution = static_cast<ledc_timer_bit_t>(ServoPwmPins::kResBits);
   tcfg.timer_num = static_cast<ledc_timer_t>(m_timerId);
   tcfg.freq_hz = m_freqHz;
   tcfg.clk_cfg = LEDC_AUTO_CLK;
@@ -84,7 +86,7 @@ bool ServoPwmHal::start() {
   for (U8 i = 0; i < m_n; ++i) {
     ledc_channel_config_t ccfg = {};
     ccfg.gpio_num = static_cast<int>(m_ch[i].gpio);
-    ccfg.speed_mode = LEDC_LOW_SPEED_MODE;
+    ccfg.speed_mode = speed;
     ccfg.channel = static_cast<ledc_channel_t>(m_ch[i].ledcCh);
     ccfg.intr_type = LEDC_INTR_DISABLE;
     ccfg.timer_sel = static_cast<ledc_timer_t>(m_timerId);
@@ -105,8 +107,9 @@ void ServoPwmHal::setPulseUs(U8 idx, U16 pulseUs) {
   m_lastUs[idx] = pulseUs;
   const U32 duty = pulseToDuty(pulseUs);
   const ledc_channel_t ch = static_cast<ledc_channel_t>(m_ch[idx].ledcCh);
-  (void)ledc_set_duty(LEDC_LOW_SPEED_MODE, ch, duty);
-  (void)ledc_update_duty(LEDC_LOW_SPEED_MODE, ch);
+  const ledc_mode_t speed = static_cast<ledc_mode_t>(ServoPwmPins::kLedcSpeedMode);
+  (void)ledc_set_duty(speed, ch, duty);
+  (void)ledc_update_duty(speed, ch);
 }
 
 #else  // host stub

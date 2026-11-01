@@ -1,7 +1,7 @@
 // ======================================================================
 // \title  ServoPwmHal.hpp
 // \author 伺服馬達驅動組（Evgeny）
-// \brief  舵機 PWM 硬體抽象：ESP32 LEDC（50 Hz、µs）；host 為 stub
+// \brief  舵機 PWM 硬體抽象：ESP32 LEDC high-speed（50 Hz、µs）；host 為 stub
 // 不 sleep；不取系統時鐘（由驅動用 F´ Time）。
 // ======================================================================
 #ifndef COMPONENTS_SERVO_PWM_SERVOPWMHAL_HPP
@@ -21,7 +21,7 @@ struct ServoPwmChannel {
 class ServoPwmHal {
  public:
   static constexpr U8 kMaxChannels = 4;
-  static constexpr U8 kDefaultResBits = 14;  //!< 14-bit → ~1.2 µs @ 50 Hz
+  //! 解析度／頻率見 ServoPwmPins（MCU v0.1：14-bit、50 Hz、HS timer0）
 
   ServoPwmHal();
 

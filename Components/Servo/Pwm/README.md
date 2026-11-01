@@ -1,6 +1,7 @@
 # ServoPwm（LEDC HAL）
 
-- ESP32：`driver/ledc.h`，預設 50 Hz、14-bit duty，脈寬單位 µs。
-- Host：stub，`start()` 在 `configure` 後成功，不碰 GPIO。
-- 腳位表：`ServoPwmPins.hpp`（倉庫無正式腳位 → 皆 `kUnassigned`，TODO MCU／配線）。
+- ESP32：`driver/ledc.h`，**high-speed**、共用 timer 0、50 Hz、14-bit；脈寬單位 µs。
+- Host：stub，`start()` 在 `configure` 後成功。
+- 腳位／通道：`ServoPwmPins.hpp`（**MCU 組 v0.1 草案，pending Anatoly review**）。
+- 禁止 low-speed 通道與 timer 1–3。
 - 不 sleep、不取系統時鐘。

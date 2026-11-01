@@ -107,7 +107,7 @@ void SepServoDriver::ensurePwmConfigured() {
   if (n > ServoPwmHal::kMaxChannels) {
     n = ServoPwmHal::kMaxChannels;
   }
-  (void)m_pwm.configure(/*freqHz=*/50, m_ledcTimerId, m_chCfg, n);
+  (void)m_pwm.configure(ServoPwmPins::kPwmHz, m_ledcTimerId, m_chCfg, n);
 }
 
 U16 SepServoDriver::clampUs(U16 raw) const {
