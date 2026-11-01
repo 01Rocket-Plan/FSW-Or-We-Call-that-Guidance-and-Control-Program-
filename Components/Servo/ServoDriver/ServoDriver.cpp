@@ -38,27 +38,27 @@ ServoDriver::ServoDriver(const char* compName)
   for (U16& p : m_out_us) {
     p = 1500;
   }
-  for (U8 i = 0; i < ServoPwmHal::kMaxChannels; ++i) {
+  for (U8 i = 0; i < PwmOut::kMaxChannels; ++i) {
     m_chCfg[i].gpio = ServoPwmPins::TAIL_GPIO[i];
-    m_chCfg[i].ledcCh = ServoPwmPins::TAIL_LEDC_CH[i];
+    m_chCfg[i].hwCh = ServoPwmPins::TAIL_LEDC_CH[i];
   }
   m_gpioN = 4;
 }
 
 void ServoDriver::configure(const U8* gpioPins, U8 nPins) {
-  m_gpioN = (nPins > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : nPins;
+  m_gpioN = (nPins > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : nPins;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i].gpio = gpioPins[i];
-    m_chCfg[i].ledcCh = ServoPwmPins::TAIL_LEDC_CH[i];
+    m_chCfg[i].hwCh = ServoPwmPins::TAIL_LEDC_CH[i];
   }
   m_pwmConfigured = false;
 }
 
-void ServoDriver::configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId) {
+void ServoDriver::configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId) {
   if (ch == nullptr || n == 0) {
     return;
   }
-  m_gpioN = (n > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : n;
+  m_gpioN = (n > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : n;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i] = ch[i];
   }
@@ -112,7 +112,7 @@ void ServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
 
 void ServoDriver::ensurePwmConfigured() {
   U8 n = m_channelCount;
-  if (n == 0 || n > ServoPwmHal::kMaxChannels) {
+  if (n == 0 || n > PwmOut::kMaxChannels) {
     n = m_gpioN;
   }
   if (n == 0) {
@@ -152,7 +152,7 @@ void ServoDriver::emitPwmOut() {
 }
 
 void ServoDriver::applyOutputs(bool /*emitTlm*/) {
-  m_pwm.setPulsesUs(m_out_us, m_channelCount);
+  m_pwm.setPulses_us(m_out_us, m_channelCount);
   emitPwmOut();
 }
 
@@ -222,7 +222,7 @@ void ServoDriver::schedIn_handler(FwIndexType, U32) {
       break;
     case RocketTypes::DrvState::INIT:
       ensurePwmConfigured();
-      m_pwmConfigured = m_pwm.start();
+      m_pwmConfigured = m_pwm.init();
       enterState(RocketTypes::DrvState::SELFTEST);
       break;
     case RocketTypes::DrvState::SELFTEST:

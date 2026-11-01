@@ -33,25 +33,25 @@ SepServoDriver::SepServoDriver(const char* compName)
     m_out_us[i] = 1000;
     m_fireStart_s[i] = 0.0;
     m_chCfg[i].gpio = ServoPwmPins::SEP_GPIO[i];
-    m_chCfg[i].ledcCh = ServoPwmPins::SEP_LEDC_CH[i];
+    m_chCfg[i].hwCh = ServoPwmPins::SEP_LEDC_CH[i];
   }
   m_gpioN = 4;
 }
 
 void SepServoDriver::configure(const U8* gpioPins, U8 nPins) {
-  m_gpioN = (nPins > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : nPins;
+  m_gpioN = (nPins > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : nPins;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i].gpio = gpioPins[i];
-    m_chCfg[i].ledcCh = ServoPwmPins::SEP_LEDC_CH[i];
+    m_chCfg[i].hwCh = ServoPwmPins::SEP_LEDC_CH[i];
   }
   m_pwmConfigured = false;
 }
 
-void SepServoDriver::configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId) {
+void SepServoDriver::configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId) {
   if (ch == nullptr || n == 0) {
     return;
   }
-  m_gpioN = (n > ServoPwmHal::kMaxChannels) ? ServoPwmHal::kMaxChannels : n;
+  m_gpioN = (n > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : n;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i] = ch[i];
   }
@@ -104,8 +104,8 @@ void SepServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
 
 void SepServoDriver::ensurePwmConfigured() {
   U8 n = (m_gpioN > 0) ? m_gpioN : static_cast<U8>(4);
-  if (n > ServoPwmHal::kMaxChannels) {
-    n = ServoPwmHal::kMaxChannels;
+  if (n > PwmOut::kMaxChannels) {
+    n = PwmOut::kMaxChannels;
   }
   (void)m_pwm.configure(ServoPwmPins::kPwmHz, m_ledcTimerId, m_chCfg, n);
 }
@@ -165,7 +165,7 @@ void SepServoDriver::emitPwmOut() {
 }
 
 void SepServoDriver::applyPwm() {
-  m_pwm.setPulsesUs(m_out_us, 4);
+  m_pwm.setPulses_us(m_out_us, 4);
   emitPwmOut();
 }
 
@@ -217,7 +217,7 @@ void SepServoDriver::schedIn_handler(FwIndexType, U32) {
       break;
     case RocketTypes::DrvState::INIT:
       ensurePwmConfigured();
-      m_pwmConfigured = m_pwm.start();
+      m_pwmConfigured = m_pwm.init();
       for (U8 i = 0; i < 4; ++i) {
         m_out_us[i] = clampUs(m_lock_us);
       }

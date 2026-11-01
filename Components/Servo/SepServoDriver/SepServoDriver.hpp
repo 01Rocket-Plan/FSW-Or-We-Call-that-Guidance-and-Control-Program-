@@ -7,7 +7,7 @@
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP
 #define COMPONENTS_SEPSERVODRIVER_HPP
 
-#include "Components/Servo/Pwm/ServoPwmHal.hpp"
+#include "Components/Servo/Pwm/PwmOut.hpp"
 #include "Components/Servo/SepServoDriver/SepServoDriverComponentAc.hpp"
 
 namespace Components {
@@ -18,7 +18,7 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   ~SepServoDriver() override = default;
 
   void configure(const U8* gpioPins, U8 nPins);
-  void configure(const ServoPwmChannel* ch, U8 n, U8 ledcTimerId);
+  void configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId);
 
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
@@ -50,9 +50,9 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   F64 m_stateEnter_s;
   bool m_pwmConfigured;
   U8 m_ledcTimerId;
-  ServoPwmChannel m_chCfg[ServoPwmHal::kMaxChannels];
+  PwmOutChannel m_chCfg[PwmOut::kMaxChannels];
   U8 m_gpioN;
-  ServoPwmHal m_pwm;
+  PwmOut m_pwm;
 
   U16 m_lock_us;
   U16 m_fire_us;

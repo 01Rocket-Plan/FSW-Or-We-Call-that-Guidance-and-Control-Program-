@@ -1,9 +1,9 @@
 // ======================================================================
-// \title  ServoPwmHal.cpp
+// \title  PwmOut.cpp
 // \author 伺服馬達驅動組（Evgeny）
-// \brief  ESP32 LEDC 實作／host stub
+// \brief  Backend A：ESP32 LEDC／host stub（驅動不直接 include ledc.h）
 // ======================================================================
-#include "Components/Servo/Pwm/ServoPwmHal.hpp"
+#include "Components/Servo/Pwm/PwmOut.hpp"
 #include "Components/Servo/Pwm/ServoPwmPins.hpp"
 
 #if defined(ESP_PLATFORM)
@@ -12,20 +12,21 @@
 
 namespace Components {
 
-ServoPwmHal::ServoPwmHal()
+PwmOut::PwmOut()
     : m_configured(false),
       m_ready(false),
       m_freqHz(ServoPwmPins::kPwmHz),
-      m_timerId(0),
+      m_timerId(ServoPwmPins::kLedcTimerShared),
       m_n(0) {
   for (U8 i = 0; i < kMaxChannels; ++i) {
     m_ch[i].gpio = ServoPwmPins::kUnassigned;
-    m_ch[i].ledcCh = i;
+    m_ch[i].hwCh = i;
     m_lastUs[i] = 0;
+    m_enabled[i] = false;
   }
 }
 
-bool ServoPwmHal::configure(U16 freqHz, U8 ledcTimerId, const ServoPwmChannel* ch, U8 n) {
+bool PwmOut::configure(U16 freqHz, U8 timerId, const PwmOutChannel* ch, U8 n) {
   if (ch == nullptr || n == 0 || n > kMaxChannels) {
     return false;
   }
@@ -33,21 +34,50 @@ bool ServoPwmHal::configure(U16 freqHz, U8 ledcTimerId, const ServoPwmChannel* c
     freqHz = ServoPwmPins::kPwmHz;
   }
   m_freqHz = freqHz;
-  m_timerId = ledcTimerId;
+  m_timerId = timerId;
   m_n = n;
   for (U8 i = 0; i < n; ++i) {
     m_ch[i] = ch[i];
+    m_enabled[i] = false;
   }
   m_configured = true;
   m_ready = false;
   return true;
 }
 
+bool PwmOut::init(U8 ch, U8 pin, U16 freq_hz) {
+  if (ch >= kMaxChannels) {
+    return false;
+  }
+  if (freq_hz == 0) {
+    freq_hz = ServoPwmPins::kPwmHz;
+  }
+  m_freqHz = freq_hz;
+  m_ch[ch].gpio = pin;
+  if (m_ch[ch].hwCh > 7) {
+    m_ch[ch].hwCh = ch;
+  }
+  if (m_n <= ch) {
+    m_n = static_cast<U8>(ch + 1);
+  }
+  m_configured = true;
+  m_ready = false;
+  // Defer hardware bring-up to batch init() so shared timer is programmed once
+  return true;
+}
+
+bool PwmOut::init(U16 freq_hz) {
+  if (freq_hz != 0) {
+    m_freqHz = freq_hz;
+  }
+  return startBackend();
+}
+
+bool PwmOut::init() { return startBackend(); }
+
 #if defined(ESP_PLATFORM)
 
-U32 ServoPwmHal::pulseToDuty(U16 pulseUs) const {
-  // duty = pulse_us / period_us * (2^res)
-  // period_us = 1e6 / freqHz
+U32 PwmOut::pulseToDuty(U16 pulseUs) const {
   const U32 maxDuty = (1u << ServoPwmPins::kResBits);
   const U32 periodUs = 1000000u / static_cast<U32>(m_freqHz == 0 ? ServoPwmPins::kPwmHz : m_freqHz);
   if (periodUs == 0) {
@@ -60,18 +90,18 @@ U32 ServoPwmHal::pulseToDuty(U16 pulseUs) const {
   return duty;
 }
 
-bool ServoPwmHal::start() {
+bool PwmOut::startBackend() {
   m_ready = false;
   if (!m_configured || m_n == 0) {
     return false;
   }
   for (U8 i = 0; i < m_n; ++i) {
-    if (m_ch[i].gpio == ServoPwmPins::kUnassigned || m_ch[i].ledcCh > 7) {
+    if (m_ch[i].gpio == ServoPwmPins::kUnassigned || m_ch[i].hwCh > 7) {
       return false;
     }
   }
 
-  // MCU 組 v0.1：僅 high-speed + timer 0（見 ServoPwmPins）
+  // Backend A — ESP32 LEDC HS + shared timer0（ServoPwmPins）
   const ledc_mode_t speed = static_cast<ledc_mode_t>(ServoPwmPins::kLedcSpeedMode);
   ledc_timer_config_t tcfg = {};
   tcfg.speed_mode = speed;
@@ -87,7 +117,7 @@ bool ServoPwmHal::start() {
     ledc_channel_config_t ccfg = {};
     ccfg.gpio_num = static_cast<int>(m_ch[i].gpio);
     ccfg.speed_mode = speed;
-    ccfg.channel = static_cast<ledc_channel_t>(m_ch[i].ledcCh);
+    ccfg.channel = static_cast<ledc_channel_t>(m_ch[i].hwCh);
     ccfg.intr_type = LEDC_INTR_DISABLE;
     ccfg.timer_sel = static_cast<ledc_timer_t>(m_timerId);
     ccfg.duty = 0;
@@ -95,52 +125,77 @@ bool ServoPwmHal::start() {
     if (ledc_channel_config(&ccfg) != ESP_OK) {
       return false;
     }
+    m_enabled[i] = true;
   }
   m_ready = true;
   return true;
 }
 
-void ServoPwmHal::setPulseUs(U8 idx, U16 pulseUs) {
-  if (!m_ready || idx >= m_n) {
+void PwmOut::setPulse_us(U8 ch, U16 us) {
+  if (!m_ready || ch >= m_n || !m_enabled[ch]) {
     return;
   }
-  m_lastUs[idx] = pulseUs;
-  const U32 duty = pulseToDuty(pulseUs);
-  const ledc_channel_t ch = static_cast<ledc_channel_t>(m_ch[idx].ledcCh);
+  m_lastUs[ch] = us;
+  const U32 duty = pulseToDuty(us);
+  const ledc_channel_t hw = static_cast<ledc_channel_t>(m_ch[ch].hwCh);
   const ledc_mode_t speed = static_cast<ledc_mode_t>(ServoPwmPins::kLedcSpeedMode);
-  (void)ledc_set_duty(speed, ch, duty);
-  (void)ledc_update_duty(speed, ch);
+  (void)ledc_set_duty(speed, hw, duty);
+  (void)ledc_update_duty(speed, hw);
 }
 
-#else  // host stub
+void PwmOut::disable(U8 ch) {
+  if (ch >= m_n) {
+    return;
+  }
+  m_enabled[ch] = false;
+  m_lastUs[ch] = 0;
+  if (!m_ready) {
+    return;
+  }
+  const ledc_channel_t hw = static_cast<ledc_channel_t>(m_ch[ch].hwCh);
+  const ledc_mode_t speed = static_cast<ledc_mode_t>(ServoPwmPins::kLedcSpeedMode);
+  (void)ledc_set_duty(speed, hw, 0);
+  (void)ledc_update_duty(speed, hw);
+}
 
-bool ServoPwmHal::start() {
-  // Host／CI：不碰硬體；略過 GPIO 未指派，只要 configure 過即就緒
+#else  // host stub (Backend A stand-in for CI)
+
+bool PwmOut::startBackend() {
   if (!m_configured || m_n == 0) {
     m_ready = false;
     return false;
   }
+  for (U8 i = 0; i < m_n; ++i) {
+    m_enabled[i] = true;
+  }
   m_ready = true;
   return true;
 }
 
-void ServoPwmHal::setPulseUs(U8 idx, U16 pulseUs) {
-  if (!m_ready || idx >= m_n) {
+void PwmOut::setPulse_us(U8 ch, U16 us) {
+  if (!m_ready || ch >= m_n || !m_enabled[ch]) {
     return;
   }
-  m_lastUs[idx] = pulseUs;
-  // no-op hardware
+  m_lastUs[ch] = us;
+}
+
+void PwmOut::disable(U8 ch) {
+  if (ch >= m_n) {
+    return;
+  }
+  m_enabled[ch] = false;
+  m_lastUs[ch] = 0;
 }
 
 #endif
 
-void ServoPwmHal::setPulsesUs(const U16* pulseUs, U8 n) {
+void PwmOut::setPulses_us(const U16* pulseUs, U8 n) {
   if (pulseUs == nullptr) {
     return;
   }
   const U8 lim = (n < m_n) ? n : m_n;
   for (U8 i = 0; i < lim; ++i) {
-    setPulseUs(i, pulseUs[i]);
+    setPulse_us(i, pulseUs[i]);
   }
 }
 
