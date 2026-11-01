@@ -46,7 +46,7 @@ class IDht22Sink {
 
 struct Dht22Config {
   uint8_t errMax = 3;
-  uint16_t stuckN = 0;          // 0 = 關閉（DHT22 解析度 0.1，靜置時合法地長時間同值）
+  uint32_t stuckN = 0;          // 0 = 關閉（DHT22 解析度 0.1，靜置時合法地長時間同值）
   uint8_t selftestN = 3;
   uint16_t faultRetryTicks = 10;  // rg1Hz tick
   uint8_t maxRetries = 5;
@@ -83,7 +83,7 @@ class Dht22Core {
   double m_trigT = 0;
   uint8_t m_errNoResp = 0, m_errCrc = 0, m_errRange = 0;
   uint16_t m_good = 0;
-  uint16_t m_stuck = 0;
+  uint32_t m_stuck = 0;
   uint32_t m_lastRaw = 0xFFFFFFFF;
   uint16_t m_faultTicks = 0;
   uint8_t m_retries = 0;

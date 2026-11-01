@@ -56,7 +56,7 @@ class IBme680Sink {
 
 struct Bme680Config {
   float p0_Pa = 0.0f;           // 高度基準；0 = 自測期間取發射台平均
-  uint16_t stuckN = 50;         // 約 1 s @50 Hz
+  uint32_t stuckN = 50;         // 約 1 s @50 Hz
   uint8_t errMax = 5;           // 連續錯誤門檻
   uint16_t gasPeriodTicks = 100;  // rg100Hz 下每 1 s 一次氣體轉換
   uint16_t heaterTemp_C = 320;  // 加熱器目標溫度
@@ -136,7 +136,7 @@ class Bme680Core {
   double m_trigT = 0.0;
   double m_lastTemp_C = 25.0;
   uint32_t m_lastPAdc = 0xFFFFFFFF, m_lastTAdc = 0xFFFFFFFF;
-  uint16_t m_stuckCount = 0;
+  uint32_t m_stuckCount = 0;
   uint16_t m_selftestGood = 0;
   double m_p0Acc = 0.0;
   float m_p0 = 0.0f;

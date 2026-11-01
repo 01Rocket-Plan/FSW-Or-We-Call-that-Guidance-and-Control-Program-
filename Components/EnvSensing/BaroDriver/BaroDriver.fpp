@@ -50,7 +50,7 @@ module Components {
     @ 高度基準氣壓；0 = 自測期間取發射台平均
     param P0_PA: F32 default 0.0
     @ 卡值判定筆數（約 50 Hz）
-    param STUCK_N: U16 default 50
+    param STUCK_N: U32 default 50
     @ 連續錯誤門檻
     param ERR_MAX: U8 default 5
     @ 加熱器等待（datasheet 建議 20–30 ms）
