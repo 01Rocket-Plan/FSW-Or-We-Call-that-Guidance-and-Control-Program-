@@ -26,6 +26,11 @@ typedef enum {
 } ImuFaultReason;
 
 typedef struct {
+  /* 整數型別可存範圍（無號）：
+   *   U8  (uint8_t)  : 0 ~ 255
+   *   U16 (uint16_t) : 0 ~ 65,535
+   *   U32 (uint32_t) : 0 ~ 4,294,967,295（約 42 億）
+   * 以下計數與門檻一律用 U32，避免溢位；stuckN 為連續相同樣本數門檻。 */
   uint32_t stuckN;
   uint32_t busErrThreshold;
   uint32_t whoamiFailThreshold;
