@@ -123,7 +123,7 @@ U16 SepServoDriver::clampUs(U16 raw) const {
 U8 SepServoDriver::readFiredMask() {
   U8 mask = 0;
   if (this->isConnected_sepReleasedGet_OutputPort(0)) {
-    this->sepReleasedGet_out(0, mask);
+    mask = this->sepReleasedGet_out(0);
   }
   return static_cast<U8>(mask & kSepBits);
 }
@@ -141,7 +141,7 @@ bool SepServoDriver::tryFireChannel(U8 ch) {
     m_out_us[ch] = clampUs(m_lock_us);
     return false;
   }
-  const Fw::Success st = this->sepReleasedSet_out(0, SepNvPlaceholder::NvSepSet(bit));
+  const Fw::Success st = this->sepReleasedSet_out(0, bit);
   if (st != Fw::Success::SUCCESS) {
     // Do NOT enter FAULT; keep lock_us; later cmd may retry
     this->log_WARNING_HI_SepNvWriteFail(ch);

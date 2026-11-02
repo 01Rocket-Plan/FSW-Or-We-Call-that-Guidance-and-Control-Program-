@@ -1,7 +1,7 @@
 // ======================================================================
 // \title  SepServoDriver.hpp
 // \author 伺服馬達驅動組（Evgeny）
-// \brief  MG996R SEP_1–4；once-only via NvFlags placeholder
+// \brief  MG996R SEP_1–4；once-only via Power.NvFlags (SepReleasedGet/Set)
 // Base ID 0x3100
 // ======================================================================
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP

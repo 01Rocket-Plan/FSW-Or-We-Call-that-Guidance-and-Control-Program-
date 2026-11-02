@@ -62,15 +62,13 @@ void SepServoDriverSim::uvIn_handler(FwIndexType, const RocketTypes::UvState& st
 
 bool SepServoDriverSim::sepReleasedGet(uint8_t& mask) {
   if (!this->isConnected_sepReleasedGet_OutputPort(0)) { mask = 0; return true; }  // 同真驅動：未接視為全未釋放
-  U8 m = 0;
-  this->sepReleasedGet_out(0, m);
-  mask = m;
+  mask = this->sepReleasedGet_out(0);
   return true;
 }
 
 bool SepServoDriverSim::sepReleasedSet(uint8_t mask) {
   if (!this->isConnected_sepReleasedSet_OutputPort(0)) return false;  // 未接：不能保證只釋放一次 → 不釋放
-  return this->sepReleasedSet_out(0, SepNvPlaceholder::NvSepSet(mask)) == Fw::Success::SUCCESS;
+  return this->sepReleasedSet_out(0, mask) == Fw::Success::SUCCESS;
 }
 
 void SepServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) { if (ch < 4) m_out_us[ch] = used_us; }

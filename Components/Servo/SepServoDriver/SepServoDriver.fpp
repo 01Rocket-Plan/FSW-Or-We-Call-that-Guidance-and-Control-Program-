@@ -10,9 +10,9 @@ module Components {
     sync input port cmdIn: RocketTypes.SepCmdPort
     sync input port uvIn: RocketTypes.UvStatePort
 
-    @ TODO(Power/NvFlags v0.1): we CALL these (output). Replace when Power publishes final ports.
-    output port sepReleasedGet: SepNvPlaceholder.SepReleasedGet
-    output port sepReleasedSet: SepNvPlaceholder.SepReleasedSet
+    @ Power NvFlags named ports (module Power). We CALL these (output).
+    output port sepReleasedGet: Power.SepReleasedGet
+    output port sepReleasedSet: Power.SepReleasedSet
 
     @ 回報實際通道狀態（Sim 可接）
     output port pwmOut: RocketTypes.SepCmdPort
