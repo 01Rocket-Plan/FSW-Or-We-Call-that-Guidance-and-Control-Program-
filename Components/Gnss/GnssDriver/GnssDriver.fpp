@@ -7,7 +7,7 @@ module Components {
   @ 安裝位置：DS／US 皆可；fixOut 只接 tlmSend 與 sdLogger（C6 閉環不依賴 GNSS）。
   @ Base ID：conventions 0x5000；Sim = base+0x80。
   @ schedIn 接 rg100Hz；依 LockStage 每 100／1000／2000 ms 才 poll（含一次 UART 讀）；不 sleep。
-  @ 失鎖表（Edward 2026-11-02）：TRACKING→REACQ_FAST(15s)→MED(10s)→SLOW(30s)→FIX_FAILED；成功即回 TRACKING。
+  @ 失鎖表（Edward 2026-11-02）：55s 自 last-good 起算，邊界 15／25／55（LOSS_NO_GGA 計入 FAST）；成功即回 TRACKING。
   @ Gate C6：不自己中止。E4：完全逾時後報錯＝進 FIX_FAILED 並發環境訊息一次。
   passive component GnssDriver {
 
@@ -57,7 +57,7 @@ module Components {
     param REACQ_MED_S: F32 default 10.0
     @ REACQ_SLOW 階段時長（秒）；三段合計 55 s
     param REACQ_SLOW_S: F32 default 30.0
-    @ 開機 ACQ 逾時（秒）；逾時 FAULT（假設 A1）
+    @ 開機 ACQ 逾時（秒）；逾時一次事件後進 FIX_FAILED（假設 A1）
     param INIT_ACQ_TIMEOUT_S: F32 default 300.0
     @ SELFTEST：收到任意合法 NMEA 的時限（秒）
     param SELFTEST_TIMEOUT_S: F32 default 5.0

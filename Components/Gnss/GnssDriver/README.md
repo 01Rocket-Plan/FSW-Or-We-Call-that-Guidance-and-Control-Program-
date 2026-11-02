@@ -7,19 +7,20 @@
 
 ## Edward 2026-11-02 失鎖表（C6／E4）
 
-| Stage | Poll | Duration |
+| Stage | Poll | 自 last-good 邊界 |
 |---|---|---|
 | TRACKING | 100 ms | continuous |
-| REACQ_FAST（失鎖） | 100 ms | 15 s |
-| REACQ_MED | 1000 ms | 10 s |
-| REACQ_SLOW | 2000 ms | 30 s |
-| FIX_FAILED | （續用 SLOW） | — |
+| REACQ_FAST（失鎖） | 100 ms | 0 → **15 s** |
+| REACQ_MED | 1000 ms | 15 → **25 s** |
+| REACQ_SLOW | 2000 ms | 25 → **55 s** |
+| FIX_FAILED | （續用 SLOW） | ≥ 55 s |
 
-- 三段重鎖合計 **55 s**；任一段成功 → **TRACKING**。
-- 進 `FIX_FAILED` 發一次：「請檢察環境開放條件以利天線運作」（原文）。
-- 開機 `ACQ` ≤ **300 s**；逾時 → `FAULT`＋`INIT_ACQ_TIMEOUT`（假設 A1）。
-- **C6**：不自己中止；`fixOut` 只接 tlm／sdLogger。重鎖中 `posValid=false`、`dataAge`↑。
-- 失鎖條件：劣質 GGA、或 `LOSS_NO_GGA_S` 內無新 GGA（**含 UART 靜默**）、或 `STUCK_POLLS`。舊 `NODATA_*`／`FIX_STALE_AGE_S` 已併入階段機後刪除。
+- **55 s 時鐘從最後一次合格 GGA 起算**（中斷真正開始的時刻）。`LOSS_NO_GGA_S` 偵測耗時算進 REACQ_FAST。
+- 任一段成功 → **TRACKING**。進 `FIX_FAILED` 發一次：「請檢察環境開放條件以利天線運作」。
+- 開機 `ACQ` ≤ **300 s**；逾時 → 一次 `INIT_ACQ_TIMEOUT` 後進 **FIX_FAILED**（維持 READY、SLOW 輪詢；可恢復）。**不**因 ACQ 逾時進 FAULT（A1）。`BUS_ERROR`／`SELFTEST_FAIL` 仍 → FAULT。
+- **輸出**：新 GGA 才發定位並 `++seq`；重鎖／靜默期間無新 GGA 時最多 **1 Hz** 降級（`posValid=false`、`dataAge`↑）。
+- **讀取緩衝 2048 B**：9600 8N1 → 960 B/s；2 s 含 GSV ≈ 1920 B，2048 留餘量。仍每 poll 一次 bus read。
+- **C6**：不自己中止；`fixOut` 只接 tlm／sdLogger。
 - **prmDb**：`HDOP_MAX`、`POLL_*_MS`、`REACQ_*_S`、`INIT_ACQ_TIMEOUT_S`、`SELFTEST_TIMEOUT_S`、`LOSS_NO_GGA_S`、`STUCK_POLLS`。
 - 遙測含 **`LockStage`**。
 

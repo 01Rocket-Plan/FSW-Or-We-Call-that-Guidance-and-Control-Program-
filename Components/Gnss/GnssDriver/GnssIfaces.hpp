@@ -8,7 +8,8 @@ class IGnssUart {
   virtual ~IGnssUart() = default;
   virtual int32_t readBytes(uint8_t* buf, uint32_t max) = 0;
 };
-// BUS_ERROR／SELFTEST_FAIL／INIT_ACQ_TIMEOUT → FAULT。
+// BUS_ERROR／SELFTEST_FAIL → FAULT（鎖存至 start()）。
+// INIT_ACQ_TIMEOUT → 一次事件後進 FIX_FAILED（不 FAULT；SLOW 輪詢可恢復）。
 // FIX_FAILED → 階段事件＋Edward 原文一次；維持 READY、SLOW 輪詢。
 // BAD_CHECKSUM／TRUNCATED 只計數。
 enum class GnssFault : uint8_t {

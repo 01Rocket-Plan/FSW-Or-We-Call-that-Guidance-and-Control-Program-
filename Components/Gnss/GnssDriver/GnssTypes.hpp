@@ -8,12 +8,12 @@ enum class FixType : uint8_t { NO_FIX = 0, FIX_2D = 1, FIX_3D = 2 };
 enum class DrvState : uint8_t { OFF = 0, INIT, SELFTEST, READY, FAULT };  // 握手；只走遙測
 // Edward 2026-11-02 失鎖／重鎖階段（遙測 LockStage）
 enum class LockStage : uint8_t {
-  ACQ = 0,         // 開機初始搜星（最多 INIT_ACQ_TIMEOUT_S）
+  ACQ = 0,         // 開機初始搜星（最多 INIT_ACQ_TIMEOUT_S；逾時→FIX_FAILED）
   TRACKING = 1,    // 鎖定中，poll 100 ms
-  REACQ_FAST = 2,  // 失鎖後 100 ms × 15 s
-  REACQ_MED = 3,   // 1000 ms × 10 s
-  REACQ_SLOW = 4,  // 2000 ms × 30 s
-  FIX_FAILED = 5   // 三段重鎖失敗；報一次環境訊息；之後仍以 SLOW 輪詢
+  REACQ_FAST = 2,  // 自 last-good →15 s；100 ms（含 LOSS_NO_GGA 偵測）
+  REACQ_MED = 3,   // 15→25 s；1000 ms
+  REACQ_SLOW = 4,  // 25→55 s；2000 ms
+  FIX_FAILED = 5   // ≥55 s；原文一次；之後仍以 SLOW 輪詢
 };
 struct GnssFix {
   bool     valid;

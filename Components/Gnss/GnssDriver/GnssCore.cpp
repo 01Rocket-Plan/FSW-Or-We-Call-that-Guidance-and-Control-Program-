@@ -38,7 +38,8 @@ uint32_t fnv(const char* s) {
 void GnssCore::start() {
   m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN;
   m_lock = LockStage::ACQ; m_lastPoll_s = -1e9; m_lastNewGga_s = -1e9; m_lastGoodPos_s = -1e9;
-  m_sameGgaPolls = 0; m_gotValidSentence = false; m_haveFix = false; m_fixFailedMsgSent = false;
+  m_lastEmit_s = -1e9; m_sameGgaPolls = 0; m_gotValidSentence = false; m_haveFix = false;
+  m_fixFailedMsgSent = false; m_acqTimeoutSent = false; m_pollsInStage = 0;
   m_len = 0; m_inLine = false; m_seq = 0;
   setState(DrvState::INIT);
 }
@@ -51,7 +52,7 @@ void GnssCore::setState(DrvState s) {
 
 void GnssCore::setLock(LockStage s, double t_s) {
   if (s == m_lock) return;
-  LockStage f = m_lock; m_lock = s; m_stageEnter_s = t_s;
+  LockStage f = m_lock; m_lock = s; m_stageEnter_s = t_s; m_pollsInStage = 0;
   if (s != LockStage::FIX_FAILED) m_fixFailedMsgSent = false;
   m_sink.onLockStageChange(f, s);
 }
@@ -72,6 +73,12 @@ bool GnssCore::qualityOk() const {
   return m_fix.fixType == FixType::FIX_3D && m_fix.hdop <= m_p.hdopMax;
 }
 
+double GnssCore::outageAge_s(double t_s) const {
+  // 55 s 時鐘＝自最後合格定位；尚無合格點時退回階段進入時刻（開機 ACQ→FIX_FAILED）
+  if (m_lastGoodPos_s > -1e8) return t_s - m_lastGoodPos_s;
+  return t_s - m_stageEnter_s;
+}
+
 bool GnssCore::detectLoss(double t_s) const {
   // A3／A5：不以單次空 poll 當失鎖；看「無新 GGA」時長與 STUCK、以及本 poll 收到的劣質 GGA
   if (m_gotGgaThisPoll && !qualityOk()) return true;
@@ -86,16 +93,26 @@ void GnssCore::onGoodFix(double t_s) {
 }
 
 void GnssCore::advanceReacq(double t_s) {
-  const double age = t_s - m_stageEnter_s;
-  if (m_lock == LockStage::REACQ_FAST && age >= m_p.reacqFastDur_s) setLock(LockStage::REACQ_MED, t_s);
-  else if (m_lock == LockStage::REACQ_MED && age >= m_p.reacqMedDur_s) setLock(LockStage::REACQ_SLOW, t_s);
-  else if (m_lock == LockStage::REACQ_SLOW && age >= m_p.reacqSlowDur_s) {
-    setLock(LockStage::FIX_FAILED, t_s);
-    if (!m_fixFailedMsgSent) {
-      m_fixFailedMsgSent = true;
-      m_sink.onFault(GnssFault::FIX_FAILED, 1);
-      m_sink.onFixFailedOpenSky();  // 「請檢察環境開放條件以利天線運作」
+  // 邊界＝自 last-good 起 15／25／55（LOSS_NO_GGA 偵測耗時算進 FAST）
+  const double fastEnd = m_p.reacqFastDur_s;
+  const double medEnd  = m_p.reacqFastDur_s + m_p.reacqMedDur_s;
+  const double slowEnd = medEnd + m_p.reacqSlowDur_s;
+  const double age = outageAge_s(t_s);
+
+  if (age >= slowEnd) {
+    if (m_lock != LockStage::FIX_FAILED) {
+      setLock(LockStage::FIX_FAILED, t_s);
+      if (!m_fixFailedMsgSent) {
+        m_fixFailedMsgSent = true;
+        m_sink.onFault(GnssFault::FIX_FAILED, 1);
+        m_sink.onFixFailedOpenSky();  // 「請檢察環境開放條件以利天線運作」
+      }
     }
+  } else if (age >= medEnd) {
+    if (m_lock != LockStage::REACQ_SLOW && m_lock != LockStage::FIX_FAILED)
+      setLock(LockStage::REACQ_SLOW, t_s);
+  } else if (age >= fastEnd) {
+    if (m_lock == LockStage::REACQ_FAST) setLock(LockStage::REACQ_MED, t_s);
   }
 }
 
@@ -108,12 +125,21 @@ void GnssCore::tick(double t_s) {
     m_lastPoll_s = t_s - pollInterval_s();  // 立刻允許第一次 poll
   }
 
-  // 階段計時（即使本拍不 poll 也要推進）
   if (m_state == DrvState::READY) {
+    // A1：開機 ACQ 逾時 → 一次事件後進 FIX_FAILED（不 FAULT）
     if (m_lock == LockStage::ACQ && (t_s - m_acqEnter_s) >= m_p.initAcqTimeout_s) {
-      m_sink.onFault(GnssFault::INIT_ACQ_TIMEOUT, 1);
-      setState(DrvState::FAULT);
-      return;
+      if (!m_acqTimeoutSent) {
+        m_acqTimeoutSent = true;
+        m_sink.onFault(GnssFault::INIT_ACQ_TIMEOUT, 1);
+      }
+      if (m_lock != LockStage::FIX_FAILED) {
+        setLock(LockStage::FIX_FAILED, t_s);
+        if (!m_fixFailedMsgSent) {
+          m_fixFailedMsgSent = true;
+          m_sink.onFault(GnssFault::FIX_FAILED, 1);
+          m_sink.onFixFailedOpenSky();
+        }
+      }
     }
     if (m_lock == LockStage::REACQ_FAST || m_lock == LockStage::REACQ_MED || m_lock == LockStage::REACQ_SLOW)
       advanceReacq(t_s);
@@ -135,7 +161,8 @@ void GnssCore::tick(double t_s) {
 
 void GnssCore::doPoll(double t_s) {
   m_newGga = false; m_gotGgaThisPoll = false;
-  uint8_t buf[512];
+  ++m_pollsInStage;
+  uint8_t buf[kPollReadMax];
   int32_t n = m_uart.readBytes(buf, sizeof(buf));  // 每個 poll 最多一次
   if (n < 0) { m_sink.onFault(GnssFault::BUS_ERROR, 1); setState(DrvState::FAULT); return; }
   for (int32_t i = 0; i < n; ++i) feedByte(buf[i], t_s);
@@ -146,18 +173,16 @@ void GnssCore::doPoll(double t_s) {
       m_acqEnter_s = t_s;
       setLock(LockStage::ACQ, t_s);
       if (qualityOk()) onGoodFix(t_s);  // 首句已是合格 3D → 直接 TRACKING
-      if (m_haveFix) emitFix(t_s);
+      maybeEmit(t_s);
     }
     return;
   }
   if (m_state == DrvState::FAULT) {
-    // A1：FAULT 鎖存至再次 start()（含 INIT_ACQ_TIMEOUT／SELFTEST_FAIL／BUS）。
-    // 不因新 GGA 自動重進 SELFTEST，避免開機逾時被下一個 epoch 清掉。
+    // BUS／SELFTEST_FAIL：鎖存至再次 start()
     return;
   }
   if (m_state == DrvState::READY) {
     if (qualityOk() && m_newGga) {
-      // 重鎖成功：任一段收到「新的」合格 3D GGA → TRACKING
       onGoodFix(t_s);
     } else if (m_lock == LockStage::TRACKING && detectLoss(t_s)) {
       setLock(LockStage::REACQ_FAST, t_s);
@@ -165,18 +190,31 @@ void GnssCore::doPoll(double t_s) {
                || m_lock == LockStage::REACQ_SLOW) {
       advanceReacq(t_s);
     }
-    if (m_haveFix) emitFix(t_s);
+    maybeEmit(t_s);
   }
 }
 
-void GnssCore::emitFix(double t_s) {
+void GnssCore::emitFix(double t_s, bool posValid) {
   GnssFix f = m_fix; f.seq = ++m_seq; f.t_s = t_s; f.valid = true;
-  const bool trackingOk = (m_lock == LockStage::TRACKING) && qualityOk()
-                          && (t_s - m_lastNewGga_s) <= m_p.lossNoGga_s;
-  f.posValid = trackingOk;
+  f.posValid = posValid;
   if (m_lastGoodPos_s > -1e8) f.dataAge_s = float(t_s - m_lastGoodPos_s);
-  else f.dataAge_s = float(t_s - m_lastNewGga_s);
+  else if (m_lastNewGga_s > -1e8) f.dataAge_s = float(t_s - m_lastNewGga_s);
+  else f.dataAge_s = 0.f;
+  m_lastEmit_s = t_s;
   m_sink.onFix(f);
+}
+
+void GnssCore::maybeEmit(double t_s) {
+  if (m_newGga) {
+    const bool ok = (m_lock == LockStage::TRACKING) && qualityOk();
+    emitFix(t_s, ok);
+    return;
+  }
+  // 重鎖／靜默／FIX_FAILED／ACQ：無新 GGA 時最多 1 Hz 降級，讓 dataAge 進遙測
+  if (!m_haveFix) return;
+  if (m_lock == LockStage::TRACKING && qualityOk()) return;  // 鎖定間隙等下一句 GGA
+  if (t_s - m_lastEmit_s + 1e-12 < 1.0) return;
+  emitFix(t_s, false);
 }
 
 void GnssCore::feedByte(uint8_t b, double t_s) {
