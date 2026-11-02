@@ -16,12 +16,12 @@ class NvFlags final : public NvFlagsComponentBase {
     void configure();
 
   private:
-    Fw::Success sepReleasedSet_handler(FwIndexType portNum, U8 mask);
-    U8 sepReleasedGet_handler(FwIndexType portNum);
-    Fw::Success sepCommanded_handler(FwIndexType portNum);
-    Fw::Success dsChuteCommanded_handler(FwIndexType portNum);
-    U32 phaseGet_handler(FwIndexType portNum);
-    Fw::Success phaseSet_handler(FwIndexType portNum, U32 phase);
+    Fw::Success sepReleasedSet_handler(FwIndexType portNum, U8 mask) override;
+    U8 sepReleasedGet_handler(FwIndexType portNum) override;
+    Fw::Success sepCommanded_handler(FwIndexType portNum) override;
+    Fw::Success dsChuteCommanded_handler(FwIndexType portNum) override;
+    U32 phaseGet_handler(FwIndexType portNum) override;
+    Fw::Success phaseSet_handler(FwIndexType portNum, U32 phaseVal) override;
 
     void publishState();
 
