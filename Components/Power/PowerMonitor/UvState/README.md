@@ -1,24 +1,19 @@
-# UvState — DeepSeek 草稿（未審查）
+# UvStateComp
 
-**狀態：未審查 DeepSeek 草稿。未接 F´ 完整建置；僅可能做過 host 語法檢查。**
+- 負責：電源組（Zamir）
+- 範圍：欠壓分級狀態機（NOMINAL／UV_WARN／UV_SHED／UV_CRITICAL）；只發出 L1／L2 卸載請求埠
+- Base ID：`0x6200`（Sim `0x6280`）
+- 狀態：v0.1 host-tested core；門檻／dwell／遲滯為 prmDb 占位；F´ shell 待拓撲接線
 
-## 投放路徑
-- 建議放入 `Components/Power/PowerMonitor/`（骨架 README 已列 UvState／卸載等級），
-  或新增 `Components/Power/UvState/` 並註冊 CMake。
-- `RocketTypes.fpp` 已有 `enum UvState` 與 `UvStatePort`；請對齊共用型別，避免重複定義衝突。
-  草稿核心用 `UvLevel` 避開與 FPP 列舉名稱衝突。
+## 行為摘要
+- 進入更嚴重等級需 dwell；退出經遲滯後立即生效
+- `valid=false` 或過舊樣本不計入 dwell
+- 不下令尾翼鎖定／L3；SEP 與傘通道永不卸載（由 flightMode／actuatorMgr 接手）
 
-## Base ID
-- **TODO（由電力組確認）**。若與 PowerMonitor 同元件可共用 `0x6000`；若獨立元件請在 conventions 段內另編。
+## Layout
+- `UvState.fpp` / `UvStateComp.*` — F´ shell
+- `Core/UvStateCore.*` — host-testable core（內部用 `UvLevel`，避開與 RocketTypes.UvState 名稱衝突）
+- `test/UvStateHostTest.cpp`
 
-## 內容
-- FPP 元件（UvStateComp / PowerUvState 等命名以草稿為準）+ Core + host 測試
-- L1／L2 卸載請求埠（不下令舵機／尾翼鎖定）
-- 門檻／dwell／遲滯皆為參數占位，**正式數值由 prmDb／組內決定**
-
-## 注意
-- valid=false 樣本不計入 dwell。
-- 產生時間：2026-11-02（台北時間）。
-
-## Host quick-check (2026-11-02)
-- zig c++ build OK; UvStateHostTest: FAILED at UV_WARN assert (draft)
+## Host tests
+See `../../run_host_tests.sh`.
