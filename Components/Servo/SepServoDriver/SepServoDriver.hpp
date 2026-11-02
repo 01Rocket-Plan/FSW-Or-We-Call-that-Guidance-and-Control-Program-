@@ -1,0 +1,66 @@
+// SepServoDriver.hpp — MG996R SEP_1–4; fire-once via Power.NvFlags. Base 0x3100.
+#ifndef COMPONENTS_SEPSERVODRIVER_HPP
+#define COMPONENTS_SEPSERVODRIVER_HPP
+
+#include "Components/Servo/ModelCores/Mg996rCore.hpp"
+#include "Components/Servo/Pwm/PwmOut.hpp"
+#include "Components/Servo/SepServoDriver/SepServoDriverComponentAc.hpp"
+
+namespace Components {
+
+class SepServoDriver final : public SepServoDriverComponentBase {
+ public:
+  explicit SepServoDriver(const char* compName);
+  ~SepServoDriver() override = default;
+
+  void configure(const U8* gpioPins, U8 nPins);
+  void configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId);
+
+ private:
+  void schedIn_handler(FwIndexType portNum, U32 context) override;
+  void cmdIn_handler(FwIndexType portNum, const RocketTypes::SepCmd& c) override;
+  void uvIn_handler(FwIndexType portNum, const RocketTypes::UvState& st) override;
+  void parameterUpdated(FwPrmIdType id) override;
+  void parametersLoaded() override;
+
+  void loadParams();
+  F64 now_s() const;
+  void enterState(RocketTypes::DrvState::T st, U8 faultReason = 0);
+  void applyPwm();
+  void emitPwmOut();
+  void writeTlm();
+  U16 clampUs(U16 raw) const;
+  U8 readFiredMask();
+  bool tryFireChannel(U8 ch);
+  bool modelRoleOk() const;
+  void ensurePwmConfigured();
+
+  RocketTypes::DrvState::T m_state;
+  RocketTypes::UvState m_uv;
+  U32 m_lastSeq;
+  bool m_haveSeq;
+  U16 m_out_us[4];
+  U8 m_activeMask;   // currently commanding fire pulse
+  U8 m_lockedMask;   // channels held at lock (unreleased or fault hold)
+  F64 m_fireStart_s[4];
+  U32 m_tlmDiv;
+  F64 m_stateEnter_s;
+  bool m_pwmConfigured;
+  U8 m_ledcTimerId;
+  PwmOutChannel m_chCfg[PwmOut::kMaxChannels];
+  U8 m_gpioN;
+  PwmOut m_pwm;
+
+  U16 m_lock_us;
+  U16 m_fire_us;
+  F32 m_fireHold_s;
+  U16 m_min_us;
+  U16 m_max_us;
+  F32 m_selftestDeadline_s;
+  Components::ServoModel m_model;
+  Components::ServoRole m_role;
+  Mg996rCore m_mg996r;  // formal MG996R pulse clamp/map + lock/fire accessors
+};
+
+}  // namespace Components
+#endif

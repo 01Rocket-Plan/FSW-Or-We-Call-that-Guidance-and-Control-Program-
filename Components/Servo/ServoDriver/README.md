@@ -1,5 +1,8 @@
 # ServoDriver
 
-- 負責：伺服組（Evgeny）
-- 範圍：SG90 TAIL_1–4、US 雲台實例，含 Sim 版
-- 狀態：骨架（TODO）
+- Owner: servo group (Evgeny)
+- Formal identity: params `model`/`role` from `Components/Servo/ServoTypes` — allowed `(SG90,TAIL,4)` or `(SG90,GIMBAL,2)`; else SELFTEST FAULT + `ModelRoleMismatch`
+- Instances: DS tail `servoDriver` 0x3000; US gimbal `gimbalServoDriver` 0x3200
+- PWM: `Components/Servo/Pwm` (pins in `ServoPwmPins.hpp`, MCU v0.1 draft)
+- Topology proposal: `Components/Servo/INTEGRATION.md`
+- Per-model cores (Sg90Core) via DeepSeek spec, not hand-written in this commit
