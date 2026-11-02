@@ -19,6 +19,7 @@ Gnss::GnssCoreParams GnssDriverSim::readParams() {
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
   p.selftestTicks = this->paramGet_SELFTEST_TICKS(pv);
   p.noDataWarnTicks = this->paramGet_NODATA_WARN_TICKS(pv);
+  p.noDataTimeoutTicks = this->paramGet_NODATA_TIMEOUT_TICKS(pv);
   p.noDataFaultTicks = this->paramGet_NODATA_FAULT_TICKS(pv);
   p.stuckTicks = this->paramGet_STUCK_TICKS(pv);
   p.fixStaleAge_s = this->paramGet_FIX_STALE_AGE_S(pv);

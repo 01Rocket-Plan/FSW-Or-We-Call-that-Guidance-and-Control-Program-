@@ -39,9 +39,11 @@ module Components {
     param SELFTEST_TICKS: U32 default 5
     @ READY 中連續無資料幾個 tick 發一次 NO_DATA（不進 FAULT）
     param NODATA_WARN_TICKS: U32 default 2
+    @ E4 完全逾時：靜默達此 tick 發一次 NODATA_TIMEOUT（維持 READY；預設 10）
+    param NODATA_TIMEOUT_TICKS: U32 default 10
     @ READY 中連續無資料幾個 tick 進 FAULT；0＝永不（C6 預設）
     param NODATA_FAULT_TICKS: U32 default 0
-    @ 相同 GGA 連續重複幾個 tick 判定 STUCK
+    @ 相同 GGA 連續重複幾個 tick 判定 STUCK（READY=降級；SELFTEST=FAULT）
     param STUCK_TICKS: U32 default 3
     @ dataAge 超過此秒數強制 posValid=false
     param FIX_STALE_AGE_S: F32 default 1.5
@@ -68,7 +70,7 @@ module Components {
       severity activity high \
       format "GnssDriverSim {} -> {}"
 
-    @ code：同 GnssDriver（含 FIX_LOST／FIX_RECOVERED／NO_DATA edge）
+    @ code：同 GnssDriver（含 FIX_LOST／FIX_RECOVERED／NO_DATA／NODATA_TIMEOUT／READY-STUCK edge）
     event Fault(code: U8, count: U32) \
       severity warning high \
       format "GnssDriverSim fault code={} count={}"

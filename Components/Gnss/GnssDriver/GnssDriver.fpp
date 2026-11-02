@@ -44,9 +44,11 @@ module Components {
     param SELFTEST_TICKS: U32 default 5
     @ READY 中連續無資料幾個 tick 發一次 NO_DATA 事件（不進 FAULT）
     param NODATA_WARN_TICKS: U32 default 2
+    @ E4 完全逾時：READY 中靜默達此 tick 數發一次 NODATA_TIMEOUT（維持 READY；預設 10＝10 s@rg1Hz）
+    param NODATA_TIMEOUT_TICKS: U32 default 10
     @ READY 中連續無資料幾個 tick 進 FAULT；0＝永不（C6 預設，飛行中失鎖／斷線不中止）
     param NODATA_FAULT_TICKS: U32 default 0
-    @ 相同 GGA 連續重複幾個 tick 判定 STUCK（硬體異常 → FAULT）
+    @ 相同 GGA 連續重複幾個 tick 判定 STUCK（READY=降級 edge；SELFTEST=FAULT）
     param STUCK_TICKS: U32 default 3
     @ dataAge 超過此秒數強制 posValid=false（prmDb）
     param FIX_STALE_AGE_S: F32 default 1.5
@@ -68,8 +70,8 @@ module Components {
       severity activity high \
       format "GnssDriver {} -> {}"
 
-    @ code：Gnss::GnssFault（NO_DATA/BAD_CHECKSUM/TRUNCATED/STUCK/BUS_ERROR/SELFTEST_FAIL/FIX_LOST/FIX_RECOVERED）
-    @ NO_DATA／FIX_LOST／FIX_RECOVERED 為 READY 降級 edge；STUCK／BUS_ERROR／SELFTEST_FAIL 才進 FAULT
+    @ code：Gnss::GnssFault（NO_DATA/NODATA_TIMEOUT/BAD_CHECKSUM/TRUNCATED/STUCK/BUS_ERROR/SELFTEST_FAIL/FIX_LOST/FIX_RECOVERED）
+    @ NO_DATA／NODATA_TIMEOUT／FIX_LOST／FIX_RECOVERED／STUCK(READY) 為降級 edge；SELFTEST 中 STUCK／BUS_ERROR／SELFTEST_FAIL 才進 FAULT
     event Fault(code: U8, count: U32) \
       severity warning high \
       format "GnssDriver fault code={} count={}"

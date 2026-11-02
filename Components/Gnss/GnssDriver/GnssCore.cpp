@@ -7,11 +7,10 @@ namespace {
 constexpr double kDeg2Rad = 3.14159265358979323846 / 180.0;
 constexpr double kKnot2Mps = 0.514444;
 constexpr double kKmh2Mps = 1.0 / 3.6;
-constexpr int kGpsUtcLeap_s = 18;  // GPS-UTC 閏秒 (2017 起)
+constexpr int kGpsUtcLeap_s = 18;
 int hexv(char c) { return c >= '0' && c <= '9' ? c - '0' : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : (c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1)); }
-// 切欄位 (就地以 '\0' 取代 ',')
 int split(char* s, char** f, int maxF) { int n = 0; f[n++] = s; for (char* p = s; *p && n < maxF; ++p) if (*p == ',') { *p = 0; f[n++] = p + 1; } return n; }
-double nmeaAngle_rad(const char* v, const char* h) {  // ddmm.mmmm -> rad
+double nmeaAngle_rad(const char* v, const char* h) {
   if (!*v) return NAN; double x = atof(v); int deg = int(x / 100); double a = deg + (x - deg * 100) / 60.0;
   if (*h == 'S' || *h == 'W') a = -a; return a * kDeg2Rad; }
 long daysFromCivil(int y, unsigned m, unsigned d) { y -= m <= 2; long era = (y >= 0 ? y : y - 399) / 400; unsigned yoe = unsigned(y - era * 400);
@@ -21,7 +20,8 @@ uint32_t fnv(const char* s) { uint32_t h = 2166136261u; while (*s) { h ^= uint8_
 
 void GnssCore::start() {
   m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN;
-  m_fixLostLatched = false; m_noDataLatched = false; m_hadPosValid = false;
+  m_fixLostLatched = false; m_noDataLatched = false; m_noDataTimeoutLatched = false;
+  m_stuckLatched = false; m_hadPosValid = false;
   m_noDataTicks = 0; m_sameGgaTicks = 0; m_gotValidSentence = false; m_haveFix = false;
   setState(DrvState::INIT);
 }
@@ -29,6 +29,7 @@ void GnssCore::start() {
 void GnssCore::setState(DrvState s) { if (s == m_state) return; DrvState f = m_state; m_state = s; m_stateTicks = 0; m_sink.onStateChange(f, s); }
 
 bool GnssCore::computePosOk(float dataAge_s) const {
+  if (m_stuckLatched || m_sameGgaTicks >= m_p.stuckTicks) return false;
   if (m_fix.fixType != FixType::FIX_3D) return false;
   if (!(m_fix.hdop <= m_p.hdopMax)) return false;
   if (dataAge_s > m_p.fixStaleAge_s) return false;
@@ -36,7 +37,7 @@ bool GnssCore::computePosOk(float dataAge_s) const {
 }
 
 void GnssCore::updateLockEvents(bool posOk) {
-  // Gate C6：FIX_FAILED／失鎖只報一次；恢復後再報 FIX_RECOVERED，之後可再失鎖再報一次。
+  // C6：失鎖／降級只報一次 FIX_LOST；恢復報 FIX_RECOVERED。
   if (posOk) {
     m_hadPosValid = true;
     if (m_fixLostLatched) {
@@ -52,42 +53,58 @@ void GnssCore::updateLockEvents(bool posOk) {
 void GnssCore::tick(double t_s) {
   if (m_state == DrvState::OFF) return;
   m_newGga = false;
-  uint8_t buf[512]; int32_t n = m_uart.readBytes(buf, sizeof(buf));  // 每 tick 只讀一次
+  uint8_t buf[512]; int32_t n = m_uart.readBytes(buf, sizeof(buf));
   if (n < 0) { m_sink.onFault(GnssFault::BUS_ERROR, 1); setState(DrvState::FAULT); return; }
   for (int32_t i = 0; i < n; ++i) feedByte(buf[i], t_s);
   if (n == 0) {
     ++m_noDataTicks;
   } else {
     m_noDataTicks = 0;
-    m_noDataLatched = false;  // 位元組恢復 → 允許下一段靜默再報一次 NO_DATA
+    m_noDataLatched = false;
+    m_noDataTimeoutLatched = false;
   }
   ++m_stateTicks;
   switch (m_state) {
-    case DrvState::INIT: setState(DrvState::SELFTEST); break;  // UART 已由 F´ 開好，直接進自測
+    case DrvState::INIT: setState(DrvState::SELFTEST); break;
     case DrvState::SELFTEST:
-      if (m_gotValidSentence) setState(DrvState::READY);
-      else if (m_stateTicks >= m_p.selftestTicks) { m_sink.onFault(GnssFault::SELFTEST_FAIL, 1); setState(DrvState::FAULT); }
+      // 帶起：STUCK → FAULT；需 fresh GGA 且至少 2 tick 才 READY（A6）
+      if (m_p.stuckTicks > 0 && m_sameGgaTicks >= m_p.stuckTicks) {
+        m_sink.onFault(GnssFault::STUCK, m_sameGgaTicks);
+        setState(DrvState::FAULT);
+      } else if (m_gotValidSentence && m_sameGgaTicks == 0 && m_stateTicks >= 2) {
+        setState(DrvState::READY);
+      } else if (m_stateTicks >= m_p.selftestTicks) {
+        m_sink.onFault(GnssFault::SELFTEST_FAIL, 1);
+        setState(DrvState::FAULT);
+      }
       break;
     case DrvState::READY: {
-      // C6：飛行中靜默／失鎖不自己中止。預設 noDataFaultTicks=0 → 永不因靜默進 FAULT。
+      // C6／E4：靜默不中止；WARN → TIMEOUT 事件；可選 FAULT（預設關）
       if (m_p.noDataWarnTicks > 0 && m_noDataTicks >= m_p.noDataWarnTicks && !m_noDataLatched) {
         m_noDataLatched = true;
         m_sink.onFault(GnssFault::NO_DATA, m_noDataTicks);
+      }
+      if (m_p.noDataTimeoutTicks > 0 && m_noDataTicks >= m_p.noDataTimeoutTicks && !m_noDataTimeoutLatched) {
+        m_noDataTimeoutLatched = true;
+        m_sink.onFault(GnssFault::NODATA_TIMEOUT, m_noDataTicks);
       }
       if (m_p.noDataFaultTicks > 0 && m_noDataTicks >= m_p.noDataFaultTicks) {
         m_sink.onFault(GnssFault::NO_DATA, m_noDataTicks);
         setState(DrvState::FAULT);
         break;
       }
-      // 假設 A2：STUCK 視為硬體異常 → FAULT
-      if (m_sameGgaTicks >= m_p.stuckTicks) {
-        m_sink.onFault(GnssFault::STUCK, m_sameGgaTicks);
-        setState(DrvState::FAULT);
-        break;
+      // READY：STUCK 視同失鎖——維持 READY、edge 一次、posValid 由 computePosOk 拉低
+      if (m_p.stuckTicks > 0 && m_sameGgaTicks >= m_p.stuckTicks) {
+        if (!m_stuckLatched) {
+          m_stuckLatched = true;
+          m_sink.onFault(GnssFault::STUCK, m_sameGgaTicks);
+        }
+      } else if (m_sameGgaTicks == 0) {
+        m_stuckLatched = false;
       }
       break;
     }
-    case DrvState::FAULT:  // 恢復: 重新收到新鮮的合法 GGA 即回 SELFTEST
+    case DrvState::FAULT:
       if (m_newGga && m_sameGgaTicks == 0) { m_gotValidSentence = false; setState(DrvState::SELFTEST); }
       break;
     default: break;
@@ -96,7 +113,6 @@ void GnssCore::tick(double t_s) {
 }
 
 void GnssCore::emitFix(double t_s) {
-  // READY 中每 tick 輸出一次 (seq 每次輸出 +1)；dataAge_s = 現在 - 最後一次收到新 GGA
   GnssFix f = m_fix; f.seq = ++m_seq; f.t_s = t_s; f.valid = true;
   f.dataAge_s = float(t_s - m_lastFixT_s);
   const bool posOk = computePosOk(f.dataAge_s);
@@ -125,7 +141,7 @@ bool GnssCore::feedSentence(const char* s, double t_s) {
 
 void GnssCore::handleSentence(char* body, double t_s) {
   char* f[24]; int n = split(body, f, 24); const char* id = f[0];
-  if (strlen(id) < 5) return; const char* type = id + 2;  // GP/GN/BD 前綴皆可
+  if (strlen(id) < 5) return; const char* type = id + 2;
   if (!strcmp(type, "GGA") && n >= 10) {
     uint32_t h = fnv(f[1]) ^ fnv(f[2]) ^ fnv(f[4]);
     m_sameGgaTicks = (h == m_lastGgaHash) ? m_sameGgaTicks + 1 : 0; m_lastGgaHash = h;
@@ -150,7 +166,7 @@ void GnssCore::handleSentence(char* body, double t_s) {
     if (hasSpd && hasCrs) { double v = *f[7] ? atof(f[7]) * kKmh2Mps : atof(f[5]) * kKnot2Mps; double c = atof(f[1]) * kDeg2Rad;
       m_fix.velEnu_mps[0] = float(v * sin(c)); m_fix.velEnu_mps[1] = float(v * cos(c)); m_fix.velHValid = true; }
     else { m_fix.velEnu_mps[0] = m_fix.velEnu_mps[1] = NAN; m_fix.velHValid = false; }
-    m_fix.velEnu_mps[2] = NAN; m_fix.velUValid = false;  // NMEA 無垂直速度: U 一律 NaN
+    m_fix.velEnu_mps[2] = NAN; m_fix.velUValid = false;
   }
 }
 }  // namespace Gnss
