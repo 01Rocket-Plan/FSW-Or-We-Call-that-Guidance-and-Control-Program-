@@ -1,3 +1,4 @@
+# 元件指定（Sim）：模擬 MG996R 級間分離伺服 SepServoDriver（DsMcu SEP_1–4）；Base ID 0x3180；無硬體 I/O。
 module Components {
 
   @ SepServoDriver 的 Sim 版（埠集合與真驅動相同）。Base ID 0x3180。核心在 Components/Servo/SimCore。

@@ -25,6 +25,7 @@ ServoDriver::ServoDriver(const char* compName)
       m_clampCount(0),
       m_dropCount(0),
       m_stateEnter_s(0.0),
+      // 伺服馬達只吃 PWM 訊號，只負責接收 MCU 指令並作動；與整機 I2C 通訊協議分屬不同層級，不衝突。
       m_pwmConfigured(false),
       m_ledcTimerId(ServoPwmPins::TAIL_LEDC_TIMER),
       m_gpioN(0),
@@ -143,6 +144,7 @@ U16 ServoDriver::clampPulse(U8 ch, U16 raw) {
   return used;
 }
 
+// 伺服馬達只吃 PWM 訊號，只負責接收 MCU 指令並作動；與整機 I2C 通訊協議分屬不同層級，不衝突。
 void ServoDriver::emitPwmOut() {
   if (!this->isConnected_pwmOut_OutputPort(0)) {
     return;
