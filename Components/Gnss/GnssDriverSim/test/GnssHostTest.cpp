@@ -1,4 +1,13 @@
-// GnssDriverSim host 測試（不需 F´）。目前完成 T9（模擬器本身）；T1~T8 等 GnssCore 進來後補上。
+// =============================================================================
+// GnssHostTest — GnssSimDevice 本身的主機測試（不需 F´；FakeGnssCore 只收句）
+//
+// 與 GnssCoreTest 分工：本檔驗證「模擬器位元組行為」；Core 狀態機在 GnssCoreTest。
+//   T9a 名義：校驗和正確、四句型齊全、~1 Hz
+//   T9b 100 Hz tick 仍 1 Hz 輸出；latency 內不出位元組
+//   T9c baud 限速：每 tick 位元組 ≤ baud/10*dt
+//   T9d 雜訊：位置誤差在 σ 範圍且非精確真值
+//   T9e 故障注入：NO_FIX／2D／BAD_CHECKSUM／TRUNCATED／NO_DATA／STUCK
+// =============================================================================
 #include "Components/Gnss/GnssDriverSim/GnssSimDevice.hpp"
 #include "FakeGnssCore.hpp"
 #include <cmath>

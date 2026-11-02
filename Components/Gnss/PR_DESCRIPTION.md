@@ -37,3 +37,5 @@ Host T9（Sim）＋ **T1–T12**（含 12／20／60 s 階段進入時刻與 poll
 
 ## 已知缺口
 拓撲尚未接 rg100Hz／prmDb／tlm／sdLogger／UART；僅 NMEA；執行者不推遠端。
+
+- 程式內繁中「為何」註釋：GnssCore／Driver＋FPP／Sim／host T1–T12（狀態與門檻意圖、整數分頻、emit／seq、C6 硬軟故障、緩衝、各測項）。

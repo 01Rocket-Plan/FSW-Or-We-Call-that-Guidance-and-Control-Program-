@@ -1,4 +1,22 @@
-// Edward 2026-11-02 失鎖表：rg100Hz 整數分頻 poll；55 s 自 last-good 起算（邊界 15／25／55）。
+// =============================================================================
+// GnssCoreTest — 主機單測（不需 F´）
+//
+// 驗證目標（Edward 2026-11-02 失鎖表＋整數 tick 分頻＋emit／seq＋C6）：
+//   T1  正常鎖定：READY＋TRACKING、約 1 Hz 合格 fix
+//   T2  VTG 無垂直速：velU 為 NaN、velUValid=false（介面契約）
+//   T3  階梯：TRACKING→FAST→MED→SLOW→FIX_FAILED；原文一次；仍 READY
+//   T4  各階段（含 FIX_FAILED）可恢復 TRACKING（C6：不自毀）
+//   T5  UART 靜默與 STUCK → 失鎖＋1 Hz 降級 dataAge；可恢復
+//   T6  emit 政策：新 GGA 即發；靜默≤1 Hz；seq 連續；dataAge 成長
+//   T7  開機 ACQ 逾時 → FIX_FAILED（非 FAULT），可恢復
+//   T8  SELFTEST 失敗 → FAULT（硬故障分流）
+//   T9  反覆失鎖／重鎖不誤進 FIX_FAILED
+//   T10 2D／HDOP 門檻視為失鎖
+//   T11 跨越靜默 seq 仍連續遞增
+//   T12 生產時長 15／10／30 與分頻 10／100／200；中斷 12／20／60 s 的進入時刻與 poll 數
+//
+// 時間基準：DT=0.01＝rg100Hz。整數分頻 ticks＝POLL_*_MS/rgPeriod_ms。
+// =============================================================================
 #include "Components/Gnss/GnssDriverSim/GnssSimDevice.hpp"
 #include "Components/Gnss/GnssDriver/GnssCore.hpp"
 #include <cmath>
@@ -65,6 +83,7 @@ struct Rig {
 };
 
 static void t1_tracking() {
+  // 驗證：暖機後進入 READY＋TRACKING，且因 ~1 Hz GGA 而有多筆 posValid=true 的 3D fix。
   Rig r; r.run(4.0);
   CHECK(r.core.state() == DrvState::READY);
   CHECK(r.core.lockStage() == LockStage::TRACKING);
@@ -75,6 +94,7 @@ static void t1_tracking() {
 }
 
 static void t2_velUNaN() {
+  // 驗證：NMEA VTG 無 U 分量 → velEnu[2]=NaN 且 velUValid=false（避免下游當 0 用）。
   Rig r; r.run(2.0);
   CHECK(!r.sink.fixes.empty());
   for (auto& f : r.sink.fixes) { CHECK(std::isnan(f.velEnu_mps[2])); CHECK(!f.velUValid); }
@@ -82,8 +102,9 @@ static void t2_velUNaN() {
 }
 
 static void t3_stageLadder() {
-  // 短階梯：先 TRACKING（lossNoGga=2），再 NO_DATA。邊界 2.5／3.0／3.7
-  // （進入 FAST 約 age=2；其後 0.5／0.5／0.7 跨 MED／SLOW／FAIL）
+  // 驗證：自 last-good 起的階段邊界與 E4 原文一次。
+  // 短階梯（加速）：邊界 2.5／3.0／3.7；LOSS_NO_GGA=2 計入 FAST。
+  // 進入 FIX_FAILED 後 openSky／FIX_FAILED 事件只一次；DrvState 仍 READY（非 FAULT）。
   Rig r;
   GnssCoreParams p; p.hdopMax = 5.0f;
   p.reacqFastDur_s = 2.50f; p.reacqMedDur_s = 0.50f; p.reacqSlowDur_s = 0.70f;
@@ -117,6 +138,7 @@ static void t3_stageLadder() {
 }
 
 static void t4_recoverEachStage() {
+  // 驗證 C6：從 FAST／MED／SLOW／FIX_FAILED 任一階段恢復合格 GGA → TRACKING，且不進 FAULT。
   // FAST
   { Rig r; r.run(2.5); r.dev.setFault(GnssSimFault::NO_FIX);
     for (int i = 0; i < 200 && r.core.lockStage() != LockStage::REACQ_FAST; i++) r.run(DT);
@@ -166,6 +188,7 @@ static void t4_recoverEachStage() {
 }
 
 static void t5_uartSilenceAndStuck() {
+  // 驗證：NO_DATA（靜默）與 STUCK（同句重複）皆觸發失鎖→REACQ；靜默期間 1 Hz 降級且 dataAge 成長；可恢復。
   { Rig r; r.run(2.5);
     size_t n = r.sink.fixes.size();
     float age0 = r.sink.fixes.back().dataAge_s;
@@ -189,7 +212,9 @@ static void t5_uartSilenceAndStuck() {
 }
 
 static void t6_emitPolicyDataAge() {
-  // seq 每筆輸出都 ++；新 GGA 立刻發；靜默／重鎖最多 1 Hz 降級，dataAge 成長
+  // 驗證 emit／seq 政策：
+  //   TRACKING 期間約跟 GGA（≤~1 Hz，不多灌）；靜默後最多 1 Hz 降級；
+  //   每筆輸出 seq 嚴格 +1；dataAge 隨 last-good 成長且 posValid=false。
   Rig r;
   GnssCoreParams p; p.hdopMax = 5.0f;
   p.reacqFastDur_s = 30.f; p.reacqMedDur_s = 10.f; p.reacqSlowDur_s = 30.f;
@@ -220,6 +245,8 @@ static void t6_emitPolicyDataAge() {
 }
 
 static void t7_initAcqTimeout() {
+  // 驗證 A1：開機 ACQ 逾時 → INIT_ACQ_TIMEOUT 一次＋FIX_FAILED＋openSky；
+  // 不進 FAULT（環境問題）；清除 NO_FIX 後可回 TRACKING。
   Rig r;
   GnssCoreParams p; p.hdopMax = 5.0f; p.initAcqTimeout_s = 1.5f; p.selftestTimeout_s = 2.0f;
   p.reacqFastDur_s = 5.0f; p.lossNoGga_s = 2.0f;
@@ -244,6 +271,7 @@ static void t7_initAcqTimeout() {
 }
 
 static void t8_selftestFail() {
+  // 驗證硬故障分流：SELFTEST 時限內無任何合法 NMEA → SELFTEST_FAIL＋DrvState::FAULT。
   Rig r;
   GnssCoreParams p; p.selftestTimeout_s = 0.5f; r.core.setParams(p);
   r.dev.setFault(GnssSimFault::NO_DATA);
@@ -254,6 +282,7 @@ static void t8_selftestFail() {
 }
 
 static void t9_flapping() {
+  // 驗證：短週期反覆失鎖／重鎖不會誤觸 55 s／FIX_FAILED；openSky 仍為 0。
   Rig r; r.run(2.5);
   for (int c = 0; c < 3; c++) {
     r.dev.setFault(GnssSimFault::NO_FIX);
@@ -278,6 +307,7 @@ static void t9_flapping() {
 }
 
 static void t10_hdopAnd2d() {
+  // 驗證品質門檻：FIX_2D_ONLY（非 3D）視為失鎖；並演習收緊 HDOP_MAX。
   Rig r; r.run(2.0);
   r.dev.setFault(GnssSimFault::FIX_2D_ONLY);
   for (int i = 0; i < 200 && r.core.lockStage() == LockStage::TRACKING; i++) r.run(DT);
@@ -294,6 +324,7 @@ static void t10_hdopAnd2d() {
 }
 
 static void t11_seqContiguous() {
+  // 驗證：跨越靜默（含 1 Hz 降級）與恢復後，seq 全程連續遞增（有 emit 才 ++）。
   Rig r; r.run(2.5);
   r.dev.setFault(GnssSimFault::NO_DATA); r.run(3.0);  // 含 1 Hz 降級
   r.dev.setFault(GnssSimFault::NONE); r.run(2.0);
@@ -304,6 +335,9 @@ static void t11_seqContiguous() {
 }
 
 // T12：生產時長 15／10／30；整數分頻 10／100／200 ticks；中斷 12／20／60 s
+// 驗證：進入 FAST/MED/SLOW/FAIL 的 age≈2／15／25／55；
+//       TRACKING poll≈20／2s；FAST≈129±2；MED=10；SLOW=15；
+//       pollPeriodTicks 在各階段為 10／100／200（整數分頻，無 float 漂移）。
 static void t12_stageTimingPolls() {
   auto runOutage = [](double outage_s, LockStage expectFinal,
                       double* enterFast, double* enterMed, double* enterSlow, double* enterFail,

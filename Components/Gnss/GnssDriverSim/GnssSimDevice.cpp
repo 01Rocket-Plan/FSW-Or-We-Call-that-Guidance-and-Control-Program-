@@ -1,4 +1,7 @@
-// GnssSimDevice 實作：真值軌跡 → 加雜訊的量測 → NMEA 句子 → 依 baud 速率與延遲吐出位元組
+// GnssSimDevice 實作
+// 管線：真值軌跡 → 加雜訊量測 → NMEA（GGA/RMC/VTG/GSA）→ latency 佇列 → baud 信用額 → RX。
+// 為何 baud 限速：模擬真實 UART；SLOW 2 s 堆積可逼近 kPollReadMax=2048 的設計假設。
+// 為何可重現 RNG：host 測試斷言依賴固定雜訊／故障序列。
 #include "Components/Gnss/GnssDriverSim/GnssSimDevice.hpp"
 #include <cmath>
 #include <cstdio>

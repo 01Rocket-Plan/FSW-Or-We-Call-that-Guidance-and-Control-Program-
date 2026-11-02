@@ -7,7 +7,7 @@ namespace {
 constexpr double kDeg2Rad = 3.14159265358979323846 / 180.0;
 constexpr double kKnot2Mps = 0.514444;
 constexpr double kKmh2Mps = 1.0 / 3.6;
-constexpr int kGpsUtcLeap_s = 18;
+constexpr int kGpsUtcLeap_s = 18;  // GPS−UTC 整秒；與 RMC 轉週／週內秒用
 int hexv(char c) {
   return c >= '0' && c <= '9' ? c - '0'
        : (c >= 'A' && c <= 'F' ? c - 'A' + 10
@@ -36,6 +36,7 @@ uint32_t fnv(const char* s) {
 }  // namespace
 
 void GnssCore::start() {
+  // 完整重設：允許 FAULT 後再次帶起；seq 歸零因「新生命週期」。
   m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN;
   m_lock = LockStage::ACQ; m_ticksSincePoll = 0;
   m_lastNewGga_s = -1e9; m_lastGoodPos_s = -1e9; m_lastEmit_s = -1e9;
@@ -54,7 +55,9 @@ void GnssCore::setState(DrvState s) {
 void GnssCore::setLock(LockStage s, double t_s) {
   if (s == m_lock) return;
   LockStage f = m_lock; m_lock = s; m_stageEnter_s = t_s; m_pollsInStage = 0;
-  m_ticksSincePoll = 0;  // 新階段重開分頻（下一次 poll 等滿新 period）
+  // 換階段重開分頻：下一拍起重新累計，避免「舊 10-tick 計數」殘留到新 100-tick 週期。
+  m_ticksSincePoll = 0;
+  // 離開 FIX_FAILED 後允許再發一次環境訊息（若再次進入）。
   if (s != LockStage::FIX_FAILED) m_fixFailedMsgSent = false;
   m_sink.onLockStageChange(f, s);
 }
@@ -72,7 +75,8 @@ uint32_t GnssCore::pollIntervalMs() const {
 }
 
 uint32_t GnssCore::pollPeriodTicks() const {
-  // ticks = prmDb ms / rg 週期；至少 1
+  // 整數分頻：ticks = prmDb 的 poll_*_ms ÷ rg 週期。
+  // 例：100/10=10、1000/10=100、2000/10=200。至少 1，避免除零／零週期忙迴圈。
   const uint32_t per = m_p.rgPeriod_ms ? m_p.rgPeriod_ms : 10u;
   const uint32_t ms = pollIntervalMs();
   const uint32_t ticks = ms / per;
@@ -80,17 +84,21 @@ uint32_t GnssCore::pollPeriodTicks() const {
 }
 
 bool GnssCore::qualityOk() const {
+  // posValid／「合格」＝3D 且 HDOP≤上限；2D 或 HDOP 過大不算鎖定成功。
   return m_fix.fixType == FixType::FIX_3D && m_fix.hdop <= m_p.hdopMax;
 }
 
 double GnssCore::outageAge_s(double t_s) const {
-  // 55 s 時鐘＝自最後合格定位；尚無合格點時退回階段進入時刻（開機 ACQ→FIX_FAILED）
+  // 為何用 last-good 而非「進入 REACQ 的時刻」：
+  // 失鎖偵測本身要花 ~LOSS_NO_GGA_S；若再從進入 FAST 起數 15 s，總中斷會變 17 s，
+  // 與 Edward「自 last-good 起 15／25／55」不符。尚無合格點（開機 ACQ）時退回階段進入時刻。
   if (m_lastGoodPos_s > -1e8) return t_s - m_lastGoodPos_s;
   return t_s - m_stageEnter_s;
 }
 
 bool GnssCore::detectLoss(double t_s) const {
-  // A3／A5：不以單次空 poll 當失鎖；看「無新 GGA」時長與 STUCK、以及本 poll 收到的劣質 GGA
+  // 不以「單次空 poll」當失鎖（A3／A5）：NMEA 1 Hz 時兩次 100 ms poll 之間本來就常空。
+  // 三條件任一：本 poll 收到劣質 GGA、無新 GGA 過久、相同 GGA 卡住。
   if (m_gotGgaThisPoll && !qualityOk()) return true;
   if (m_lastNewGga_s > -1e8 && (t_s - m_lastNewGga_s) > m_p.lossNoGga_s) return true;
   if (m_p.stuckPolls > 0 && m_sameGgaPolls >= m_p.stuckPolls) return true;
@@ -99,17 +107,20 @@ bool GnssCore::detectLoss(double t_s) const {
 
 void GnssCore::onGoodFix(double t_s) {
   m_lastGoodPos_s = t_s;
+  // 任一階段（含 FIX_FAILED）收到合格點 → 立刻回 TRACKING（C6：永不因失鎖自殺）。
   if (m_lock != LockStage::TRACKING) setLock(LockStage::TRACKING, t_s);
 }
 
 void GnssCore::advanceReacq(double t_s) {
-  // 邊界＝自 last-good 起 15／25／55（LOSS_NO_GGA 偵測耗時算進 FAST）
+  // 邊界＝自 last-good：fastEnd=15、medEnd=25、slowEnd=55。
+  // LOSS_NO_GGA 偵測耗時已含在 age 裡，故 FAST 實際剩餘 ≈ 15 − lossNoGga。
   const double fastEnd = m_p.reacqFastDur_s;
   const double medEnd  = m_p.reacqFastDur_s + m_p.reacqMedDur_s;
   const double slowEnd = medEnd + m_p.reacqSlowDur_s;
   const double age = outageAge_s(t_s);
 
   if (age >= slowEnd) {
+    // E4：完全逾時 → FIX_FAILED＋原文一次；狀態仍 READY（非 FAULT）。
     if (m_lock != LockStage::FIX_FAILED) {
       setLock(LockStage::FIX_FAILED, t_s);
       if (!m_fixFailedMsgSent) {
@@ -132,11 +143,13 @@ void GnssCore::tick(double t_s) {
   if (m_state == DrvState::INIT) {
     setState(DrvState::SELFTEST);
     m_selftestEnter_s = t_s;
-    m_ticksSincePoll = pollPeriodTicks();  // 本拍 ++ 後立刻 poll
+    // 設成 period：本拍 ++ 後立刻達標 → 首 poll 不拖一個週期。
+    m_ticksSincePoll = pollPeriodTicks();
   }
 
   if (m_state == DrvState::READY) {
-    // A1：開機 ACQ 逾時 → 一次事件後進 FIX_FAILED（不 FAULT）
+    // A1：開機 ACQ 逾時 → 事件一次後進 FIX_FAILED。
+    // 為何不是 FAULT：天線被擋／室內屬「環境」，不是匯流排壞；C6 要求繼續可恢復。
     if (m_lock == LockStage::ACQ && (t_s - m_acqEnter_s) >= m_p.initAcqTimeout_s) {
       if (!m_acqTimeoutSent) {
         m_acqTimeoutSent = true;
@@ -151,18 +164,22 @@ void GnssCore::tick(double t_s) {
         }
       }
     }
+    // tick 路徑也推進階段：即使本拍未 poll，55 s 邊界仍須準時切換。
     if (m_lock == LockStage::REACQ_FAST || m_lock == LockStage::REACQ_MED || m_lock == LockStage::REACQ_SLOW)
       advanceReacq(t_s);
   }
   if (m_state == DrvState::SELFTEST && (t_s - m_selftestEnter_s) >= m_p.selftestTimeout_s) {
     if (!m_gotValidSentence) {
+      // 帶起失敗：硬體／接線問題 → FAULT（與「飛中失鎖」分流）。
       m_sink.onFault(GnssFault::SELFTEST_FAIL, 1);
       setState(DrvState::FAULT);
       return;
     }
   }
 
-  // 整數 tick 分頻：pollPeriodTicks = poll_*_ms / rgPeriod_ms
+  // --- 整數 tick 分頻 ---
+  // period = poll_*_ms / rgPeriod_ms。SELFTEST／FAULT 用 TRACKING 間隔，方便 BIT 快收句。
+  // 未滿 period 的拍直接 return → 不碰 UART、不 sleep。
   const uint32_t period = (m_state == DrvState::SELFTEST || m_state == DrvState::FAULT)
                             ? (m_p.pollTracking_ms / (m_p.rgPeriod_ms ? m_p.rgPeriod_ms : 10u))
                             : pollPeriodTicks();
@@ -177,8 +194,12 @@ void GnssCore::doPoll(double t_s) {
   m_newGga = false; m_gotGgaThisPoll = false;
   ++m_pollsInStage;
   uint8_t buf[kPollReadMax];
-  int32_t n = m_uart.readBytes(buf, sizeof(buf));  // 每個 poll 最多一次
-  if (n < 0) { m_sink.onFault(GnssFault::BUS_ERROR, 1); setState(DrvState::FAULT); return; }
+  // 每 poll 最多一次 bus read（規則）；長度上限見 kPollReadMax 註解。
+  int32_t n = m_uart.readBytes(buf, sizeof(buf));
+  if (n < 0) {
+    // 匯流排錯誤屬硬故障 → FAULT；與 FIX_FAILED（軟／環境）對照。
+    m_sink.onFault(GnssFault::BUS_ERROR, 1); setState(DrvState::FAULT); return;
+  }
   for (int32_t i = 0; i < n; ++i) feedByte(buf[i], t_s);
 
   if (m_state == DrvState::SELFTEST) {
@@ -186,13 +207,14 @@ void GnssCore::doPoll(double t_s) {
       setState(DrvState::READY);
       m_acqEnter_s = t_s;
       setLock(LockStage::ACQ, t_s);
-      if (qualityOk()) onGoodFix(t_s);  // 首句已是合格 3D → 直接 TRACKING
+      // 首句已是合格 3D（暖機／模擬）→ 直接 TRACKING，不必空等 ACQ。
+      if (qualityOk()) onGoodFix(t_s);
       maybeEmit(t_s);
     }
     return;
   }
   if (m_state == DrvState::FAULT) {
-    // BUS／SELFTEST_FAIL：鎖存至再次 start()
+    // 鎖存：持續分頻 poll 以便遙測，但不自動離開 FAULT。
     return;
   }
   if (m_state == DrvState::READY) {
@@ -209,6 +231,7 @@ void GnssCore::doPoll(double t_s) {
 }
 
 void GnssCore::emitFix(double t_s, bool posValid) {
+  // seq：每次實際輸出遞增（團隊政策：有 emit 才 ++，非「每 poll」或「僅合格」）。
   GnssFix f = m_fix; f.seq = ++m_seq; f.t_s = t_s; f.valid = true;
   f.posValid = posValid;
   if (m_lastGoodPos_s > -1e8) f.dataAge_s = float(t_s - m_lastGoodPos_s);
@@ -220,13 +243,15 @@ void GnssCore::emitFix(double t_s, bool posValid) {
 
 void GnssCore::maybeEmit(double t_s) {
   if (m_newGga) {
+    // 新 GGA：無論品質都發（劣質 → posValid=false），讓下游立刻看到狀態。
     const bool ok = (m_lock == LockStage::TRACKING) && qualityOk();
     emitFix(t_s, ok);
     return;
   }
-  // 重鎖／靜默／FIX_FAILED／ACQ：無新 GGA 時最多 1 Hz 降級，讓 dataAge 進遙測
+  // 無新 GGA：鎖定中的空隙等下一句（不灌假 1 Hz）；
+  // 重鎖／靜默／FIX_FAILED／ACQ 則最多 1 Hz 降級，讓 dataAge 進遙測而不塞爆。
   if (!m_haveFix) return;
-  if (m_lock == LockStage::TRACKING && qualityOk()) return;  // 鎖定間隙等下一句 GGA
+  if (m_lock == LockStage::TRACKING && qualityOk()) return;
   if (t_s - m_lastEmit_s + 1e-12 < 1.0) return;
   emitFix(t_s, false);
 }
@@ -260,6 +285,7 @@ void GnssCore::handleSentence(char* body, double t_s) {
   char* f[24]; int n = split(body, f, 24); const char* id = f[0];
   if (strlen(id) < 5) return; const char* type = id + 2;
   if (!strcmp(type, "GGA") && n >= 10) {
+    // 以時間／緯／經 hash 判「同句重複」→ STUCK；內容變才算新 GGA（m_newGga）。
     uint32_t h = fnv(f[1]) ^ fnv(f[2]) ^ fnv(f[4]);
     m_sameGgaPolls = (h == m_lastGgaHash) ? m_sameGgaPolls + 1 : 0;
     m_lastGgaHash = h;

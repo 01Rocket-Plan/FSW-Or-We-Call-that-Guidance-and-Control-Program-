@@ -18,10 +18,10 @@ GnssDriverSim::GnssDriverSim(const char* compName)
       m_faultCount(0), m_started(false), m_lastDataAge(0.f) {}
 
 Gnss::GnssCoreParams GnssDriverSim::readParams() {
+  // 與 GnssDriver::readParams 對齊：同一套 prm → 同一套整數分頻與失鎖邊界。
   Fw::ParamValid pv; Gnss::GnssCoreParams p;
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
-  // ticks = ms / rgPeriod_ms（rg100Hz → 10 ms）；見 GnssCore.hpp
-  p.rgPeriod_ms = 10;
+  p.rgPeriod_ms = 10;  // schedIn＝rg100Hz
   p.pollTracking_ms = this->paramGet_POLL_TRACKING_MS(pv);
   p.pollReacqFast_ms = this->paramGet_POLL_REACQ_FAST_MS(pv);
   p.pollReacqMed_ms = this->paramGet_POLL_REACQ_MED_MS(pv);
@@ -37,6 +37,8 @@ Gnss::GnssCoreParams GnssDriverSim::readParams() {
 }
 
 void GnssDriverSim::schedIn_handler(FwIndexType, U32) {
+  // 順序刻意：先 advance（依 baud／latency 灌 RX）→ 再 tick（可能 poll→readBytes）。
+  // 若顛倒，本拍新產生的位元組要等到下一個 poll 才被讀，T12／1 Hz 時序會偏。
   const Fw::Time now = this->getTime();
   const F64 t_s = static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;
   const F64 dt_s = m_haveLastT ? (t_s - m_lastT_s) : 0.01;

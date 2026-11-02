@@ -25,3 +25,7 @@
 - 遙測含 **`LockStage`**。
 
 假設見 `GnssCore.hpp`（A1–A6）。閘門只引 **C6**／**E4** ID；原文不進 repo。
+
+## 註釋
+
+核心／Driver／FPP／Sim／host 測試含繁中「為何」註釋：LockStage 與 DrvState 轉換、prm 門檻與單位、整數 tick 分頻、emit／seq、C6 硬／軟故障分流、2048 緩衝、各 T1–T12 驗證點。

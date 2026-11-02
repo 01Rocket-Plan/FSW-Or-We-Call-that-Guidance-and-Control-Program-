@@ -1,5 +1,11 @@
-// GnssDriverSim：GnssCore + GnssSimDevice（base 0x5080）。schedIn＝rg100Hz。
+// ======================================================================
+// GnssDriverSim：GnssCore + GnssSimDevice（Base ID 0x5080）
+//
+// 意圖：與真驅動共用同一套失鎖表／整數分頻／emit／seq／C6 行為；
+//       只把 UART 換成「可注入故障的 NMEA 位元組流」，便於 HIL／桌面驗證。
+// schedIn＝rg100Hz：先 advance(dt) 再生產／限速位元組，再 core.tick。
 // Edward 2026-11-02 失鎖表與真驅動相同。
+// ======================================================================
 #ifndef GNSS_GNSSDRIVERSIM_HPP
 #define GNSS_GNSSDRIVERSIM_HPP
 #include "Components/Gnss/GnssDriverSim/GnssDriverSimComponentAc.hpp"
@@ -29,11 +35,11 @@ class GnssDriverSim final : public GnssDriverSimComponentBase, private Gnss::IGn
   void onFixFailedOpenSky() override;
 
   static Components::GnssLockStage toFppLock(Gnss::LockStage s);
-  Gnss::GnssCoreParams readParams();
+  Gnss::GnssCoreParams readParams();  // 與真驅動相同；rgPeriod_ms=10
 
-  Gnss::GnssSimDevice m_dev;
+  Gnss::GnssSimDevice m_dev;  // 實作 IGnssUart：Core 只看位元組
   Gnss::GnssCore m_core;
-  F64 m_lastT_s;
+  F64 m_lastT_s;              // 算 dt 給 advance（首拍用 0.01）
   bool m_haveLastT;
   U32 m_faultCount;
   bool m_started;
