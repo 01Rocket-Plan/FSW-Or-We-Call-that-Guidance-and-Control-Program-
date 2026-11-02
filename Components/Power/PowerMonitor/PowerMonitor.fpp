@@ -16,8 +16,9 @@ module Components {
 
     port PowerRailTlmPort(sample: PowerRailTlm)
 
-    @ PowerMonitor rail sampler (Base ID 0x6000 per docs/conventions.md; Sim = 0x6080).
-    @ Samples three power rails on a 100 Hz rate group.
+    @ 電壓監測：電源軌取樣器（Base ID 0x6000／docs/conventions.md；Sim = 0x6080）。
+    @ 在 100 Hz rate group 上取樣三條電源軌（BATT_MAIN／SERVO_5V／LOGIC_3V3）。
+    @ 本元件只管電壓遙測；供電路徑（誰供電給誰）由硬體配線／拓撲決定，不在此軟體範圍。
     active component PowerMonitor {
 
         # ------------------------------------------------------------------
@@ -27,8 +28,11 @@ module Components {
         telemetry port tlmOut
         event port eventOut
         text event port textEventOut
+        @ 指令分發器（Svc.CommandDispatcher / cmdDisp）
         command recv port cmdIn
+        @ 指令分發器 — 註冊
         command reg port cmdRegOut
+        @ 指令分發器 — 回應
         command resp port cmdResponseOut
         param get port prmGetOut
         param set port prmSetOut
@@ -36,16 +40,16 @@ module Components {
         # ------------------------------------------------------------------
         # Scheduling
         # ------------------------------------------------------------------
-        @ 100 Hz rate group tick (rg100Hz).
+        @ 100 Hz rate group tick（rg100Hz）
         sync input port schedIn: Svc.Sched
 
-        @ Latest rail sample output for UvState / consumers.
+        @ 電壓監測：最新軌樣本輸出 → UvState／消費者
         output port railOut: Components.PowerRailTlmPort
 
         # ------------------------------------------------------------------
         # Telemetry
         # ------------------------------------------------------------------
-        @ Per-rail telemetry sample (emitted once per rail per tick).
+        @ 每軌遙測樣本（每 tick 每軌發一次）
         telemetry PowerRailTlm: PowerRailTlm
 
         # ------------------------------------------------------------------

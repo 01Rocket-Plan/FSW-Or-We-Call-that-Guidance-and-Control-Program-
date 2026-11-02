@@ -1,23 +1,23 @@
 module Components {
 
-    @ Under-voltage state machine (lives under PowerMonitor/; Base ID 0x6200).
-    @ Emits L1/L2 load-shed requests only. Does NOT command actuators / L3.
-    @ Uses RocketTypes.UvState; SEP and chute channels are never shed.
+    @ 電壓監測／欠壓狀態機（位於 PowerMonitor/；Base ID 0x6200）。
+    @ 只發出 L1／L2 卸載請求，不下令致動器／L3。
+    @ 使用 RocketTypes.UvState；SEP 與傘通道永不卸載。
     passive component UvStateComp {
 
-        @ Power rail telemetry sample input.
+        @ 電壓監測：電源軌遙測樣本輸入（PowerRailTlm → 欠壓分級）
         sync input port powerIn: Components.PowerRailTlmPort
 
-        @ Optional scheduler tick; time is injected each tick.
+        @ 可選排程 tick；每次 tick 注入時間
         sync input port schedIn: Svc.Sched
 
-        @ Current under-voltage level for flightMode / actuatorMgr.
+        @ 目前欠壓等級 → flightMode／actuatorMgr
         output port uvStateOut: RocketTypes.UvStatePort
 
-        @ L1 load-shed request: camera, gimbal, humidity sensor off.
+        @ L1 卸載請求：相機、雲台、濕度感測關閉
         output port shedL1: Fw.Signal
 
-        @ L2 load-shed request: high-rate logger off, reduce tlm rate.
+        @ L2 卸載請求：高速 logger 關閉、降低遙測率
         output port shedL2: Fw.Signal
 
         telemetry level: RocketTypes.UvState
