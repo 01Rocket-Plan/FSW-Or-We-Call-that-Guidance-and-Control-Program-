@@ -1,7 +1,8 @@
-// SepServoDriverSim — Sim shell for SepServoDriver. Base 0x3180. Core: SimCore.
+// SepServoDriverSim — Sim shell for SepServoDriver. Base 0x3180. Core: SimCore + Mg996rSimDevice.
 #ifndef COMPONENTS_SEPSERVODRIVERSIM_HPP
 #define COMPONENTS_SEPSERVODRIVERSIM_HPP
 #include "Components/Servo/SepServoDriverSim/SepServoDriverSimComponentAc.hpp"
+#include "Components/Servo/ModelCores/Mg996rSimDevice.hpp"
 #include "Components/Servo/SimCore/ServoSimCore.hpp"
 
 namespace Components {
@@ -35,6 +36,7 @@ class SepServoDriverSim final : public SepServoDriverSimComponentBase,
   F64 now_s();
 
   ServoSim::SepSimCore m_core;
+  Mg996rSimDevice m_mg996rDev;  // SIL shaft-angle slew (datasheet-nominal)
   U16 m_out_us[4];
   U32 m_tick;
   bool m_started;

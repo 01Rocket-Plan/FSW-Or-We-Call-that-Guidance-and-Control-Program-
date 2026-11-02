@@ -7,5 +7,6 @@ set(MOD_DEPS
   RocketTypes
   Components_Servo_SimCore
   Components_Servo_ServoTypes
+  Components_Servo_ModelCores
 )
 register_fprime_module()

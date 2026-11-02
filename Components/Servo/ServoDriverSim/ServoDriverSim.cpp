@@ -51,6 +51,9 @@ void ServoDriverSim::schedIn_handler(FwIndexType, U32) {
   if (++m_tick < m_periodTicks) return;  // 50 Hz 零階保持：每個 PWM 週期推進核心一次
   m_tick = 0;
   m_core.tick();
+  // Advance SG90 shaft-angle sim by one PWM period (50 Hz → 0.02 s).
+  // Angle available via m_sg90Dev.angleDeg(ch) for future SIL telemetry.
+  m_sg90Dev.tick(static_cast<F32>(m_periodTicks) / 1000.0f);  // rg1kHz → PWM period
   U16 pulses[4] = {m_out_us[0], m_out_us[1], m_out_us[2], m_out_us[3]};
   if (this->isConnected_pwmOut_OutputPort(0)) {
     this->pwmOut_out(0, RocketTypes::ServoCmd(now_s(), m_core.lastSeq(), RocketTypes::ServoCmd::Type_of_pulse_us(pulses), m_lockNeutral));
@@ -68,7 +71,12 @@ void ServoDriverSim::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
   m_core.uvIn(static_cast<ServoSim::UvState>(st.e));
 }
 
-void ServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) { if (ch < 4) m_out_us[ch] = used_us; }
+void ServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) {
+  if (ch < 4) {
+    m_out_us[ch] = used_us;
+    m_sg90Dev.setCommandPulseUs(ch, used_us);  // µs → slew sim
+  }
+}
 
 void ServoDriverSim::writeTlm() {
   this->tlmWrite_drvState(static_cast<RocketTypes::DrvState::T>(m_core.drvState()));

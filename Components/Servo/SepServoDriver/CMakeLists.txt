@@ -8,5 +8,6 @@ set(MOD_DEPS
   Components_Servo_Pwm
   Components_Servo_ServoTypes
   Components_Power_NvFlags
+  Components_Servo_ModelCores
 )
 register_fprime_module()

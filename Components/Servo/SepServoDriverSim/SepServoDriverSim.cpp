@@ -45,6 +45,9 @@ void SepServoDriverSim::schedIn_handler(FwIndexType, U32) {
   if (++m_tick < kPeriodTicks) return;
   m_tick = 0;
   m_core.tick();
+  // Advance MG996R shaft-angle sim by one PWM period (50 Hz → 0.02 s).
+  // SEP fire-once / stay-at-fire / boot-lock policy remains in SepSimCore.
+  m_mg996rDev.tick(static_cast<F32>(kPeriodTicks) / 1000.0f);  // rg1kHz → PWM period
   // 與真驅動相同：pwmOut 的 channelMask = 已釋放（含保持中）通道
   if (this->isConnected_pwmOut_OutputPort(0)) {
     const U8 mask = static_cast<U8>(m_core.activeMask() | m_core.firedMask());
@@ -79,7 +82,12 @@ bool SepServoDriverSim::sepReleasedSet(uint8_t mask) {
   return this->sepReleasedSet_out(0, mask) == Fw::Success::SUCCESS;
 }
 
-void SepServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) { if (ch < 4) m_out_us[ch] = used_us; }
+void SepServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) {
+  if (ch < 4) {
+    m_out_us[ch] = used_us;
+    m_mg996rDev.setCommandPulseUs(ch, used_us);  // µs → slew sim
+  }
+}
 
 void SepServoDriverSim::evEnterReady() { this->log_ACTIVITY_HI_EnterReady(); }
 void SepServoDriverSim::evEnterFault(ServoSim::FaultReason r) {

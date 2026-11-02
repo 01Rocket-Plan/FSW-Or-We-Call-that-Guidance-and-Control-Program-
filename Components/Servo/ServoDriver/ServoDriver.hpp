@@ -2,6 +2,7 @@
 #ifndef COMPONENTS_SERVODRIVER_HPP
 #define COMPONENTS_SERVODRIVER_HPP
 
+#include "Components/Servo/ModelCores/Sg90Core.hpp"
 #include "Components/Servo/Pwm/PwmOut.hpp"
 #include "Components/Servo/ServoDriver/ServoDriverComponentAc.hpp"
 
@@ -63,6 +64,7 @@ class ServoDriver final : public ServoDriverComponentBase {
   F32 m_selftestDeadline_s;
   Components::ServoModel m_model;
   Components::ServoRole m_role;
+  Sg90Core m_sg90;  // formal SG90 pulse clamp/map (ServoTypes constants)
 };
 
 }  // namespace Components

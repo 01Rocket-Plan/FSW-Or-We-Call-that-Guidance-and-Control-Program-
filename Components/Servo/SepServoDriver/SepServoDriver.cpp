@@ -23,16 +23,16 @@ SepServoDriver::SepServoDriver(const char* compName)
       m_pwmConfigured(false),
       m_ledcTimerId(ServoPwmPins::SEP_LEDC_TIMER),
       m_gpioN(0),
-      m_lock_us(1000),
-      m_fire_us(2000),
+      m_lock_us(Mg996rLimits::kPulseMinUs),
+      m_fire_us(Mg996rLimits::kPulseMaxUs),
       m_fireHold_s(0.5f),
-      m_min_us(1000),
-      m_max_us(2000),
+      m_min_us(Mg996rLimits::kPulseMinUs),
+      m_max_us(Mg996rLimits::kPulseMaxUs),
       m_selftestDeadline_s(1.0f),
       m_model(Components::ServoModel::MG996R),
       m_role(Components::ServoRole::SEP) {
   for (U8 i = 0; i < 4; ++i) {
-    m_out_us[i] = 1000;
+    m_out_us[i] = Mg996rLimits::kPulseMinUs;  // lock_us default
     m_fireStart_s[i] = 0.0;
     m_chCfg[i].gpio = ServoPwmPins::SEP_GPIO[i];
     m_chCfg[i].hwCh = ServoPwmPins::SEP_LEDC_CH[i];
@@ -115,13 +115,17 @@ void SepServoDriver::ensurePwmConfigured() {
 }
 
 U16 SepServoDriver::clampUs(U16 raw) const {
-  if (raw < m_min_us) {
+  // Model hard limits from Mg996rCore, then optional tighter param window.
+  bool modelClamped = false;
+  U16 used = m_mg996r.clampPulseUs(raw, modelClamped);
+  (void)modelClamped;
+  if (used < m_min_us) {
     return m_min_us;
   }
-  if (raw > m_max_us) {
+  if (used > m_max_us) {
     return m_max_us;
   }
-  return raw;
+  return used;
 }
 
 bool SepServoDriver::modelRoleOk() const {

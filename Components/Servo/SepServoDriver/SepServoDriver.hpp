@@ -2,6 +2,7 @@
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP
 #define COMPONENTS_SEPSERVODRIVER_HPP
 
+#include "Components/Servo/ModelCores/Mg996rCore.hpp"
 #include "Components/Servo/Pwm/PwmOut.hpp"
 #include "Components/Servo/SepServoDriver/SepServoDriverComponentAc.hpp"
 
@@ -58,6 +59,7 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   F32 m_selftestDeadline_s;
   Components::ServoModel m_model;
   Components::ServoRole m_role;
+  Mg996rCore m_mg996r;  // formal MG996R pulse clamp/map + lock/fire accessors
 };
 
 }  // namespace Components

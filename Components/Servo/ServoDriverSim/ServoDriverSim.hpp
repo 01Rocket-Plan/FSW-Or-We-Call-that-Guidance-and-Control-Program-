@@ -1,7 +1,8 @@
-// ServoDriverSim — Sim shell for ServoDriver. Core: SimCore. Bases 0x3080 / 0x3280.
+// ServoDriverSim — Sim shell for ServoDriver. Core: SimCore + Sg90SimDevice. Bases 0x3080 / 0x3280.
 #ifndef COMPONENTS_SERVODRIVERSIM_HPP
 #define COMPONENTS_SERVODRIVERSIM_HPP
 #include "Components/Servo/ServoDriverSim/ServoDriverSimComponentAc.hpp"
+#include "Components/Servo/ModelCores/Sg90SimDevice.hpp"
 #include "Components/Servo/SimCore/ServoSimCore.hpp"
 
 namespace Components {
@@ -32,6 +33,7 @@ class ServoDriverSim final : public ServoDriverSimComponentBase, private ServoSi
   F64 now_s();
 
   ServoSim::ServoSimCore m_core;
+  Sg90SimDevice m_sg90Dev;  // SIL shaft-angle slew (datasheet-nominal)
   U16 m_out_us[4];
   U32 m_tick;
   U32 m_periodTicks;

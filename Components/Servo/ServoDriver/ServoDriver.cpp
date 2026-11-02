@@ -148,16 +148,20 @@ bool ServoDriver::modelRoleOk() const {
 }
 
 U16 ServoDriver::clampPulse(U8 ch, U16 raw) {
-  U16 used = raw;
-  if (raw < m_min_us) {
+  // Model hard limits from Sg90Core (1000–2000 µs, 50 Hz identity), then
+  // optional tighter param window (calibration / mechanical stop).
+  bool modelClamped = false;
+  U16 used = m_sg90.clampPulseUs(raw, modelClamped);
+  if (used < m_min_us) {
     used = m_min_us;
-  } else if (raw > m_max_us) {
+  } else if (used > m_max_us) {
     used = m_max_us;
   }
   if (used != raw) {
     ++m_clampCount;
     this->log_WARNING_LO_PulseClamped(ch, raw, used);
   }
+  (void)modelClamped;
   return used;
 }
 
