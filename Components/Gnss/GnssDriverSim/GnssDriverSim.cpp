@@ -1,6 +1,5 @@
 #include "Components/Gnss/GnssDriverSim/GnssDriverSim.hpp"
 #include "Components/Gnss/GnssDriver/GnssToFpp.hpp"
-#include <cmath>
 
 namespace Components {
 
@@ -10,6 +9,10 @@ static RocketTypes::DrvState toFpp(Gnss::DrvState s) {
   return RocketTypes::DrvState(static_cast<RocketTypes::DrvState::T>(static_cast<U8>(s)));
 }
 
+Components::GnssLockStage GnssDriverSim::toFppLock(Gnss::LockStage s) {
+  return Components::GnssLockStage(static_cast<Components::GnssLockStage::T>(static_cast<U8>(s)));
+}
+
 GnssDriverSim::GnssDriverSim(const char* compName)
     : GnssDriverSimComponentBase(compName), m_core(m_dev, *this), m_lastT_s(0.0), m_haveLastT(false),
       m_faultCount(0), m_started(false), m_lastDataAge(0.f) {}
@@ -17,20 +20,24 @@ GnssDriverSim::GnssDriverSim(const char* compName)
 Gnss::GnssCoreParams GnssDriverSim::readParams() {
   Fw::ParamValid pv; Gnss::GnssCoreParams p;
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
-  p.selftestTicks = this->paramGet_SELFTEST_TICKS(pv);
-  p.noDataWarnTicks = this->paramGet_NODATA_WARN_TICKS(pv);
-  p.noDataTimeoutTicks = this->paramGet_NODATA_TIMEOUT_TICKS(pv);
-  p.noDataFaultTicks = this->paramGet_NODATA_FAULT_TICKS(pv);
-  p.stuckTicks = this->paramGet_STUCK_TICKS(pv);
-  p.fixStaleAge_s = this->paramGet_FIX_STALE_AGE_S(pv);
+  p.pollTracking_s = this->paramGet_POLL_TRACKING_MS(pv) * 1e-3f;
+  p.pollReacqFast_s = this->paramGet_POLL_REACQ_FAST_MS(pv) * 1e-3f;
+  p.pollReacqMed_s = this->paramGet_POLL_REACQ_MED_MS(pv) * 1e-3f;
+  p.pollReacqSlow_s = this->paramGet_POLL_REACQ_SLOW_MS(pv) * 1e-3f;
+  p.reacqFastDur_s = this->paramGet_REACQ_FAST_S(pv);
+  p.reacqMedDur_s = this->paramGet_REACQ_MED_S(pv);
+  p.reacqSlowDur_s = this->paramGet_REACQ_SLOW_S(pv);
+  p.initAcqTimeout_s = this->paramGet_INIT_ACQ_TIMEOUT_S(pv);
+  p.selftestTimeout_s = this->paramGet_SELFTEST_TIMEOUT_S(pv);
+  p.lossNoGga_s = this->paramGet_LOSS_NO_GGA_S(pv);
+  p.stuckPolls = this->paramGet_STUCK_POLLS(pv);
   return p;
 }
 
 void GnssDriverSim::schedIn_handler(FwIndexType, U32) {
-  // 時間一律取自 F´ 時間服務；核心不讀系統時間
   const Fw::Time now = this->getTime();
   const F64 t_s = static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;
-  const F64 dt_s = m_haveLastT ? (t_s - m_lastT_s) : 1.0;
+  const F64 dt_s = m_haveLastT ? (t_s - m_lastT_s) : 0.01;
   m_lastT_s = t_s; m_haveLastT = true;
 
   m_core.setParams(readParams());
@@ -40,10 +47,9 @@ void GnssDriverSim::schedIn_handler(FwIndexType, U32) {
   m_core.tick(t_s);
 
   this->tlmWrite_HsState(toFpp(m_core.state()));
+  this->tlmWrite_LockStage(toFppLock(m_core.lockStage()));
   this->tlmWrite_FaultCount(m_faultCount);
   this->tlmWrite_DataAge(m_lastDataAge);
-  this->tlmWrite_NoDataTicks(m_core.noDataTicks());
-  this->tlmWrite_FixLost(m_core.fixLostLatched() ? 1 : 0);
 }
 
 void GnssDriverSim::SIM_SET_TRAJ_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F64 lat0_deg, F64 lon0_deg, F32 alt0_m,
@@ -88,9 +94,17 @@ void GnssDriverSim::onStateChange(Gnss::DrvState from, Gnss::DrvState to) {
   this->log_ACTIVITY_HI_StateChanged(toFpp(from), toFpp(to));
 }
 
+void GnssDriverSim::onLockStageChange(Gnss::LockStage from, Gnss::LockStage to) {
+  this->log_ACTIVITY_HI_LockStageChanged(toFppLock(from), toFppLock(to));
+}
+
 void GnssDriverSim::onFault(Gnss::GnssFault fault, uint32_t count) {
   m_faultCount++;
   this->log_WARNING_HI_Fault(static_cast<U8>(fault), count);
+}
+
+void GnssDriverSim::onFixFailedOpenSky() {
+  this->log_WARNING_HI_FixFailedOpenSky();
 }
 
 }  // namespace Components

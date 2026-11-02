@@ -1,9 +1,9 @@
 // ======================================================================
 // \title  GnssDriver.hpp
 // \author GNSS組（梁承業）
-// \brief  TEL0157 真驅動 F´ 外殼；解析／握手在 GnssCore（與 F´ 無關，可主機單測）
-// 安裝位置：DS／US 皆可（拓撲決定）。Base ID conventions 0x5000；Sim +0x80。
-// Gate C6：飛行中失鎖／UART 斷線不中止；降級輸出＋prmDb 逾時＋edge 事件（見 GnssCore.hpp）。
+// \brief  TEL0157 真驅動 F´ 外殼；解析／失鎖表在 GnssCore
+// 安裝位置：DS／US 皆可。Base ID 0x5000。schedIn＝rg100Hz。
+// Edward 2026-11-02 失鎖表；Gate C6／E4 只引 ID。
 // ======================================================================
 #ifndef COMPONENTS_GNSSDRIVER_HPP
 #define COMPONENTS_GNSSDRIVER_HPP
@@ -14,12 +14,11 @@
 
 namespace Components {
 
-// UART 適配：ByteStream 推入 → ring buffer；GnssCore 每 tick 經 IGnssUart::readBytes 讀一次
 class GnssUartAdapter final : public Gnss::IGnssUart {
  public:
   static constexpr U32 CAP = 2048;
   int32_t readBytes(uint8_t* buf, uint32_t max) override;
-  void push(const uint8_t* data, U32 len);  // 由 uartRecv_handler 呼叫
+  void push(const uint8_t* data, U32 len);
   void setBusError() { m_busError = true; }
   U32 size() const { return m_size; }
 
@@ -41,9 +40,12 @@ class GnssDriver final : public GnssDriverComponentBase, private Gnss::IGnssSink
 
   void onFix(const Gnss::GnssFix& fix) override;
   void onStateChange(Gnss::DrvState from, Gnss::DrvState to) override;
+  void onLockStageChange(Gnss::LockStage from, Gnss::LockStage to) override;
   void onFault(Gnss::GnssFault fault, uint32_t count) override;
+  void onFixFailedOpenSky() override;
 
   Gnss::GnssCoreParams readParams();
+  static Components::GnssLockStage toFppLock(Gnss::LockStage s);
 
   GnssUartAdapter m_uart;
   Gnss::GnssCore m_core;

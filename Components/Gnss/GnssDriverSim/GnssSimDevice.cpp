@@ -27,7 +27,7 @@ void GnssSimDevice::setNoise(float h, float v, float vel) { m_sigPosH = h; m_sig
 
 void GnssSimDevice::setFault(GnssSimFault f) {
   m_fault = f;
-  if (f == GnssSimFault::NO_DATA) { m_pending.clear(); m_tx.clear(); }
+  if (f == GnssSimFault::NO_DATA) { m_pending.clear(); m_wire.clear(); m_tx.clear(); }
 }
 
 void GnssSimDevice::truthAt(double t, double& lat, double& lon, double& alt) const {
@@ -116,20 +116,25 @@ void GnssSimDevice::advance(double dt_s) {
     if (m_fault != GnssSimFault::NO_DATA) makeEpoch(m_nextEpoch_s);
     m_nextEpoch_s += 1.0;
   }
+  // 釋出的 epoch 先進入 wire；再依 baud 灌入 RX（m_tx）。如此：
+  // - FakeGnssCore 每 10 ms 讀一次時，每 tick ≤ baud/10*dt（T9c）
+  // - GnssCore 每 100 ms poll 一次時，期間 advance 已把額度灌進 m_tx，一次 read 拿完整句
   while (!m_pending.empty() && m_pending.front().release_s <= m_t_s + 1e-9) {
-    for (char c : m_pending.front().bytes) m_tx.push_back(static_cast<uint8_t>(c));
+    for (char c : m_pending.front().bytes) m_wire.push_back(static_cast<uint8_t>(c));
     m_pending.pop_front();
   }
-  // 依 baud 給這個 tick 的傳輸額度（8N1 每位元組 10 bit），不累積超過一個 tick 的量
-  m_byteCredit += m_baud / 10.0 * dt_s;
-  if (m_byteCredit > m_baud / 10.0 * dt_s) m_byteCredit = m_baud / 10.0 * dt_s;
+  // 本 tick 最多灌 baud/10*dt 位元組進 RX；無 wire 時清零額度，避免下一個 burst 疊加
+  m_byteCredit = m_baud / 10.0 * dt_s;
+  while (m_byteCredit >= 1.0 && !m_wire.empty()) {
+    m_tx.push_back(m_wire.front()); m_wire.pop_front(); m_byteCredit -= 1.0;
+  }
 }
 
 int32_t GnssSimDevice::readBytes(uint8_t* buf, uint32_t max) {
   if (m_fault == GnssSimFault::NO_DATA) return 0;
   uint32_t n = 0;
-  while (n < max && !m_tx.empty() && m_byteCredit >= 1.0) {
-    buf[n++] = m_tx.front(); m_tx.pop_front(); m_byteCredit -= 1.0;
+  while (n < max && !m_tx.empty()) {
+    buf[n++] = m_tx.front(); m_tx.pop_front();
   }
   return static_cast<int32_t>(n);
 }

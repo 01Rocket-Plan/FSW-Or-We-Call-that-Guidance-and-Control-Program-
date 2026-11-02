@@ -3,31 +3,31 @@
 #include <cstdint>
 #include "GnssTypes.hpp"
 namespace Gnss {
-// UART: 非阻塞，回傳實際讀到的位元組數 (0 = 無資料, <0 = 匯流排錯誤)。每個 tick 最多呼叫一次。
 class IGnssUart {
  public:
   virtual ~IGnssUart() = default;
   virtual int32_t readBytes(uint8_t* buf, uint32_t max) = 0;
 };
-// 事件碼：READY 中 NO_DATA／NODATA_TIMEOUT／FIX_LOST／FIX_RECOVERED／STUCK 為降級 edge（不進 FAULT）。
-// SELFTEST 中 STUCK、以及 BUS_ERROR／SELFTEST_FAIL 才進 FAULT。TRUNCATED／BAD_CHECKSUM 只計數。
+// BUS_ERROR／SELFTEST_FAIL／INIT_ACQ_TIMEOUT → FAULT。
+// FIX_FAILED → 階段事件＋Edward 原文一次；維持 READY、SLOW 輪詢。
+// BAD_CHECKSUM／TRUNCATED 只計數。
 enum class GnssFault : uint8_t {
   NONE = 0,
-  NO_DATA = 1,
-  BAD_CHECKSUM = 2,
-  TRUNCATED = 3,
-  STUCK = 4,
-  BUS_ERROR = 5,
-  SELFTEST_FAIL = 6,
-  FIX_LOST = 7,        // 曾有 posValid 後失鎖／資料過舊（edge）
-  FIX_RECOVERED = 8,   // 降級後重新取得 3D+HDOP 合格（edge）
-  NODATA_TIMEOUT = 9   // E4：靜默達 NODATA_TIMEOUT_TICKS（edge，維持 READY）
+  BAD_CHECKSUM = 1,
+  TRUNCATED = 2,
+  BUS_ERROR = 3,
+  SELFTEST_FAIL = 4,
+  INIT_ACQ_TIMEOUT = 5,
+  FIX_FAILED = 6
 };
 class IGnssSink {
  public:
   virtual ~IGnssSink() = default;
   virtual void onFix(const GnssFix& fix) = 0;
   virtual void onStateChange(DrvState from, DrvState to) = 0;
+  virtual void onLockStageChange(LockStage from, LockStage to) = 0;
   virtual void onFault(GnssFault fault, uint32_t count) = 0;
+  // Edward 2026-11-02：進入 FIX_FAILED 時呼叫一次（驅動發固定中文事件）
+  virtual void onFixFailedOpenSky() = 0;
 };
 }  // namespace Gnss

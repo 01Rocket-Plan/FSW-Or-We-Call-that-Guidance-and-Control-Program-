@@ -1,9 +1,9 @@
-// GnssDriverSim：同一個 GnssCore 接 GnssSimDevice（base id 0x5080 = 0x5000+0x80）
-// 安裝位置：依部署設定（DS/US 皆可）。Gate C6 行為與真驅動相同（見 GnssCore.hpp）。
+// GnssDriverSim：GnssCore + GnssSimDevice（base 0x5080）。schedIn＝rg100Hz。
+// Edward 2026-11-02 失鎖表與真驅動相同。
 #ifndef GNSS_GNSSDRIVERSIM_HPP
 #define GNSS_GNSSDRIVERSIM_HPP
 #include "Components/Gnss/GnssDriverSim/GnssDriverSimComponentAc.hpp"
-#include "Components/Gnss/GnssDriver/GnssCore.hpp"  // 組長負責；API 假設見 PR 說明
+#include "Components/Gnss/GnssDriver/GnssCore.hpp"
 #include "Components/Gnss/GnssDriverSim/GnssSimDevice.hpp"
 
 namespace Components {
@@ -24,16 +24,20 @@ class GnssDriverSim final : public GnssDriverSimComponentBase, private Gnss::IGn
 
   void onFix(const Gnss::GnssFix& fix) override;
   void onStateChange(Gnss::DrvState from, Gnss::DrvState to) override;
+  void onLockStageChange(Gnss::LockStage from, Gnss::LockStage to) override;
   void onFault(Gnss::GnssFault fault, uint32_t count) override;
+  void onFixFailedOpenSky() override;
+
+  static Components::GnssLockStage toFppLock(Gnss::LockStage s);
+  Gnss::GnssCoreParams readParams();
 
   Gnss::GnssSimDevice m_dev;
   Gnss::GnssCore m_core;
-  F64 m_lastT_s;     // 上一個 tick 的 F´ 時間，用來算模擬器的 dt
+  F64 m_lastT_s;
   bool m_haveLastT;
-  U32 m_faultCount;  // 累計故障次數（遙測）
-  bool m_started;    // 已呼叫 core.start()
+  U32 m_faultCount;
+  bool m_started;
   F32 m_lastDataAge;
-  Gnss::GnssCoreParams readParams();
 };
 
 }  // namespace Components

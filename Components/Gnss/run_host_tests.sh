@@ -15,7 +15,7 @@ CORE="$GNSS/GnssDriver"
 echo "== host T9 (sim device) =="
 $CXX $F "$SIM/test/GnssHostTest.cpp" "$SIM/GnssSimDevice.cpp" -o /tmp/gnss_host_test
 /tmp/gnss_host_test
-echo "== host T1-T8 (GnssCore + SimDevice) =="
+echo "== host T1-T10 (LockStage) (GnssCore + SimDevice) =="
 $CXX $F "$SIM/test/GnssCoreTest.cpp" "$SIM/GnssSimDevice.cpp" "$CORE/GnssCore.cpp" -o /tmp/gnss_core_test
 /tmp/gnss_core_test
 echo "host tests: PASS"

@@ -71,6 +71,9 @@ done
 for f in "$OUT"/GnssSimFaultEnumAc.*; do
   mv "$f" "$OUT/Components/Gnss/GnssDriverSim/"
 done
+for f in "$OUT"/GnssLockStageEnumAc.*; do
+  mv "$f" "$OUT/Components/Gnss/GnssDriver/"
+done
 for f in "$OUT"/*SerializableAc.* "$OUT"/*PortAc.* "$OUT"/*EnumAc.*; do
   mv "$f" "$OUT/RocketTypes/" 2>/dev/null || true
 done
@@ -124,7 +127,7 @@ TUS=(
 )
 # Plus any RocketTypes / Drv Ac we need for the component objects
 shopt -s nullglob
-for f in "$OUT/RocketTypes"/*Ac.cpp "$OUT/Drv/ByteStreamDriverModel"/*Ac.cpp "$OUT/Components/Gnss/GnssDriverSim"/*EnumAc.cpp; do
+for f in "$OUT/RocketTypes"/*Ac.cpp "$OUT/Drv/ByteStreamDriverModel"/*Ac.cpp "$OUT/Components/Gnss/GnssDriverSim"/*EnumAc.cpp "$OUT/Components/Gnss/GnssDriver"/*EnumAc.cpp; do
   TUS+=("$f")
 done
 shopt -u nullglob

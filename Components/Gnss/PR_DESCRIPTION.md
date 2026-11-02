@@ -1,53 +1,52 @@
-# [GNSS][梁承業] GnssDriver＋GnssDriverSim（TEL0157，GnssFix v0.2）— Edward PR #6 回覆
+# [GNSS][梁承業] GnssDriver＋GnssDriverSim — Edward 2026-11-02 失鎖表
 
 分支：`Gnss/gnss-driver`（本機提交；**請首席工程師推送**，執行者不推 GitHub）
 
-- 安裝位置：**DS／US 皆可**（由拓撲決定；檔頭與本說明皆註明）。
-- Base ID：依 `docs/conventions.md` 為 **GnssDriver `0x5000`／Sim `0x5080`**（組內曾暫定 `0x0A00` 已作廢）。
+- 安裝位置：**DS／US 皆可**。Base ID：**GnssDriver `0x5000`／Sim `0x5080`**。
+- 規格來源：**Edward 2026-11-02 失鎖表**（取代先前「維持 READY、只發事件」對 C6／E4 的解讀）。閘門只引 **C6**／**E4** ID。
 
-## Edward 審查回覆 + 交叉審查補洞
+## 失鎖／重鎖階段機
 
-### 1. FPP 埠註釋（指令分發器等）
-- `cmdIn`／`cmdRegOut`／`cmdResponseOut`：Traditional Chinese `@` → **指令分發器**（Svc.CommandDispatcher／cmdDisp）。
-- 其餘埠補齊短註釋（schedIn、fixOut、uart*、time、prmDb、tlm、log）。Sim 同步。
+| Stage | Poll interval | Duration |
+|---|---|---|
+| TRACKING | 100 ms | continuous |
+| REACQ_FAST（on loss） | 100 ms | 15 s |
+| REACQ_MED | 1000 ms | 10 s |
+| REACQ_SLOW | 2000 ms | 30 s |
+| FIX_FAILED | （續 SLOW） | — |
 
-### 2. Gate C6／E4 — 飛行中失鎖／斷線／完全逾時
-（閘門原文僅本機 `.local_gate*`；此處只引 **C6**／**E4**。）
+- 三段合計 **55 s**。任一段重鎖成功 → **TRACKING**。
+- 進 `FIX_FAILED` → 一次 `FixFailedOpenSky`：「請檢察環境開放條件以利天線運作」。
+- 開機 `ACQ` ≤ **300 s**；逾時 → `FAULT`＋`INIT_ACQ_TIMEOUT`。
+- `schedIn`＝**rg100Hz**；tick divider 決定 100／1000／2000 ms poll；每 poll 一次 UART；不 sleep。
+- 重鎖中 `posValid=false`、`dataAge` 增長；C6 不中止；`fixOut` → tlm／sdLogger only。
+- UART 靜默與 STUCK 併入失鎖條件；刪除冗餘 `NODATA_*`／`FIX_STALE_*` 參數。
 
-| 行為 | 實作 |
-|------|------|
-| 降級輸出 | READY 每 tick 仍出 `GnssFix`；`posValid=false`；`dataAge_s`↑ |
-| 失鎖（仍收 NMEA） | `FIX_LOST` edge；維持 READY |
-| UART 靜默 | `NODATA_WARN_TICKS`（預設 2）→ `NO_DATA` edge |
-| **E4 完全逾時** | `NODATA_TIMEOUT_TICKS`（預設 **10**＝10 s@rg1Hz）→ **`NODATA_TIMEOUT` edge 一次／episode**；**維持 READY** |
-| 進 FAULT（靜默） | `NODATA_FAULT_TICKS` 預設 **0**（C6）；>0 可選地面 BIT |
-| 資料過舊 | `FIX_STALE_AGE_S`（預設 1.5 s） |
-| **READY 後 STUCK** | 視同失鎖：維持 READY、`posValid=false`、`dataAge`↑、`STUCK` edge 一次；恢復 → `FIX_RECOVERED` |
-| **SELFTEST 中 STUCK** | 仍進 **FAULT**（帶起／BIT） |
-| 恢復 | 3D+HDOP+未過舊+非 STUCK → `FIX_RECOVERED` |
-| 遙測 | `DataAge`、`NoDataTicks`、`FixLost`（+ HsState／FixSeq／…） |
+### prmDb
+`HDOP_MAX`、`POLL_TRACKING_MS`、`POLL_REACQ_FAST_MS`、`POLL_REACQ_MED_MS`、`POLL_REACQ_SLOW_MS`、`REACQ_FAST_S`、`REACQ_MED_S`、`REACQ_SLOW_S`、`INIT_ACQ_TIMEOUT_S`、`SELFTEST_TIMEOUT_S`、`LOSS_NO_GGA_S`、`STUCK_POLLS`。
 
-**假設（gate 未寫死，見 `GnssCore.hpp` A1–A6）：**
-- A1. 接收機內部重鎖；驅動 rg1Hz 輪詢。
-- A2. READY 後 STUCK＝降級；SELFTEST 中 STUCK＝FAULT。
-- A3. BUS_ERROR／SELFTEST_FAIL → FAULT。
-- A4. `FIX_STALE_AGE_S` 或 STUCK 中 → `posValid=false`。
-- A5. `NODATA_TIMEOUT_TICKS` 預設 10；WARN／TIMEOUT／FAULT 分層；FAULT 預設關。
-- A6. SELFTEST 需 ≥2 tick 且最新 GGA 非重複才進 READY（以便帶起偵測 STUCK）。
+### 遙測
+`HsState`、`LockStage`、`FaultCount`、`BadChecksumCount`、`TruncatedCount`、`FixSeq`、`DataAge`。
 
-### 3. 測試
-- T1–T8（T8：READY-STUCK 不進 FAULT）；T10–T12；**T13** 含 NO_FIX **與 NO_DATA** 拍動；**T14** `NODATA_TIMEOUT`；**T15** STUCK 降級＋恢復（dataAge／seq）；**T16** SELFTEST STUCK→FAULT。
+**假設（`GnssCore.hpp` A1–A6）：**
+- A1. 開機 ACQ 逾時 → `FAULT`（鎖存至 `start()`）；屬 BIT，非飛行重鎖。
+- A2. `FIX_FAILED` 後仍以 SLOW 輪詢，鎖定成功回 TRACKING（C6 不中止）。
+- A3. 失鎖＝劣質 GGA ／ `LOSS_NO_GGA_S` 無新 GGA（含靜默）／ `STUCK_POLLS`。
+- A4. 合格 3D＝`FIX_3D` 且 `hdop<=HDOP_MAX`；重鎖中 `posValid=false`。
+- A5. NMEA 常 1 Hz；空 poll 正常，不以單次空讀當失鎖。
+- A6. `BUS_ERROR` → `FAULT`；`TRUNCATED`／`BAD_CHECKSUM` 只計數。
+
+## 測試
+- Host T9（SimDevice）＋ T1–T10（LockStage）：各階段轉換與計時、各階段恢復、`FIX_FAILED` 只發一次、5 分鐘級 ACQ 逾時（縮時）、拍動、靜默／STUCK。
 - `fpp-check`、`fpp-to-cpp` + F´ v4.4.1 `-Wall`、`git bundle verify`。
 
-## 內容（既有）
-- `Components/Gnss/GnssDriver/`：真驅動（`GnssCore` NMEA GGA/RMC/VTG/GSA）。
-- `Components/Gnss/GnssDriverSim/`：同一核心 + `GnssSimDevice`。
-- `Components/Gnss/fpp_stubs/`：GNSS 專用 stubs（**未改** EnvSensing stubs）。
-- `RocketTypes`：僅 GNSS 標註區段；未改 `GnssFix` 欄位。
+## 內容
+- `Components/Gnss/GnssDriver/`、`GnssDriverSim/`；`fpp_stubs/`（未改 EnvSensing stubs）。
+- `RocketTypes`：僅 GNSS 標註；未改 `GnssFix` 欄位。
 
 ## 已知缺口
 1. 主幹無 vendored `lib/fprime`；編譯檢查對 `/workspace/fprime441`。
-2. 拓撲尚未接 rg1Hz、prmDb、tlmSend、sdLogger、UART。
+2. 拓撲尚未接 **rg100Hz**、prmDb、tlmSend、sdLogger、UART。
 3. 僅 NMEA；UBX 未做。
 4. 共用機以 `python3 -m ziglang c++` 編譯。
-5. 執行者不推遠端；請首席工程師推 `Gnss/gnss-driver` 更新 PR #6。
+5. 執行者不推遠端；請首席工程師推 `Gnss/gnss-driver`。

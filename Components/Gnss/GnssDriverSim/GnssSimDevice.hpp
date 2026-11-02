@@ -28,7 +28,7 @@ class GnssSimDevice : public IGnssUart {
  public:
   GnssSimDevice();
 
-  // 每個 tick 在核心 tick 之前呼叫；dt_s = tick 週期（rg1Hz 時為 1.0）
+  // 每個 tick 在核心 tick 之前呼叫；dt_s = 本拍時長（rg100Hz 時約 0.01；epoch 仍 1 Hz）
   void advance(double dt_s);
   int32_t readBytes(uint8_t* buf, uint32_t max) override;
 
@@ -75,7 +75,8 @@ class GnssSimDevice : public IGnssUart {
   uint32_t m_rng = 0x12345678u;
   std::string m_lastEpochBytes;  // STUCK 用
   std::deque<Pending> m_pending;
-  std::deque<uint8_t> m_tx;
+  std::deque<uint8_t> m_wire;  // 待依 baud 灌入 RX 的位元組
+  std::deque<uint8_t> m_tx;    // 已到 RX、可供 readBytes
 };
 
 }  // namespace Gnss
