@@ -1,5 +1,5 @@
 // GnssDriverSim：同一個 GnssCore 接 GnssSimDevice（base id 0x5080 = 0x5000+0x80）
-// 安裝位置：依部署設定（DS/US 皆可）。
+// 安裝位置：依部署設定（DS/US 皆可）。Gate C6 行為與真驅動相同（見 GnssCore.hpp）。
 #ifndef GNSS_GNSSDRIVERSIM_HPP
 #define GNSS_GNSSDRIVERSIM_HPP
 #include "Components/Gnss/GnssDriverSim/GnssDriverSimComponentAc.hpp"
@@ -32,6 +32,7 @@ class GnssDriverSim final : public GnssDriverSimComponentBase, private Gnss::IGn
   bool m_haveLastT;
   U32 m_faultCount;  // 累計故障次數（遙測）
   bool m_started;    // 已呼叫 core.start()
+  F32 m_lastDataAge;
   Gnss::GnssCoreParams readParams();
 };
 

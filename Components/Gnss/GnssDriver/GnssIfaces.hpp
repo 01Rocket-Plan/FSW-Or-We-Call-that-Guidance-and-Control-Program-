@@ -9,7 +9,19 @@ class IGnssUart {
   virtual ~IGnssUart() = default;
   virtual int32_t readBytes(uint8_t* buf, uint32_t max) = 0;
 };
-enum class GnssFault : uint8_t { NONE = 0, NO_DATA, BAD_CHECKSUM, TRUNCATED, STUCK, BUS_ERROR, SELFTEST_FAIL };
+// 事件碼：NO_DATA／FIX_LOST／FIX_RECOVERED 在 READY 中為「降級通報」（edge），不進 FAULT。
+// BUS_ERROR／STUCK／SELFTEST_FAIL 才進 FAULT。TRUNCATED／BAD_CHECKSUM 只計數。
+enum class GnssFault : uint8_t {
+  NONE = 0,
+  NO_DATA = 1,
+  BAD_CHECKSUM = 2,
+  TRUNCATED = 3,
+  STUCK = 4,
+  BUS_ERROR = 5,
+  SELFTEST_FAIL = 6,
+  FIX_LOST = 7,       // 曾有 posValid 後失鎖／資料過舊（edge，只報一次直到恢復）
+  FIX_RECOVERED = 8   // 失鎖後重新取得 3D+HDOP 合格（edge）
+};
 // 輸出回呼: 時間由核心呼叫端注入 (F´ 時間服務)，核心不讀系統時間。
 class IGnssSink {
  public:

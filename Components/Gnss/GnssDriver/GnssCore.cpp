@@ -19,9 +19,35 @@ long daysFromCivil(int y, unsigned m, unsigned d) { y -= m <= 2; long era = (y >
 uint32_t fnv(const char* s) { uint32_t h = 2166136261u; while (*s) { h ^= uint8_t(*s++); h *= 16777619u; } return h; }
 }  // namespace
 
-void GnssCore::start() { m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN; setState(DrvState::INIT); }
+void GnssCore::start() {
+  m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN;
+  m_fixLostLatched = false; m_noDataLatched = false; m_hadPosValid = false;
+  m_noDataTicks = 0; m_sameGgaTicks = 0; m_gotValidSentence = false; m_haveFix = false;
+  setState(DrvState::INIT);
+}
 
 void GnssCore::setState(DrvState s) { if (s == m_state) return; DrvState f = m_state; m_state = s; m_stateTicks = 0; m_sink.onStateChange(f, s); }
+
+bool GnssCore::computePosOk(float dataAge_s) const {
+  if (m_fix.fixType != FixType::FIX_3D) return false;
+  if (!(m_fix.hdop <= m_p.hdopMax)) return false;
+  if (dataAge_s > m_p.fixStaleAge_s) return false;
+  return true;
+}
+
+void GnssCore::updateLockEvents(bool posOk) {
+  // Gate C6：FIX_FAILED／失鎖只報一次；恢復後再報 FIX_RECOVERED，之後可再失鎖再報一次。
+  if (posOk) {
+    m_hadPosValid = true;
+    if (m_fixLostLatched) {
+      m_fixLostLatched = false;
+      m_sink.onFault(GnssFault::FIX_RECOVERED, 1);
+    }
+  } else if (m_hadPosValid && !m_fixLostLatched) {
+    m_fixLostLatched = true;
+    m_sink.onFault(GnssFault::FIX_LOST, 1);
+  }
+}
 
 void GnssCore::tick(double t_s) {
   if (m_state == DrvState::OFF) return;
@@ -29,7 +55,12 @@ void GnssCore::tick(double t_s) {
   uint8_t buf[512]; int32_t n = m_uart.readBytes(buf, sizeof(buf));  // 每 tick 只讀一次
   if (n < 0) { m_sink.onFault(GnssFault::BUS_ERROR, 1); setState(DrvState::FAULT); return; }
   for (int32_t i = 0; i < n; ++i) feedByte(buf[i], t_s);
-  m_noDataTicks = (n == 0) ? m_noDataTicks + 1 : 0;
+  if (n == 0) {
+    ++m_noDataTicks;
+  } else {
+    m_noDataTicks = 0;
+    m_noDataLatched = false;  // 位元組恢復 → 允許下一段靜默再報一次 NO_DATA
+  }
   ++m_stateTicks;
   switch (m_state) {
     case DrvState::INIT: setState(DrvState::SELFTEST); break;  // UART 已由 F´ 開好，直接進自測
@@ -37,10 +68,25 @@ void GnssCore::tick(double t_s) {
       if (m_gotValidSentence) setState(DrvState::READY);
       else if (m_stateTicks >= m_p.selftestTicks) { m_sink.onFault(GnssFault::SELFTEST_FAIL, 1); setState(DrvState::FAULT); }
       break;
-    case DrvState::READY:
-      if (m_noDataTicks >= m_p.noDataFaultTicks) { m_sink.onFault(GnssFault::NO_DATA, m_noDataTicks); setState(DrvState::FAULT); }
-      else if (m_sameGgaTicks >= m_p.stuckTicks) { m_sink.onFault(GnssFault::STUCK, m_sameGgaTicks); setState(DrvState::FAULT); }
+    case DrvState::READY: {
+      // C6：飛行中靜默／失鎖不自己中止。預設 noDataFaultTicks=0 → 永不因靜默進 FAULT。
+      if (m_p.noDataWarnTicks > 0 && m_noDataTicks >= m_p.noDataWarnTicks && !m_noDataLatched) {
+        m_noDataLatched = true;
+        m_sink.onFault(GnssFault::NO_DATA, m_noDataTicks);
+      }
+      if (m_p.noDataFaultTicks > 0 && m_noDataTicks >= m_p.noDataFaultTicks) {
+        m_sink.onFault(GnssFault::NO_DATA, m_noDataTicks);
+        setState(DrvState::FAULT);
+        break;
+      }
+      // 假設 A2：STUCK 視為硬體異常 → FAULT
+      if (m_sameGgaTicks >= m_p.stuckTicks) {
+        m_sink.onFault(GnssFault::STUCK, m_sameGgaTicks);
+        setState(DrvState::FAULT);
+        break;
+      }
       break;
+    }
     case DrvState::FAULT:  // 恢復: 重新收到新鮮的合法 GGA 即回 SELFTEST
       if (m_newGga && m_sameGgaTicks == 0) { m_gotValidSentence = false; setState(DrvState::SELFTEST); }
       break;
@@ -50,9 +96,12 @@ void GnssCore::tick(double t_s) {
 }
 
 void GnssCore::emitFix(double t_s) {
-  // READY 中每 tick 輸出一次 (seq 每次輸出 +1)；dataAge_s = 現在 - 最後一次收到新 GGA，下游可看出資料變舊
-  GnssFix f = m_fix; f.seq = ++m_seq; f.t_s = t_s; f.valid = true; f.dataAge_s = float(t_s - m_lastFixT_s);
-  f.posValid = (f.fixType == FixType::FIX_3D) && (f.hdop <= m_p.hdopMax);
+  // READY 中每 tick 輸出一次 (seq 每次輸出 +1)；dataAge_s = 現在 - 最後一次收到新 GGA
+  GnssFix f = m_fix; f.seq = ++m_seq; f.t_s = t_s; f.valid = true;
+  f.dataAge_s = float(t_s - m_lastFixT_s);
+  const bool posOk = computePosOk(f.dataAge_s);
+  f.posValid = posOk;
+  updateLockEvents(posOk);
   m_sink.onFix(f);
 }
 

@@ -30,15 +30,17 @@ void GnssUartAdapter::push(const uint8_t* data, U32 len) {
 }
 
 GnssDriver::GnssDriver(const char* compName)
-    : GnssDriverComponentBase(compName), m_core(m_uart, *this), m_started(false), m_faultCount(0) {}
+    : GnssDriverComponentBase(compName), m_core(m_uart, *this), m_started(false), m_faultCount(0), m_lastDataAge(0.f) {}
 
 Gnss::GnssCoreParams GnssDriver::readParams() {
   Fw::ParamValid pv;
   Gnss::GnssCoreParams p;
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
   p.selftestTicks = this->paramGet_SELFTEST_TICKS(pv);
+  p.noDataWarnTicks = this->paramGet_NODATA_WARN_TICKS(pv);
   p.noDataFaultTicks = this->paramGet_NODATA_FAULT_TICKS(pv);
   p.stuckTicks = this->paramGet_STUCK_TICKS(pv);
+  p.fixStaleAge_s = this->paramGet_FIX_STALE_AGE_S(pv);
   return p;
 }
 
@@ -68,9 +70,13 @@ void GnssDriver::schedIn_handler(FwIndexType, U32) {
   this->tlmWrite_FaultCount(m_faultCount);
   this->tlmWrite_BadChecksumCount(m_core.badChecksumCount());
   this->tlmWrite_TruncatedCount(m_core.truncatedCount());
+  this->tlmWrite_DataAge(m_lastDataAge);
+  this->tlmWrite_NoDataTicks(m_core.noDataTicks());
+  this->tlmWrite_FixLost(m_core.fixLostLatched() ? 1 : 0);
 }
 
 void GnssDriver::onFix(const Gnss::GnssFix& f) {
+  m_lastDataAge = f.dataAge_s;
   this->tlmWrite_FixSeq(f.seq);
   if (!this->isConnected_fixOut_OutputPort(0)) return;
   this->fixOut_out(0, Gnss::toFpp(f));

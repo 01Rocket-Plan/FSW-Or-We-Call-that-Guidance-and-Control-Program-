@@ -11,14 +11,17 @@ static RocketTypes::DrvState toFpp(Gnss::DrvState s) {
 }
 
 GnssDriverSim::GnssDriverSim(const char* compName)
-    : GnssDriverSimComponentBase(compName), m_core(m_dev, *this), m_lastT_s(0.0), m_haveLastT(false), m_faultCount(0), m_started(false) {}
+    : GnssDriverSimComponentBase(compName), m_core(m_dev, *this), m_lastT_s(0.0), m_haveLastT(false),
+      m_faultCount(0), m_started(false), m_lastDataAge(0.f) {}
 
 Gnss::GnssCoreParams GnssDriverSim::readParams() {
   Fw::ParamValid pv; Gnss::GnssCoreParams p;
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
   p.selftestTicks = this->paramGet_SELFTEST_TICKS(pv);
+  p.noDataWarnTicks = this->paramGet_NODATA_WARN_TICKS(pv);
   p.noDataFaultTicks = this->paramGet_NODATA_FAULT_TICKS(pv);
   p.stuckTicks = this->paramGet_STUCK_TICKS(pv);
+  p.fixStaleAge_s = this->paramGet_FIX_STALE_AGE_S(pv);
   return p;
 }
 
@@ -37,6 +40,9 @@ void GnssDriverSim::schedIn_handler(FwIndexType, U32) {
 
   this->tlmWrite_HsState(toFpp(m_core.state()));
   this->tlmWrite_FaultCount(m_faultCount);
+  this->tlmWrite_DataAge(m_lastDataAge);
+  this->tlmWrite_NoDataTicks(m_core.noDataTicks());
+  this->tlmWrite_FixLost(m_core.fixLostLatched() ? 1 : 0);
 }
 
 void GnssDriverSim::SIM_SET_TRAJ_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, F64 lat0_deg, F64 lon0_deg, F32 alt0_m,
@@ -71,6 +77,7 @@ void GnssDriverSim::SIM_SET_HDOP_BIAS_cmdHandler(FwOpcodeType opCode, U32 cmdSeq
 }
 
 void GnssDriverSim::onFix(const Gnss::GnssFix& f) {
+  m_lastDataAge = f.dataAge_s;
   this->tlmWrite_FixSeq(f.seq);
   if (!this->isConnected_fixOut_OutputPort(0)) return;
   this->fixOut_out(0, Gnss::toFpp(f));

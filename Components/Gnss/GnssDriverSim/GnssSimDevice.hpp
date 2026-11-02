@@ -1,5 +1,6 @@
 // GnssSimDevice：TEL0157 的 NMEA 位元組流模擬器（給 GnssDriverSim 與 host 測試）
 // 安裝位置：依部署設定（DS/US 皆可），與真驅動相同。
+// Gate C6：可注入 NO_FIX／NO_DATA 驗證飛行中失鎖／斷線降級（核心不中止）。
 // 原則：軌跡「真值」只存在本類別內部；核心只能透過 IGnssUart::readBytes 看到 NMEA 位元組，
 //      量測 = 真值 + 雜訊 + 延遲 + 偶發掉 fix。不 sleep、不讀系統時間，時間由 advance(dt_s) 推進。
 #ifndef GNSS_GNSSSIMDEVICE_HPP

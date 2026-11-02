@@ -3,6 +3,7 @@
 // \author GNSS組（梁承業）
 // \brief  TEL0157 真驅動 F´ 外殼；解析／握手在 GnssCore（與 F´ 無關，可主機單測）
 // 安裝位置：DS／US 皆可（拓撲決定）。Base ID conventions 0x5000；Sim +0x80。
+// Gate C6：飛行中失鎖／UART 斷線不中止；降級輸出＋prmDb 逾時＋edge 事件（見 GnssCore.hpp）。
 // ======================================================================
 #ifndef COMPONENTS_GNSSDRIVER_HPP
 #define COMPONENTS_GNSSDRIVER_HPP
@@ -48,6 +49,7 @@ class GnssDriver final : public GnssDriverComponentBase, private Gnss::IGnssSink
   Gnss::GnssCore m_core;
   bool m_started;
   U32 m_faultCount;
+  F32 m_lastDataAge;
 };
 
 }  // namespace Components
