@@ -6,7 +6,7 @@ namespace Components {
 
 namespace {
 enum DropReason : U8 { DROP_NOT_READY = 1, DROP_SEQ = 2 };
-enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_PWM = 2 };
+enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_PWM = 2, FAULT_MODEL_ROLE = 3 };
 enum LockSource : U8 { LOCK_CMD = 1, LOCK_TIMEOUT = 2 };
 }  // namespace
 
@@ -25,7 +25,6 @@ ServoDriver::ServoDriver(const char* compName)
       m_clampCount(0),
       m_dropCount(0),
       m_stateEnter_s(0.0),
-      // 伺服馬達只吃 PWM 訊號，只負責接收 MCU 指令並作動；與整機 I2C 通訊協議分屬不同層級，不衝突。
       m_pwmConfigured(false),
       m_ledcTimerId(ServoPwmPins::TAIL_LEDC_TIMER),
       m_gpioN(0),
@@ -35,7 +34,9 @@ ServoDriver::ServoDriver(const char* compName)
       m_cmdTimeout_s(0.05f),
       m_pwmHz(50),
       m_channelCount(4),
-      m_selftestDeadline_s(1.0f) {
+      m_selftestDeadline_s(1.0f),
+      m_model(Components::ServoModel::SG90),
+      m_role(Components::ServoRole::TAIL) {
   for (U16& p : m_out_us) {
     p = 1500;
   }
@@ -69,6 +70,8 @@ void ServoDriver::configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId) {
 
 void ServoDriver::loadParams() {
   Fw::ParamValid v;
+  m_model = this->paramGet_model(v);
+  m_role = this->paramGet_role(v);
   m_neutral_us = this->paramGet_neutral_us(v);
   m_min_us = this->paramGet_pulse_min_us(v);
   m_max_us = this->paramGet_pulse_max_us(v);
@@ -130,6 +133,20 @@ bool ServoDriver::pwmSelftestOk() const {
          m_pwmHz >= 20 && m_pwmHz <= 400 && m_min_us < m_max_us;
 }
 
+bool ServoDriver::modelRoleOk() const {
+  // Formal identity: (SG90,TAIL,4) or (SG90,GIMBAL,2) only
+  if (m_model != Components::ServoModel::SG90) {
+    return false;
+  }
+  if (m_role == Components::ServoRole::TAIL && m_channelCount == 4) {
+    return true;
+  }
+  if (m_role == Components::ServoRole::GIMBAL && m_channelCount == 2) {
+    return true;
+  }
+  return false;
+}
+
 U16 ServoDriver::clampPulse(U8 ch, U16 raw) {
   U16 used = raw;
   if (raw < m_min_us) {
@@ -173,6 +190,8 @@ void ServoDriver::writeTlm() {
   this->tlmWrite_uvState(m_uv);
   this->tlmWrite_clampCount(m_clampCount);
   this->tlmWrite_dropCount(m_dropCount);
+  this->tlmWrite_model(m_model);
+  this->tlmWrite_role(m_role);
 }
 
 void ServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
@@ -228,12 +247,17 @@ void ServoDriver::schedIn_handler(FwIndexType, U32) {
       enterState(RocketTypes::DrvState::SELFTEST);
       break;
     case RocketTypes::DrvState::SELFTEST:
-      if (pwmSelftestOk()) {
+      if (!modelRoleOk()) {
+        this->log_WARNING_HI_ModelRoleMismatch(m_model, m_role, m_channelCount);
+        enterState(RocketTypes::DrvState::FAULT, FAULT_MODEL_ROLE);
+      } else if (pwmSelftestOk()) {
         for (U8 i = 0; i < 4; ++i) {
           m_out_us[i] = m_neutral_us;
         }
         m_lockNeutral = true;
         applyOutputs(false);
+        this->tlmWrite_model(m_model);
+        this->tlmWrite_role(m_role);
         enterState(RocketTypes::DrvState::READY);
       } else if ((t - m_stateEnter_s) >= static_cast<F64>(m_selftestDeadline_s)) {
         enterState(RocketTypes::DrvState::FAULT, FAULT_SELFTEST);

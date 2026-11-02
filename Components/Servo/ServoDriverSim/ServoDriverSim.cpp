@@ -5,7 +5,7 @@ namespace Components {
 namespace {
 // 與真驅動 ServoDriver.cpp 相同的原因碼
 enum DropReason : U8 { DROP_NOT_READY = 1, DROP_SEQ = 2 };
-enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_PWM = 2 };
+enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_PWM = 2, FAULT_MODEL_ROLE = 3 };
 enum LockSource : U8 { LOCK_CMD = 1, LOCK_TIMEOUT = 2 };
 }  // namespace
 
@@ -16,11 +16,17 @@ ServoDriverSim::ServoDriverSim(const char* compName)
       m_tick(0),
       m_periodTicks(20),
       m_started(false),
-      m_lockNeutral(false) {}
+      m_lockNeutral(false),
+      m_model(Components::ServoModel::SG90),
+      m_role(Components::ServoRole::TAIL) {}
 
 void ServoDriverSim::parametersLoaded() {
   Fw::ParamValid v;
   ServoSim::ServoParams p;
+  m_model = this->paramGet_model(v);
+  m_role = this->paramGet_role(v);
+  p.model = static_cast<ServoSim::ServoModel>(static_cast<U8>(m_model.e));
+  p.role = static_cast<ServoSim::ServoRole>(static_cast<U8>(m_role.e));
   p.neutral_us = this->paramGet_neutral_us(v);
   p.pulse_min_us = this->paramGet_pulse_min_us(v);
   p.pulse_max_us = this->paramGet_pulse_max_us(v);
@@ -31,7 +37,7 @@ void ServoDriverSim::parametersLoaded() {
   if (p.channel_count > 4) p.channel_count = 4;
   p.selftest_deadline_s = this->paramGet_selftest_deadline_s(v);
   m_core.configure(p);
-  m_periodTicks = hz ? (1000u / hz) : 20u;  // 接 rg1kHz，與真驅動相同的換算
+  m_periodTicks = hz ? (1000u / hz) : 20u;  // rg1kHz → pwm period ticks
   if (m_periodTicks == 0) m_periodTicks = 1;
 }
 
@@ -75,10 +81,15 @@ void ServoDriverSim::writeTlm() {
   this->tlmWrite_uvState(static_cast<RocketTypes::UvState::T>(m_core.uvState()));
   this->tlmWrite_clampCount(m_core.clampCount());
   this->tlmWrite_dropCount(m_core.dropCount());
+  this->tlmWrite_model(m_model);
+  this->tlmWrite_role(m_role);
 }
 
 void ServoDriverSim::evEnterReady() { this->log_ACTIVITY_HI_EnterReady(); }
-void ServoDriverSim::evEnterFault(ServoSim::FaultReason) { this->log_WARNING_HI_EnterFault(FAULT_SELFTEST); }
+void ServoDriverSim::evEnterFault(ServoSim::FaultReason r) {
+  const U8 code = (r == ServoSim::FaultReason::MODEL_ROLE_MISMATCH) ? FAULT_MODEL_ROLE : FAULT_SELFTEST;
+  this->log_WARNING_HI_EnterFault(code);
+}
 void ServoDriverSim::evCmdDropped(uint32_t seq, ServoSim::DropReason r) {
   this->log_WARNING_LO_CmdDropped(seq, r == ServoSim::DropReason::NOT_READY ? DROP_NOT_READY : DROP_SEQ);
 }
@@ -88,5 +99,11 @@ void ServoDriverSim::evLockNeutral(ServoSim::NeutralSource s) {
   this->log_ACTIVITY_HI_LockNeutral(s == ServoSim::NeutralSource::CMD ? LOCK_CMD : LOCK_TIMEOUT);
 }
 void ServoDriverSim::evUvSeen(ServoSim::UvState st) { this->log_ACTIVITY_HI_UvSeen(static_cast<RocketTypes::UvState::T>(st)); }
+void ServoDriverSim::evModelRoleMismatch(ServoSim::ServoModel model, ServoSim::ServoRole role, uint8_t channel_count) {
+  this->log_WARNING_HI_ModelRoleMismatch(
+      static_cast<Components::ServoModel::T>(model),
+      static_cast<Components::ServoRole::T>(role),
+      channel_count);
+}
 
 }  // namespace Components

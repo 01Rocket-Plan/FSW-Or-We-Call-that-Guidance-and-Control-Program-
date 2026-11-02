@@ -6,7 +6,7 @@ namespace Components {
 
 namespace {
 enum DropReason : U8 { DROP_NOT_READY = 1, DROP_SEQ = 2, DROP_INVALID = 3 };
-enum FaultReason : U8 { FAULT_SELFTEST = 1 };
+enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_MODEL_ROLE = 3 };
 constexpr U8 kSepBits = 0x0F;
 }  // namespace
 
@@ -28,7 +28,9 @@ SepServoDriver::SepServoDriver(const char* compName)
       m_fireHold_s(0.5f),
       m_min_us(1000),
       m_max_us(2000),
-      m_selftestDeadline_s(1.0f) {
+      m_selftestDeadline_s(1.0f),
+      m_model(Components::ServoModel::MG996R),
+      m_role(Components::ServoRole::SEP) {
   for (U8 i = 0; i < 4; ++i) {
     m_out_us[i] = 1000;
     m_fireStart_s[i] = 0.0;
@@ -61,6 +63,8 @@ void SepServoDriver::configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId) {
 
 void SepServoDriver::loadParams() {
   Fw::ParamValid v;
+  m_model = this->paramGet_model(v);
+  m_role = this->paramGet_role(v);
   m_lock_us = this->paramGet_lock_us(v);
   m_fire_us = this->paramGet_fire_us(v);
   m_fireHold_s = this->paramGet_fire_hold_s(v);
@@ -120,6 +124,10 @@ U16 SepServoDriver::clampUs(U16 raw) const {
   return raw;
 }
 
+bool SepServoDriver::modelRoleOk() const {
+  return m_model == Components::ServoModel::MG996R && m_role == Components::ServoRole::SEP;
+}
+
 U8 SepServoDriver::readFiredMask() {
   U8 mask = 0;
   if (this->isConnected_sepReleasedGet_OutputPort(0)) {
@@ -175,6 +183,8 @@ void SepServoDriver::writeTlm() {
   this->tlmWrite_firedMask(readFiredMask());
   this->tlmWrite_lockedMask(m_lockedMask);
   this->tlmWrite_uvState(m_uv);
+  this->tlmWrite_model(m_model);
+  this->tlmWrite_role(m_role);
 }
 
 void SepServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
@@ -224,11 +234,16 @@ void SepServoDriver::schedIn_handler(FwIndexType, U32) {
       enterState(RocketTypes::DrvState::SELFTEST);
       break;
     case RocketTypes::DrvState::SELFTEST:
-      if (m_pwmConfigured && m_pwm.ready() && m_min_us < m_max_us) {
+      if (!modelRoleOk()) {
+        this->log_WARNING_HI_ModelRoleMismatch(m_model, m_role);
+        enterState(RocketTypes::DrvState::FAULT, FAULT_MODEL_ROLE);
+      } else if (m_pwmConfigured && m_pwm.ready() && m_min_us < m_max_us) {
         // Seed lockedMask from NV (already-fired stay released state)
         const U8 fired = readFiredMask();
         m_lockedMask = static_cast<U8>((~fired) & kSepBits);
         applyPwm();
+        this->tlmWrite_model(m_model);
+        this->tlmWrite_role(m_role);
         enterState(RocketTypes::DrvState::READY);
       } else if ((t - m_stateEnter_s) >= static_cast<F64>(m_selftestDeadline_s)) {
         enterState(RocketTypes::DrvState::FAULT, FAULT_SELFTEST);

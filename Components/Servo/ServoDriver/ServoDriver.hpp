@@ -1,9 +1,4 @@
-// ======================================================================
-// \title  ServoDriver.hpp
-// \author 伺服馬達驅動組（Evgeny）
-// \brief  SG90 PWM 驅動（尾翼／雲台實例）；握手 + 50 Hz 零階保持
-// Base ID 0x3000（雲台實例 0x3200）
-// ======================================================================
+// ServoDriver.hpp — SG90 PWM driver (TAIL/GIMBAL); handshake + 50 Hz ZOH. Base 0x3000 / 0x3200.
 #ifndef COMPONENTS_SERVODRIVER_HPP
 #define COMPONENTS_SERVODRIVER_HPP
 
@@ -36,6 +31,7 @@ class ServoDriver final : public ServoDriverComponentBase {
   void emitPwmOut();
   void writeTlm();
   bool pwmSelftestOk() const;
+  bool modelRoleOk() const;
   void ensurePwmConfigured();
 
   RocketTypes::DrvState::T m_state;
@@ -65,6 +61,8 @@ class ServoDriver final : public ServoDriverComponentBase {
   U16 m_pwmHz;
   U8 m_channelCount;
   F32 m_selftestDeadline_s;
+  Components::ServoModel m_model;
+  Components::ServoRole m_role;
 };
 
 }  // namespace Components

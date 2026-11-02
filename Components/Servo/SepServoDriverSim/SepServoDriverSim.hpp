@@ -1,4 +1,4 @@
-// SepServoDriverSim：SepServoDriver 的 Sim 版（埠集合同真驅動）。Base ID 0x3180。核心見 Components/Servo/SimCore。
+// SepServoDriverSim — Sim shell for SepServoDriver. Base 0x3180. Core: SimCore.
 #ifndef COMPONENTS_SEPSERVODRIVERSIM_HPP
 #define COMPONENTS_SEPSERVODRIVERSIM_HPP
 #include "Components/Servo/SepServoDriverSim/SepServoDriverSimComponentAc.hpp"
@@ -30,6 +30,7 @@ class SepServoDriverSim final : public SepServoDriverSimComponentBase,
   void evSepFaultHold(uint8_t mask) override;
   void evSepNvWriteFail(uint8_t ch) override;
   void evUvSeen(ServoSim::UvState st) override;
+  void evModelRoleMismatch(ServoSim::ServoModel model, ServoSim::ServoRole role) override;
 
   F64 now_s();
 
@@ -37,6 +38,8 @@ class SepServoDriverSim final : public SepServoDriverSimComponentBase,
   U16 m_out_us[4];
   U32 m_tick;
   bool m_started;
+  Components::ServoModel m_model;
+  Components::ServoRole m_role;
 };
 
 }  // namespace Components

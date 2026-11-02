@@ -12,8 +12,9 @@ struct Hw : ISimHw {
 };
 
 struct SSink : IServoSink {
-  uint16_t pwm[4] = {0, 0, 0, 0}; int ready = 0, fault = 0, timeout = 0, lockCmd = 0, lockTo = 0, uv = 0;
+  uint16_t pwm[4] = {0, 0, 0, 0}; int ready = 0, fault = 0, timeout = 0, lockCmd = 0, lockTo = 0, uv = 0, mismatch = 0;
   std::vector<DropReason> drops; std::vector<uint16_t> clampUsed; FaultReason lastFault{};
+  ServoModel lastModel{}; ServoRole lastRole{}; uint8_t lastCh = 0;
   void pwmOut(uint8_t ch, uint16_t us) override { pwm[ch] = us; }
   void evEnterReady() override { ready++; }
   void evEnterFault(FaultReason r) override { fault++; lastFault = r; }
@@ -22,6 +23,9 @@ struct SSink : IServoSink {
   void evCmdTimeout(float) override { timeout++; }
   void evLockNeutral(NeutralSource s) override { (s == NeutralSource::CMD ? lockCmd : lockTo)++; }
   void evUvSeen(UvState) override { uv++; }
+  void evModelRoleMismatch(ServoModel m, ServoRole r, uint8_t ch) override {
+    mismatch++; lastModel = m; lastRole = r; lastCh = ch;
+  }
 };
 
 struct SRig {
@@ -84,7 +88,9 @@ static void tServoUv() {
   CHECK(r.sink.pwm[0] == 1800 && r.sink.uv == 1 && r.core.uvState() == UvState::UV_CRITICAL);
 }
 static void tGimbalTwoCh() {
-  g_cases++; SRig r(2); r.boot();
+  g_cases++; SRig r(2);
+  r.p.model = ServoModel::SG90; r.p.role = ServoRole::GIMBAL; r.core.configure(r.p);
+  r.boot();
   r.cmd(1, 1600, 1400, 900, 2500); r.run(1);
   CHECK(r.sink.pwm[0] == 1600 && r.sink.pwm[1] == 1400);
   CHECK(r.sink.pwm[2] == 0 && r.sink.pwm[3] == 0);  // [2]、[3] 不輸出
@@ -98,8 +104,9 @@ struct Nv : INvFlags {
   bool sepReleasedSet(uint8_t m) override { sets++; if (failSet) return false; mask |= m; return true; }  // 只能 set
 };
 struct PSink : ISepSink {
-  uint16_t pwm[4] = {0, 0, 0, 0}; int ready = 0, fault = 0, uv = 0;
+  uint16_t pwm[4] = {0, 0, 0, 0}; int ready = 0, fault = 0, uv = 0, mismatch = 0;
   std::vector<uint8_t> fire, already, nvFail, holdMask; std::vector<DropReason> drops; FaultReason lastFault{};
+  ServoModel lastModel{}; ServoRole lastRole{};
   void pwmOut(uint8_t ch, uint16_t us) override { pwm[ch] = us; }
   void evEnterReady() override { ready++; }
   void evEnterFault(FaultReason r) override { fault++; lastFault = r; }
@@ -109,6 +116,7 @@ struct PSink : ISepSink {
   void evSepFaultHold(uint8_t m) override { holdMask.push_back(m); }
   void evSepNvWriteFail(uint8_t c) override { nvFail.push_back(c); }
   void evUvSeen(UvState) override { uv++; }
+  void evModelRoleMismatch(ServoModel m, ServoRole r) override { mismatch++; lastModel = m; lastRole = r; }
 };
 struct PRig {
   SepParams p; Hw hw; Nv nv; PSink sink; SepSimCore core{p, hw, nv, sink};
@@ -162,9 +170,51 @@ static void tSepNoTimeoutAndUv() {
   CHECK(r.sink.pwm[3] == 2000 && r.sink.pwm[0] == 1000 && r.sink.uv == 1 && r.core.firedMask() == 0x08);
 }
 
+static void tServoModelRoleMismatch() {
+  g_cases++; {  // MG996R + TAIL invalid for ServoSimCore
+    SRig r; r.p.model = ServoModel::MG996R; r.p.role = ServoRole::TAIL; r.core.configure(r.p);
+    r.boot();
+    CHECK(r.core.drvState() == DrvState::FAULT);
+    CHECK(r.sink.lastFault == FaultReason::MODEL_ROLE_MISMATCH);
+    CHECK(r.sink.mismatch == 1 && r.sink.ready == 0);
+  }
+  g_cases++; {  // SG90 + GIMBAL but channel_count=4 → FAULT
+    SRig r(4); r.p.model = ServoModel::SG90; r.p.role = ServoRole::GIMBAL; r.core.configure(r.p);
+    r.boot();
+    CHECK(r.core.drvState() == DrvState::FAULT);
+    CHECK(r.sink.lastFault == FaultReason::MODEL_ROLE_MISMATCH);
+    CHECK(r.sink.lastCh == 4);
+  }
+  g_cases++; {  // SG90 + GIMBAL + 2 → READY
+    SRig r(2); r.p.model = ServoModel::SG90; r.p.role = ServoRole::GIMBAL; r.core.configure(r.p);
+    r.boot();
+    CHECK(r.core.drvState() == DrvState::READY && r.sink.ready == 1 && r.sink.mismatch == 0);
+  }
+}
+static void tSepModelRoleMismatch() {
+  g_cases++; {  // SG90 + SEP invalid
+    PRig r; r.p.model = ServoModel::SG90; r.p.role = ServoRole::SEP; r.core.configure(r.p);
+    r.boot();
+    CHECK(r.core.drvState() == DrvState::FAULT);
+    CHECK(r.sink.lastFault == FaultReason::MODEL_ROLE_MISMATCH);
+    CHECK(r.sink.mismatch == 1 && r.sink.ready == 0);
+  }
+  g_cases++; {  // MG996R + TAIL invalid
+    PRig r; r.p.model = ServoModel::MG996R; r.p.role = ServoRole::TAIL; r.core.configure(r.p);
+    r.boot();
+    CHECK(r.core.drvState() == DrvState::FAULT && r.sink.mismatch == 1);
+  }
+  g_cases++; {  // defaults MG996R+SEP → READY
+    PRig r; r.boot();
+    CHECK(r.core.drvState() == DrvState::READY && r.sink.mismatch == 0);
+  }
+}
+
 int main() {
   tServoHandshake(); tServoFault(); tServoClamp(); tServoSeq(); tServoLockNeutral(); tServoTimeout(); tServoUv(); tGimbalTwoCh();
+  tServoModelRoleMismatch();
   tSepHandshake(); tSepFireOnce(); tSepNvPersist(); tSepNvWriteFail(); tSepSeqAndInvalid(); tSepNoTimeoutAndUv();
+  tSepModelRoleMismatch();
   std::printf("%s: %d cases, %d failures\n", g_fail ? "FAILED" : "PASSED", g_cases, g_fail);
   return g_fail ? 1 : 0;
 }

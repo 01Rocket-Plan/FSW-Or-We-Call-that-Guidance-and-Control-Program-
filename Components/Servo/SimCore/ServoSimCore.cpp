@@ -17,6 +17,15 @@ void ServoSimCore::tick() {
     case DrvState::OFF: return;  // 未上電：不輸出
     case DrvState::INIT: enter(DrvState::SELFTEST); break;
     case DrvState::SELFTEST: {
+      const bool idOk =
+          (m_p.model == ServoModel::SG90 && m_p.role == ServoRole::TAIL && m_p.channel_count == 4) ||
+          (m_p.model == ServoModel::SG90 && m_p.role == ServoRole::GIMBAL && m_p.channel_count == 2);
+      if (!idOk) {
+        enter(DrvState::FAULT);
+        m_sink.evModelRoleMismatch(m_p.model, m_p.role, m_p.channel_count);
+        m_sink.evEnterFault(FaultReason::MODEL_ROLE_MISMATCH);
+        break;
+      }
       bool fail = false;
       if (m_hw.selfTestDone(fail)) { enter(DrvState::READY); m_ageTicks = 0; m_timedOut = false; m_sink.evEnterReady(); }
       else if (fail) { enter(DrvState::FAULT); m_sink.evEnterFault(FaultReason::SELFTEST_FAIL); }
@@ -84,6 +93,11 @@ void SepSimCore::tick() {
       break;
     }
     case DrvState::SELFTEST: {
+      if (!(m_p.model == ServoModel::MG996R && m_p.role == ServoRole::SEP)) {
+        m_sink.evModelRoleMismatch(m_p.model, m_p.role);
+        enter(DrvState::FAULT, FaultReason::MODEL_ROLE_MISMATCH);
+        break;
+      }
       bool fail = false;
       if (m_hw.selfTestDone(fail)) { enter(DrvState::READY); m_sink.evEnterReady(); }
       else if (fail) enter(DrvState::FAULT, FaultReason::SELFTEST_FAIL);

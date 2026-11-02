@@ -1,7 +1,8 @@
 # SepServoDriver
 
-- 負責：伺服組（Evgeny）
-- 範圍：MG996R SEP_1–4（DsMcu），真驅動；NvFlags 經 `Power.SepReleasedGet`／`Power.SepReleasedSet`（`Components/Power/NvFlags/NvFlagsPorts.fpp`）
-- Sim／單元測試：子Bot1
-- 狀態：實作中（feat/servo-drivers）
-- PWM：共用 `Components/Servo/Pwm`；SEP 腳位 `ServoPwmPins::SEP_*`（MCU 組 v0.1 草案，pending Anatoly review）
+- Owner: servo group (Evgeny)
+- Formal identity: `model=MG996R`, `role=SEP` (ServoTypes); mismatch → FAULT + `ModelRoleMismatch`
+- Instance: DS `sepServoDriver` 0x3100; fire-once via `Power.SepReleasedGet`/`Set`
+- PWM: shared `Components/Servo/Pwm`; SEP pins `ServoPwmPins::SEP_*`
+- Topology proposal: `Components/Servo/INTEGRATION.md`
+- Per-model core (Mg996rCore) via DeepSeek spec

@@ -10,7 +10,9 @@ namespace ServoSim {
 enum class DrvState : uint8_t { OFF, INIT, SELFTEST, READY, FAULT };
 enum class UvState : uint8_t { NOMINAL, UV_WARN, UV_SHED, UV_CRITICAL };
 enum class DropReason : uint8_t { NOT_READY, SEQ_DUP, SEQ_BACKWARD, INVALID };
-enum class FaultReason : uint8_t { SELFTEST_FAIL, SELFTEST_TIMEOUT, NV_READ_FAIL };
+enum class FaultReason : uint8_t { SELFTEST_FAIL, SELFTEST_TIMEOUT, NV_READ_FAIL, MODEL_ROLE_MISMATCH };
+enum class ServoModel : uint8_t { SG90 = 0, MG996R = 1 };
+enum class ServoRole : uint8_t { TAIL = 0, GIMBAL = 1, SEP = 2 };
 enum class NeutralSource : uint8_t { CMD, TIMEOUT };
 
 struct ServoCmd { double t_s; uint32_t seq; uint16_t pulse_us[4]; bool lockNeutral; };
@@ -28,6 +30,8 @@ struct ServoParams {
   uint16_t neutral_us = 1500, pulse_min_us = 1000, pulse_max_us = 2000;
   float cmd_timeout_s = 0.05f, pwm_hz = 50.0f, selftest_deadline_s = 1.0f;
   uint8_t channel_count = 4;
+  ServoModel model = ServoModel::SG90;
+  ServoRole role = ServoRole::TAIL;
 };
 
 struct IServoSink {
@@ -40,6 +44,7 @@ struct IServoSink {
   virtual void evCmdTimeout(float age_s) = 0;
   virtual void evLockNeutral(NeutralSource s) = 0;
   virtual void evUvSeen(UvState st) = 0;
+  virtual void evModelRoleMismatch(ServoModel model, ServoRole role, uint8_t channel_count) = 0;
 };
 
 class ServoSimCore {
@@ -60,6 +65,8 @@ class ServoSimCore {
   UvState uvState() const { return m_uv; }
   uint32_t clampCount() const { return m_clamp; }
   uint32_t dropCount() const { return m_drop; }
+  ServoModel model() const { return m_p.model; }
+  ServoRole role() const { return m_p.role; }
 
  private:
   float dt() const { return 1.0f / m_p.pwm_hz; }
@@ -80,6 +87,8 @@ class ServoSimCore {
 struct SepParams {
   uint16_t lock_us = 1000, fire_us = 2000, pulse_min_us = 1000, pulse_max_us = 2000;
   float fire_hold_s = 0.5f, selftest_deadline_s = 1.0f, tick_hz = 50.0f;
+  ServoModel model = ServoModel::MG996R;
+  ServoRole role = ServoRole::SEP;
 };
 
 // 非揮發旗標（電源組 v0.1 暫定）：get 回 mask；set 只能 set 不能清，失敗回 false
@@ -100,6 +109,7 @@ struct ISepSink {
   virtual void evSepFaultHold(uint8_t mask) = 0;
   virtual void evSepNvWriteFail(uint8_t ch) = 0;
   virtual void evUvSeen(UvState st) = 0;
+  virtual void evModelRoleMismatch(ServoModel model, ServoRole role) = 0;
 };
 
 class SepSimCore {
@@ -116,6 +126,8 @@ class SepSimCore {
   uint8_t lockedMask() const { return static_cast<uint8_t>(~m_fired & 0x0F); }
   UvState uvState() const { return m_uv; }
   uint16_t lastPulse_us(uint8_t ch) const { return m_pulse[ch]; }
+  ServoModel model() const { return m_p.model; }
+  ServoRole role() const { return m_p.role; }
   uint8_t activeMask() const { uint8_t m = 0; for (uint8_t i = 0; i < 4; i++) if (m_holdTicks[i]) m |= static_cast<uint8_t>(1u << i); return m; }
 
  private:

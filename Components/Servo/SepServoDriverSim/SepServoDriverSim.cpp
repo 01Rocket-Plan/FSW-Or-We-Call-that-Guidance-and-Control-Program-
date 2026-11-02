@@ -5,7 +5,7 @@ namespace Components {
 namespace {
 // 與真驅動 SepServoDriver.cpp 相同的原因碼
 enum DropReason : U8 { DROP_NOT_READY = 1, DROP_SEQ = 2, DROP_INVALID = 3 };
-enum FaultReason : U8 { FAULT_SELFTEST = 1 };
+enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_MODEL_ROLE = 3 };
 constexpr U32 kPeriodTicks = 20;  // rg1kHz → 50 Hz 推進核心
 }  // namespace
 
@@ -14,11 +14,17 @@ SepServoDriverSim::SepServoDriverSim(const char* compName)
       m_core(ServoSim::SepParams(), *this, *this, *this),
       m_out_us{1000, 1000, 1000, 1000},
       m_tick(0),
-      m_started(false) {}
+      m_started(false),
+      m_model(Components::ServoModel::MG996R),
+      m_role(Components::ServoRole::SEP) {}
 
 void SepServoDriverSim::parametersLoaded() {
   Fw::ParamValid v;
   ServoSim::SepParams p;
+  m_model = this->paramGet_model(v);
+  m_role = this->paramGet_role(v);
+  p.model = static_cast<ServoSim::ServoModel>(static_cast<U8>(m_model.e));
+  p.role = static_cast<ServoSim::ServoRole>(static_cast<U8>(m_role.e));
   p.lock_us = this->paramGet_lock_us(v);
   p.fire_us = this->paramGet_fire_us(v);
   p.fire_hold_s = this->paramGet_fire_hold_s(v);
@@ -49,6 +55,8 @@ void SepServoDriverSim::schedIn_handler(FwIndexType, U32) {
   this->tlmWrite_firedMask(m_core.firedMask());
   this->tlmWrite_lockedMask(m_core.lockedMask());
   this->tlmWrite_uvState(static_cast<RocketTypes::UvState::T>(m_core.uvState()));
+  this->tlmWrite_model(m_model);
+  this->tlmWrite_role(m_role);
 }
 
 void SepServoDriverSim::cmdIn_handler(FwIndexType, const RocketTypes::SepCmd& c) {
@@ -74,7 +82,10 @@ bool SepServoDriverSim::sepReleasedSet(uint8_t mask) {
 void SepServoDriverSim::pwmOut(uint8_t ch, uint16_t used_us) { if (ch < 4) m_out_us[ch] = used_us; }
 
 void SepServoDriverSim::evEnterReady() { this->log_ACTIVITY_HI_EnterReady(); }
-void SepServoDriverSim::evEnterFault(ServoSim::FaultReason) { this->log_WARNING_HI_EnterFault(FAULT_SELFTEST); }
+void SepServoDriverSim::evEnterFault(ServoSim::FaultReason r) {
+  const U8 code = (r == ServoSim::FaultReason::MODEL_ROLE_MISMATCH) ? FAULT_MODEL_ROLE : FAULT_SELFTEST;
+  this->log_WARNING_HI_EnterFault(code);
+}
 void SepServoDriverSim::evCmdDropped(uint32_t seq, ServoSim::DropReason r) {
   const U8 code = r == ServoSim::DropReason::NOT_READY ? DROP_NOT_READY : (r == ServoSim::DropReason::INVALID ? DROP_INVALID : DROP_SEQ);
   this->log_WARNING_LO_CmdDropped(seq, code);
@@ -84,5 +95,10 @@ void SepServoDriverSim::evSepAlreadyFired(uint8_t ch) { this->log_WARNING_LO_Sep
 void SepServoDriverSim::evSepFaultHold(uint8_t mask) { this->log_WARNING_HI_SepFaultHold(mask); }
 void SepServoDriverSim::evSepNvWriteFail(uint8_t ch) { this->log_WARNING_HI_SepNvWriteFail(ch); }
 void SepServoDriverSim::evUvSeen(ServoSim::UvState st) { this->log_ACTIVITY_HI_UvSeen(static_cast<RocketTypes::UvState::T>(st)); }
+void SepServoDriverSim::evModelRoleMismatch(ServoSim::ServoModel model, ServoSim::ServoRole role) {
+  this->log_WARNING_HI_ModelRoleMismatch(
+      static_cast<Components::ServoModel::T>(model),
+      static_cast<Components::ServoRole::T>(role));
+}
 
 }  // namespace Components

@@ -1,5 +1,4 @@
-// ServoDriverSim：ServoDriver 的 Sim 版（埠集合同真驅動）。核心見 Components/Servo/SimCore。
-// Base ID：servoDriverSim 0x3080、gimbalServoDriverSim 0x3280（channel_count=2）
+// ServoDriverSim — Sim shell for ServoDriver. Core: SimCore. Bases 0x3080 / 0x3280.
 #ifndef COMPONENTS_SERVODRIVERSIM_HPP
 #define COMPONENTS_SERVODRIVERSIM_HPP
 #include "Components/Servo/ServoDriverSim/ServoDriverSimComponentAc.hpp"
@@ -27,6 +26,7 @@ class ServoDriverSim final : public ServoDriverSimComponentBase, private ServoSi
   void evCmdTimeout(float age_s) override;
   void evLockNeutral(ServoSim::NeutralSource s) override;
   void evUvSeen(ServoSim::UvState st) override;
+  void evModelRoleMismatch(ServoSim::ServoModel model, ServoSim::ServoRole role, uint8_t channel_count) override;
 
   void writeTlm();
   F64 now_s();
@@ -37,6 +37,8 @@ class ServoDriverSim final : public ServoDriverSimComponentBase, private ServoSi
   U32 m_periodTicks;
   bool m_started;
   bool m_lockNeutral;
+  Components::ServoModel m_model;
+  Components::ServoRole m_role;
 };
 
 }  // namespace Components

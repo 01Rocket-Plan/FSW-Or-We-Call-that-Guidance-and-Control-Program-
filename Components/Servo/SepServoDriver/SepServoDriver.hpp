@@ -1,9 +1,4 @@
-// ======================================================================
-// \title  SepServoDriver.hpp
-// \author 伺服馬達驅動組（Evgeny）
-// \brief  MG996R SEP_1–4；once-only via Power.NvFlags (SepReleasedGet/Set)
-// Base ID 0x3100
-// ======================================================================
+// SepServoDriver.hpp — MG996R SEP_1–4; fire-once via Power.NvFlags. Base 0x3100.
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP
 #define COMPONENTS_SEPSERVODRIVER_HPP
 
@@ -36,6 +31,7 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   U16 clampUs(U16 raw) const;
   U8 readFiredMask();
   bool tryFireChannel(U8 ch);
+  bool modelRoleOk() const;
   void ensurePwmConfigured();
 
   RocketTypes::DrvState::T m_state;
@@ -60,6 +56,8 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   U16 m_min_us;
   U16 m_max_us;
   F32 m_selftestDeadline_s;
+  Components::ServoModel m_model;
+  Components::ServoRole m_role;
 };
 
 }  // namespace Components
