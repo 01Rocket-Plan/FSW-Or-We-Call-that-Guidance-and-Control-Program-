@@ -51,6 +51,12 @@ module RocketTypes {
     humidity_frac: F32
   }
 
+  # =====================================================================
+  # GNSS 組（梁承業）— GnssFix v0.2（首席工程師核定；已由 GNSS 組實作 GnssDriver／Sim）
+  # 欄位：seq/t_s 在 SampleHeader；gpsTow_s、gpsWeek 僅記錄；velEnu U=NaN 若無垂直速度；
+  # posValid = 3D 且 hdop<=prmDb；valid 僅 READY；fixOut 只接 tlmSend/sdLogger。
+  # 型別欄位本段未改（與主幹一致）；僅加組別標註供審閱。
+  # =====================================================================
   enum FixType { NO_FIX, FIX_2D, FIX_3D }
 
   @ GNSS 定位：只接 tlmSend、sdLogger，不進 estimator；缺垂直速度時 U 軸填 NaN
