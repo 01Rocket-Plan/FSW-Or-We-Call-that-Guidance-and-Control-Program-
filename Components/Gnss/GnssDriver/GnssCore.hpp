@@ -1,48 +1,50 @@
 // GnssCore.hpp - TEL0157 GNSS 驅動核心 (與 F´ 無關，可主機單測)
-// schedIn＝rg100Hz；UART 讀取只在 poll 時刻（依 LockStage：100／1000／2000 ms）。不 sleep。
+// schedIn＝rg100Hz（週期 rgPeriod_ms，預設 10 ms）。UART 只在 poll 時刻讀一次。不 sleep。
 //
-// Edward 2026-11-02 失鎖表（取代先前「只發事件、階段不分」的 C6/E4 解讀）：
-//   TRACKING 100 ms 連續；失鎖 → REACQ_FAST → MED → SLOW → FIX_FAILED。
-//   55 s 從「最後一次合格 GGA」起算（中斷真正開始的時刻）。LOSS_NO_GGA_S 偵測
-//   耗時算進 REACQ_FAST：階段邊界＝自 last-good 起 15／25／55 s（即 FAST 15、
-//   MED 再 10、SLOW 再 30）。任一段成功 → TRACKING。開機 ACQ 最多 300 s。
+// Poll 排程：整數 tick 分頻（避免 float 累加漂移）。
+//   pollPeriodTicks = poll_*_ms / rgPeriod_ms
+//   預設 100／1000／2000 ms → 10／100／200 ticks @ rg100Hz。
+//
+// Edward 2026-11-02 失鎖表：
+//   55 s 自最後合格 GGA 起算；LOSS_NO_GGA_S 計入 FAST；邊界 15／25／55 s。
+//   任一段成功 → TRACKING。開機 ACQ 最多 300 s。
 // Gate C6：不自己中止；fixOut 只接 tlm/sdLogger。E4：完全逾時＝進 FIX_FAILED。
 //
 // 假設：
-//   A1. 開機 ACQ 逾時 → 一次 INIT_ACQ_TIMEOUT，進 FIX_FAILED（維持 READY、SLOW 輪詢；
-//       之後鎖到可回 TRACKING）。不進 FAULT。BUS_ERROR／SELFTEST_FAIL 仍 → FAULT。
-//   A2. FIX_FAILED 後仍以 SLOW 間隔輪詢，鎖定成功回 TRACKING（C6 不中止）。
-//   A3. 失鎖條件：GGA 非合格 3D、或 LOSS_NO_GGA_S 內無新 GGA（含 UART 靜默）、或 STUCK_POLLS。
-//   A4. 合格 3D＝fixType 3D 且 hdop<=HDOP_MAX；重鎖中 posValid=false、dataAge 自最後合格定位起算。
-//   A5. NMEA 常為 1 Hz；空 poll 正常，不以單次空讀當失鎖。
+//   A1. 開機 ACQ 逾時 → 一次 INIT_ACQ_TIMEOUT，進 FIX_FAILED（READY、SLOW；可恢復）。
+//       BUS_ERROR／SELFTEST_FAIL → FAULT。
+//   A2. FIX_FAILED 後 SLOW 輪詢，鎖定成功回 TRACKING。
+//   A3. 失鎖＝劣質 GGA／LOSS_NO_GGA_S／STUCK_POLLS。
+//   A4. 合格 3D＝FIX_3D∧hdop<=HDOP_MAX；重鎖中 posValid=false。
+//   A5. 空 poll 正常；不以單次空讀當失鎖。
 //   A6. BUS_ERROR → FAULT；TRUNCATED／BAD_CHECKSUM 只計數。
 //
-// 輸出：新 GGA 才發定位並 ++seq；重鎖／靜默期間無新 GGA 時，最多 1 Hz 發降級
-// （posValid=false、dataAge↑）供遙測。
+// 輸出／seq：每次發出的 fix（含降級）都 ++seq（團隊：seq 只在有輸出時遞增）。
+//   新 GGA → 立刻發一筆；無新 GGA 的重鎖／靜默 → 最多 1 Hz 降級（posValid=false、dataAge↑）。
 //
-// 讀取緩衝：kPollReadMax=2048。9600 8N1 → 960 B/s；2 s（含 GSV）≈1920 B，2048 留餘量。
-// 仍為每 poll 一次 bus read。
+// 讀取緩衝 kPollReadMax=2048（2 s@9600 含 GSV ≈1920 B 餘量）。每 poll 一次 bus read。
 #pragma once
 #include <cstdint>
 #include "GnssIfaces.hpp"
 namespace Gnss {
 struct GnssCoreParams {
   float hdopMax = 2.5f;
-  float pollTracking_s = 0.1f;
-  float pollReacqFast_s = 0.1f;
-  float pollReacqMed_s = 1.0f;
-  float pollReacqSlow_s = 2.0f;
+  // Poll 間隔（ms）；ticks = ms / rgPeriod_ms（見檔頭）
+  uint32_t rgPeriod_ms = 10;           // schedIn＝rg100Hz → 10 ms
+  uint32_t pollTracking_ms = 100;      // → 10 ticks
+  uint32_t pollReacqFast_ms = 100;     // → 10 ticks
+  uint32_t pollReacqMed_ms = 1000;     // → 100 ticks
+  uint32_t pollReacqSlow_ms = 2000;    // → 200 ticks
   // 自 last-good 起算的階段配額（邊界＝15、25、55）
   float reacqFastDur_s = 15.f;
   float reacqMedDur_s = 10.f;
   float reacqSlowDur_s = 30.f;
   float initAcqTimeout_s = 300.f;
-  float selftestTimeout_s = 5.f;   // SELFTEST：此時間內需任意合法 NMEA
-  float lossNoGga_s = 2.0f;        // 無新 GGA 超過此秒 → 失鎖（含靜默；計入 FAST）
-  uint32_t stuckPolls = 3;         // 連續多次 poll 收到相同 GGA → 失鎖
+  float selftestTimeout_s = 5.f;
+  float lossNoGga_s = 2.0f;
+  uint32_t stuckPolls = 3;
 };
 
-// 每 poll 一次 read 的上限（見檔頭：2 s@9600 含 GSV 的餘量）
 constexpr uint32_t kPollReadMax = 2048;
 
 class GnssCore {
@@ -50,18 +52,19 @@ class GnssCore {
   GnssCore(IGnssUart& uart, IGnssSink& sink) : m_uart(uart), m_sink(sink) {}
   void setParams(const GnssCoreParams& p) { m_p = p; }
   void start();
-  void tick(double t_s);  // rg100Hz：每次呼叫；內部決定是否 poll
+  void tick(double t_s);  // 每次 rg tick 呼叫一次；內部整數分頻決定是否 poll
   DrvState state() const { return m_state; }
   LockStage lockStage() const { return m_lock; }
   uint32_t badChecksumCount() const { return m_badCk; }
   uint32_t truncatedCount() const { return m_trunc; }
-  uint32_t pollsInStage() const { return m_pollsInStage; }  // 進本階段後的 poll 次數
+  uint32_t pollsInStage() const { return m_pollsInStage; }
+  uint32_t pollPeriodTicks() const;
   double lastGoodPos_s() const { return m_lastGoodPos_s; }
   bool feedSentence(const char* s, double t_s);
  private:
   void setState(DrvState s);
   void setLock(LockStage s, double t_s);
-  float pollInterval_s() const;
+  uint32_t pollIntervalMs() const;
   void doPoll(double t_s);
   void feedByte(uint8_t b, double t_s);
   void handleSentence(char* body, double t_s);
@@ -75,7 +78,7 @@ class GnssCore {
   IGnssUart& m_uart; IGnssSink& m_sink; GnssCoreParams m_p;
   DrvState m_state = DrvState::OFF;
   LockStage m_lock = LockStage::ACQ;
-  double m_lastPoll_s = -1e9;
+  uint32_t m_ticksSincePoll = 0;
   double m_stageEnter_s = 0.0;
   double m_selftestEnter_s = 0.0;
   double m_acqEnter_s = 0.0;

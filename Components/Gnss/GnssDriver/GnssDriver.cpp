@@ -38,10 +38,12 @@ Gnss::GnssCoreParams GnssDriver::readParams() {
   Fw::ParamValid pv;
   Gnss::GnssCoreParams p;
   p.hdopMax = this->paramGet_HDOP_MAX(pv);
-  p.pollTracking_s = this->paramGet_POLL_TRACKING_MS(pv) * 1e-3f;
-  p.pollReacqFast_s = this->paramGet_POLL_REACQ_FAST_MS(pv) * 1e-3f;
-  p.pollReacqMed_s = this->paramGet_POLL_REACQ_MED_MS(pv) * 1e-3f;
-  p.pollReacqSlow_s = this->paramGet_POLL_REACQ_SLOW_MS(pv) * 1e-3f;
+  // ticks = ms / rgPeriod_ms（rg100Hz → 10 ms）；見 GnssCore.hpp
+  p.rgPeriod_ms = 10;
+  p.pollTracking_ms = this->paramGet_POLL_TRACKING_MS(pv);
+  p.pollReacqFast_ms = this->paramGet_POLL_REACQ_FAST_MS(pv);
+  p.pollReacqMed_ms = this->paramGet_POLL_REACQ_MED_MS(pv);
+  p.pollReacqSlow_ms = this->paramGet_POLL_REACQ_SLOW_MS(pv);
   p.reacqFastDur_s = this->paramGet_REACQ_FAST_S(pv);
   p.reacqMedDur_s = this->paramGet_REACQ_MED_S(pv);
   p.reacqSlowDur_s = this->paramGet_REACQ_SLOW_S(pv);

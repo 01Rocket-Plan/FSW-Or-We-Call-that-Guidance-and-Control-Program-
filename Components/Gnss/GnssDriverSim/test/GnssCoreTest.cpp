@@ -1,4 +1,4 @@
-// Edward 2026-11-02 失鎖表：rg100Hz tick；55 s 自 last-good 起算（邊界 15／25／55）。
+// Edward 2026-11-02 失鎖表：rg100Hz 整數分頻 poll；55 s 自 last-good 起算（邊界 15／25／55）。
 #include "Components/Gnss/GnssDriverSim/GnssSimDevice.hpp"
 #include "Components/Gnss/GnssDriver/GnssCore.hpp"
 #include <cmath>
@@ -189,7 +189,7 @@ static void t5_uartSilenceAndStuck() {
 }
 
 static void t6_emitPolicyDataAge() {
-  // 新 GGA 才 ++seq；靜默／重鎖期間最多 1 Hz 降級，dataAge 成長
+  // seq 每筆輸出都 ++；新 GGA 立刻發；靜默／重鎖最多 1 Hz 降級，dataAge 成長
   Rig r;
   GnssCoreParams p; p.hdopMax = 5.0f;
   p.reacqFastDur_s = 30.f; p.reacqMedDur_s = 10.f; p.reacqSlowDur_s = 30.f;
@@ -303,52 +303,61 @@ static void t11_seqContiguous() {
   std::printf("  T11 seq contiguous across silence\n");
 }
 
-// T12：生產時長 15／10／30；中斷 12／20／60 s；檢查進入時刻與各階段 poll 數
+// T12：生產時長 15／10／30；整數分頻 10／100／200 ticks；中斷 12／20／60 s
 static void t12_stageTimingPolls() {
   auto runOutage = [](double outage_s, LockStage expectFinal,
                       double* enterFast, double* enterMed, double* enterSlow, double* enterFail,
-                      uint32_t* pollsFast, uint32_t* pollsMed, uint32_t* pollsSlow) {
+                      uint32_t* pollsTrack, uint32_t* pollsFast, uint32_t* pollsMed, uint32_t* pollsSlow) {
     Rig r;
     GnssCoreParams p; p.hdopMax = 5.0f;
+    p.rgPeriod_ms = 10;
+    p.pollTracking_ms = 100; p.pollReacqFast_ms = 100;
+    p.pollReacqMed_ms = 1000; p.pollReacqSlow_ms = 2000;
     p.reacqFastDur_s = 15.f; p.reacqMedDur_s = 10.f; p.reacqSlowDur_s = 30.f;
     p.lossNoGga_s = 2.0f; p.initAcqTimeout_s = 300.f;
-    p.pollTracking_s = 0.1f; p.pollReacqFast_s = 0.1f;
-    p.pollReacqMed_s = 1.0f; p.pollReacqSlow_s = 2.0f;
     r.core.setParams(p);
+    CHECK(r.core.pollPeriodTicks() == 10);  // TRACKING／ACQ 預設
+
+    // 進 TRACKING 後再量測 TRACKING poll：再跑 2.0 s → 應約 20 polls（100 ms）
     r.run(3.0);
     CHECK(r.core.lockStage() == LockStage::TRACKING);
+    CHECK(r.core.pollPeriodTicks() == 10);
+    uint32_t track0 = r.core.pollsInStage();
+    r.run(2.0);
+    CHECK(r.core.lockStage() == LockStage::TRACKING);
+    *pollsTrack = r.core.pollsInStage() - track0;
+    CHECK(*pollsTrack >= 18 && *pollsTrack <= 22);  // 2.0/0.1 = 20
+
     const double tGood = r.core.lastGoodPos_s();
     r.dev.setFault(GnssSimFault::NO_DATA);
 
     LockStage prev = LockStage::TRACKING;
-    uint32_t pollsLeave = 0;
     *enterFast = *enterMed = *enterSlow = *enterFail = -1;
     *pollsFast = *pollsMed = *pollsSlow = 0;
 
-    // 跑到 last-good + outage_s
     while (r.t < tGood + outage_s - 1e-9) {
       uint32_t polls = r.core.pollsInStage();
       r.run(DT);
       if (r.core.lockStage() != prev) {
         if (r.core.lockStage() == LockStage::REACQ_FAST) {
           *enterFast = r.t - tGood;
+          CHECK(r.core.pollPeriodTicks() == 10);
         } else if (r.core.lockStage() == LockStage::REACQ_MED) {
           *enterMed = r.t - tGood;
-          *pollsFast = polls;  // polls in FAST just before leave (captured before tick... careful)
+          *pollsFast = polls;
+          CHECK(r.core.pollPeriodTicks() == 100);
         } else if (r.core.lockStage() == LockStage::REACQ_SLOW) {
           *enterSlow = r.t - tGood;
           *pollsMed = polls;
+          CHECK(r.core.pollPeriodTicks() == 200);
         } else if (r.core.lockStage() == LockStage::FIX_FAILED) {
           *enterFail = r.t - tGood;
           *pollsSlow = polls;
+          CHECK(r.core.pollPeriodTicks() == 200);
         }
-        // 修正：polls 應為轉換前的值。step 後 pollsInStage 已歸零。
-        // 上面 polls 取的是 tick 前，正確。
         prev = r.core.lockStage();
-        (void)pollsLeave;
       }
     }
-    // 若仍在某階段，記錄當下 polls
     if (r.core.lockStage() == LockStage::REACQ_FAST) *pollsFast = r.core.pollsInStage();
     if (r.core.lockStage() == LockStage::REACQ_MED) *pollsMed = r.core.pollsInStage();
     if (r.core.lockStage() == LockStage::REACQ_SLOW) *pollsSlow = r.core.pollsInStage();
@@ -356,39 +365,40 @@ static void t12_stageTimingPolls() {
     return tGood;
   };
 
-  // --- 12 s：應仍在 FAST；進入 ≈ lossNoGga(2)；poll ≈ (12-2)/0.1 = 100 ---
+  // --- 12 s：仍在 FAST；enter≈2.09；polls ≈ (12-2.09)/0.1 ≈ 99 ---
   {
-    double eF, eM, eS, eX; uint32_t pF, pM, pS;
-    runOutage(12.0, LockStage::REACQ_FAST, &eF, &eM, &eS, &eX, &pF, &pM, &pS);
-    CHECK(eF > 1.5 && eF < 2.5);       // ~ LOSS_NO_GGA_S
-    CHECK(eM < 0);                     // 未進 MED
-    CHECK(pF >= 90 && pF <= 110);      // ~100
-    std::printf("  T12a outage=12s enterFAST=%.2f pollsFAST=%u\n", eF, pF);
+    double eF, eM, eS, eX; uint32_t pT, pF, pM, pS;
+    runOutage(12.0, LockStage::REACQ_FAST, &eF, &eM, &eS, &eX, &pT, &pF, &pM, &pS);
+    CHECK(eF > 1.5 && eF < 2.5);
+    CHECK(eM < 0);
+    CHECK(pF >= 95 && pF <= 105);
+    std::printf("  T12a outage=12s enterFAST=%.2f pollsTRACK=%u pollsFAST=%u\n", eF, pT, pF);
   }
-  // --- 20 s：MED@15；FAST polls~(15-2)/0.1=130；MED polls~(20-15)/1=5 ---
+  // --- 20 s：MED@15；FAST 2.09–15.01 → ~129±2；MED (20-15)/1 = 5 ---
   {
-    double eF, eM, eS, eX; uint32_t pF, pM, pS;
-    runOutage(20.0, LockStage::REACQ_MED, &eF, &eM, &eS, &eX, &pF, &pM, &pS);
+    double eF, eM, eS, eX; uint32_t pT, pF, pM, pS;
+    runOutage(20.0, LockStage::REACQ_MED, &eF, &eM, &eS, &eX, &pT, &pF, &pM, &pS);
     CHECK(eF > 1.5 && eF < 2.5);
     CHECK(eM > 14.5 && eM < 15.5);
     CHECK(eS < 0);
-    CHECK(pF >= 110 && pF <= 140);
-    CHECK(pM >= 3 && pM <= 7);
-    std::printf("  T12b outage=20s enterMED=%.2f pollsFAST=%u pollsMED=%u\n", eM, pF, pM);
+    CHECK(pF >= 127 && pF <= 131);  // 2.09–15.01 窗 ≈129±2
+    CHECK(pM >= 4 && pM <= 6);
+    std::printf("  T12b outage=20s enterMED=%.2f pollsTRACK=%u pollsFAST=%u pollsMED=%u\n",
+                eM, pT, pF, pM);
   }
-  // --- 60 s：SLOW@25、FAIL@55；SLOW polls~(55-25)/2=15 ---
+  // --- 60 s：SLOW@25、FAIL@55；MED=10、SLOW=15；FAST≈129±2 ---
   {
-    double eF, eM, eS, eX; uint32_t pF, pM, pS;
-    runOutage(60.0, LockStage::FIX_FAILED, &eF, &eM, &eS, &eX, &pF, &pM, &pS);
+    double eF, eM, eS, eX; uint32_t pT, pF, pM, pS;
+    runOutage(60.0, LockStage::FIX_FAILED, &eF, &eM, &eS, &eX, &pT, &pF, &pM, &pS);
     CHECK(eF > 1.5 && eF < 2.5);
     CHECK(eM > 14.5 && eM < 15.5);
     CHECK(eS > 24.5 && eS < 25.5);
     CHECK(eX > 54.5 && eX < 55.5);
-    CHECK(pF >= 110 && pF <= 140);
-    CHECK(pM >= 8 && pM <= 12);        // (25-15)/1 = 10
-    CHECK(pS >= 13 && pS <= 17);       // (55-25)/2 = 15
-    std::printf("  T12c outage=60s enterSLOW=%.2f enterFAIL=%.2f pollsF/M/S=%u/%u/%u\n",
-                eS, eX, pF, pM, pS);
+    CHECK(pF >= 127 && pF <= 131);
+    CHECK(pM == 10);
+    CHECK(pS == 15);
+    std::printf("  T12c outage=60s enterSLOW=%.2f enterFAIL=%.2f pollsT/F/M/S=%u/%u/%u/%u\n",
+                eS, eX, pT, pF, pM, pS);
   }
   std::printf("  T12 stage timing + poll counts (12/20/60s) OK\n");
 }

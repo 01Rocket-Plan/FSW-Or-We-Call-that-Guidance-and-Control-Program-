@@ -6,7 +6,7 @@ module Components {
   @ TEL0157 GNSS 真驅動（UART NMEA：GGA/RMC/VTG/GSA）
   @ 安裝位置：DS／US 皆可；fixOut 只接 tlmSend 與 sdLogger（C6 閉環不依賴 GNSS）。
   @ Base ID：conventions 0x5000；Sim = base+0x80。
-  @ schedIn 接 rg100Hz；依 LockStage 每 100／1000／2000 ms 才 poll（含一次 UART 讀）；不 sleep。
+  @ schedIn 接 rg100Hz（10 ms）；poll ticks＝POLL_*_MS/10 → 10／100／200；每 poll 一次 UART；不 sleep。
   @ 失鎖表（Edward 2026-11-02）：55s 自 last-good 起算，邊界 15／25／55（LOSS_NO_GGA 計入 FAST）；成功即回 TRACKING。
   @ Gate C6：不自己中止。E4：完全逾時後報錯＝進 FIX_FAILED 並發環境訊息一次。
   passive component GnssDriver {

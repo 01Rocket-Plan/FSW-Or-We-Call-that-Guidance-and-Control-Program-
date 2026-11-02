@@ -37,8 +37,9 @@ uint32_t fnv(const char* s) {
 
 void GnssCore::start() {
   m_fix = GnssFix{}; m_fix.velEnu_mps[2] = NAN; m_fix.lat_rad = m_fix.lon_rad = NAN;
-  m_lock = LockStage::ACQ; m_lastPoll_s = -1e9; m_lastNewGga_s = -1e9; m_lastGoodPos_s = -1e9;
-  m_lastEmit_s = -1e9; m_sameGgaPolls = 0; m_gotValidSentence = false; m_haveFix = false;
+  m_lock = LockStage::ACQ; m_ticksSincePoll = 0;
+  m_lastNewGga_s = -1e9; m_lastGoodPos_s = -1e9; m_lastEmit_s = -1e9;
+  m_sameGgaPolls = 0; m_gotValidSentence = false; m_haveFix = false;
   m_fixFailedMsgSent = false; m_acqTimeoutSent = false; m_pollsInStage = 0;
   m_len = 0; m_inLine = false; m_seq = 0;
   setState(DrvState::INIT);
@@ -53,20 +54,29 @@ void GnssCore::setState(DrvState s) {
 void GnssCore::setLock(LockStage s, double t_s) {
   if (s == m_lock) return;
   LockStage f = m_lock; m_lock = s; m_stageEnter_s = t_s; m_pollsInStage = 0;
+  m_ticksSincePoll = 0;  // 新階段重開分頻（下一次 poll 等滿新 period）
   if (s != LockStage::FIX_FAILED) m_fixFailedMsgSent = false;
   m_sink.onLockStageChange(f, s);
 }
 
-float GnssCore::pollInterval_s() const {
+uint32_t GnssCore::pollIntervalMs() const {
   switch (m_lock) {
     case LockStage::TRACKING:
-    case LockStage::ACQ:         return m_p.pollTracking_s;
-    case LockStage::REACQ_FAST:  return m_p.pollReacqFast_s;
-    case LockStage::REACQ_MED:   return m_p.pollReacqMed_s;
+    case LockStage::ACQ:         return m_p.pollTracking_ms;
+    case LockStage::REACQ_FAST:  return m_p.pollReacqFast_ms;
+    case LockStage::REACQ_MED:   return m_p.pollReacqMed_ms;
     case LockStage::REACQ_SLOW:
-    case LockStage::FIX_FAILED:  return m_p.pollReacqSlow_s;
+    case LockStage::FIX_FAILED:  return m_p.pollReacqSlow_ms;
   }
-  return m_p.pollTracking_s;
+  return m_p.pollTracking_ms;
+}
+
+uint32_t GnssCore::pollPeriodTicks() const {
+  // ticks = prmDb ms / rg 週期；至少 1
+  const uint32_t per = m_p.rgPeriod_ms ? m_p.rgPeriod_ms : 10u;
+  const uint32_t ms = pollIntervalMs();
+  const uint32_t ticks = ms / per;
+  return ticks ? ticks : 1u;
 }
 
 bool GnssCore::qualityOk() const {
@@ -122,7 +132,7 @@ void GnssCore::tick(double t_s) {
   if (m_state == DrvState::INIT) {
     setState(DrvState::SELFTEST);
     m_selftestEnter_s = t_s;
-    m_lastPoll_s = t_s - pollInterval_s();  // 立刻允許第一次 poll
+    m_ticksSincePoll = pollPeriodTicks();  // 本拍 ++ 後立刻 poll
   }
 
   if (m_state == DrvState::READY) {
@@ -152,10 +162,14 @@ void GnssCore::tick(double t_s) {
     }
   }
 
-  const float iv = (m_state == DrvState::SELFTEST || m_state == DrvState::FAULT)
-                     ? m_p.pollTracking_s : pollInterval_s();
-  if (t_s - m_lastPoll_s + 1e-12 < iv) return;
-  m_lastPoll_s = t_s;
+  // 整數 tick 分頻：pollPeriodTicks = poll_*_ms / rgPeriod_ms
+  const uint32_t period = (m_state == DrvState::SELFTEST || m_state == DrvState::FAULT)
+                            ? (m_p.pollTracking_ms / (m_p.rgPeriod_ms ? m_p.rgPeriod_ms : 10u))
+                            : pollPeriodTicks();
+  const uint32_t need = period ? period : 1u;
+  ++m_ticksSincePoll;
+  if (m_ticksSincePoll < need) return;
+  m_ticksSincePoll = 0;
   doPoll(t_s);
 }
 

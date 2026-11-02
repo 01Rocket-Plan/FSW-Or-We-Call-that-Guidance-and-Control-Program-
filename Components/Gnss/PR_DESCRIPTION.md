@@ -18,8 +18,8 @@
 - **55 s 從最後合格 GGA 起算**；`LOSS_NO_GGA_S` 偵測時間計入 FAST。
 - 任一段成功 → TRACKING。`FIX_FAILED` → 原文「請檢察環境開放條件以利天線運作」一次。
 - 開機 ACQ ≤ 300 s → 一次 `INIT_ACQ_TIMEOUT` 後進 FIX_FAILED（不 FAULT；可恢復）。
-- `schedIn`＝rg100Hz；每 poll 一次 UART；讀取緩衝 **2048 B**（2 s@9600 含 GSV 餘量）。
-- 新 GGA 才發定位／`++seq`；重鎖／靜默最多 1 Hz 降級（`posValid=false`、`dataAge`↑）。
+- `schedIn`＝rg100Hz（10 ms）；**整數 tick 分頻** `POLL_*_MS/10` → 10／100／200；每 poll 一次 UART；讀取緩衝 **2048 B**。
+- **seq**：每次發出的 fix 都 `++seq`。新 GGA → 立刻發一筆；無新 GGA 時最多 1 Hz 降級（`posValid=false`、`dataAge`↑）。
 
 ### prmDb
 `HDOP_MAX`、`POLL_*_MS`、`REACQ_*_S`、`INIT_ACQ_TIMEOUT_S`、`SELFTEST_TIMEOUT_S`、`LOSS_NO_GGA_S`、`STUCK_POLLS`。
