@@ -1,25 +1,27 @@
 module Components {
     @ Non-volatile flag store with dual-slot ping-pong and CRC.
     @ Base ID 0x6100 per docs/conventions.md (Sim = 0x6180).
+    @ Port types live in module Power (see NvFlagsPorts.fpp) so peers can
+    @ declare matching output ports and wire them in the topology.
     passive component NvFlags {
 
         @ Guarded set of flag bits 0..3; OR into current mask and commit.
-        guarded input port sepReleasedSet(mask: U8) -> Fw.Success
+        guarded input port sepReleasedSet: Power.SepReleasedSet
 
         @ Synchronous read of RAM-cached mask loaded from NVS at init.
-        sync input port sepReleasedGet() -> U8
+        sync input port sepReleasedGet: Power.SepReleasedGet
 
         @ Set-only latch: 分離已下令 (sepCommanded).
-        guarded input port sepCommanded() -> Fw.Success
+        guarded input port sepCommanded: Power.SepCommanded
 
         @ Set-only latch: DS 傘已下令 (dsChuteCommanded).
-        guarded input port dsChuteCommanded() -> Fw.Success
+        guarded input port dsChuteCommanded: Power.DsChuteCommanded
 
         @ Get current phase.
-        sync input port phaseGet() -> U32
+        sync input port phaseGet: Power.PhaseGet
 
         @ Set phase (persisted via dual-slot + CRC; skip if identical).
-        guarded input port phaseSet(phase: U32) -> Fw.Success
+        guarded input port phaseSet: Power.PhaseSet
 
         time get port timeCaller
 

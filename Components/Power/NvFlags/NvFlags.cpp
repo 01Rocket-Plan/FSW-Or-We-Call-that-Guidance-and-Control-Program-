@@ -75,10 +75,10 @@ U32 NvFlags::phaseGet_handler(FwIndexType portNum) {
     return m_core.phase();
 }
 
-Fw::Success NvFlags::phaseSet_handler(FwIndexType portNum, U32 phase) {
+Fw::Success NvFlags::phaseSet_handler(FwIndexType portNum, U32 phaseVal) {
     (void)portNum;
     Fw::Time t = this->getTime();
-    auto st = m_core.setPhase(phase, t.getSeconds());
+    auto st = m_core.setPhase(phaseVal, t.getSeconds());
     if (st != ::NvFlags::CoreStatus::Success) {
         this->log_WARNING_HI_NvWriteFail(0);
         return Fw::Success::FAILURE;
