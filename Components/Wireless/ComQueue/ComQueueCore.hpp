@@ -1,6 +1,8 @@
 // ComQueueCore：無線下行優先佇列（與 F´ 無關，可在 host 測試）
-// 規則：不 sleep、不阻塞、不讀系統時間；每個 tick 最多推進一幀。
+// 規則：不 sleep、不讀系統時間；每個 run 最多推進 maxPktsPerRun 幀（≥1）。
 // P0..P4：P0 滿丟最舊；其餘滿丟最新。EVT_QUEUE_FULL_DROP ≤1 次／100 tick（附累計數）。
+// 執行緒安全：F´ 殼以 guarded comIn 持元件 mutex；Core 本身無鎖、無阻塞，
+// 呼叫端須在同一把 mutex 下呼叫 enqueue／runEmit（host 測試用 std::mutex 模擬）。
 #ifndef WIRELESS_COMQUEUECORE_HPP
 #define WIRELESS_COMQUEUECORE_HPP
 
@@ -26,7 +28,6 @@ struct ComFrame {
 class IComQueueEvents {
  public:
   virtual ~IComQueueEvents() = default;
-  // EVT_QUEUE_FULL_DROP：priority、本秒累計丟棄數
   virtual void onQueueFullDrop(ComPriority p, uint32_t dropCount) = 0;
 };
 
@@ -34,6 +35,7 @@ class ComQueueCore {
  public:
   static constexpr uint8_t kMaxDepth = 16;
   static constexpr uint32_t kDropEventPeriodTicks = 100;  // 1 s @ rg100Hz
+  static constexpr uint8_t kDefaultMaxPktsPerRun = 4;
 
   ComQueueCore();
 
@@ -41,16 +43,24 @@ class ComQueueCore {
 
   bool setDepth(ComPriority p, uint8_t depth);
 
-  // 入列。P0 滿：丟最舊後插入，回 true；其餘滿：拒收新幀，回 false。皆發 drop 計數。
+  // maxPktsPerRun ≥ 1；回 false 表示拒收
+  bool setMaxPktsPerRun(uint8_t n);
+  uint8_t maxPktsPerRun() const { return m_maxPktsPerRun; }
+
+  // 入列。P0 滿：丟最舊後插入，回 true；其餘滿：拒收新幀，回 false。
   bool enqueue(ComPriority p, const ComFrame& f);
 
   // 取最高優先層 FIFO 最舊一幀。
   bool dequeue(ComFrame& out);
 
-  // linkBusy 時不推進；否則 dequeue 一幀。
+  // linkBusy 時不推進；否則 dequeue 一幀（單包路徑）。
   bool nextFrame(bool linkBusy, ComFrame& out);
 
-  // rg100Hz tick：更新 drop 事件節流與高水位。
+  // rg100Hz run：更新節流後，在 !linkBusy 時最多吐出 maxPktsPerRun 幀到 out[0..)。
+  // 回傳實際寫入筆數；永不一次排空超過上限。busy 時回 0。
+  uint8_t runEmit(bool linkBusy, ComFrame* out, uint8_t outCap);
+
+  // 僅推進 drop 節流／高水位（不含發送）。
   void tick();
 
   bool highWater() const { return m_highWater; }
@@ -61,6 +71,7 @@ class ComQueueCore {
   uint8_t hwm(ComPriority p) const;
   uint32_t dropCount(ComPriority p) const;
   uint32_t dropCountTotal() const;
+  uint32_t queuedTotal() const;
 
  private:
   struct Ring {
@@ -72,8 +83,8 @@ class ComQueueCore {
     uint8_t hwm = 0;
 
     void reset();
-    bool pushDropOldest(const ComFrame& f);  // returns true if an old frame was dropped
-    bool pushDropNewest(const ComFrame& f);  // returns true if new frame was dropped (not stored)
+    bool pushDropOldest(const ComFrame& f);
+    bool pushDropNewest(const ComFrame& f);
     bool pop(ComFrame& out);
   };
 
@@ -85,6 +96,7 @@ class ComQueueCore {
   bool m_highWater = false;
   ComQueueEvent m_event = ComQueueEvent::NONE;
   IComQueueEvents* m_events = nullptr;
+  uint8_t m_maxPktsPerRun = kDefaultMaxPktsPerRun;
 
   uint32_t m_dropTotal[static_cast<uint8_t>(ComPriority::NUM)]{};
   uint32_t m_dropSinceEmit[static_cast<uint8_t>(ComPriority::NUM)]{};
