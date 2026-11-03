@@ -1,3 +1,14 @@
-# TODO(相機組（Arthur）): 加入 DsCam.fpp 與實作後啟用
-# set(SOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/DsCam.fpp" "${CMAKE_CURRENT_LIST_DIR}/DsCam.cpp")
-# register_fprime_module()
+# DsCam — ESP32-CAM (model ESP32_CAM, role DS_CAM)
+# CamTypes come from Components_Camera_Ov3640Driver (must be built first).
+set(SOURCE_FILES
+  "${CMAKE_CURRENT_LIST_DIR}/Esp32Cam.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/Esp32CamCore.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/Esp32CamSimDevice.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/Esp32Cam.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/Esp32CamSim.cpp"
+)
+set(MOD_DEPS
+  RocketTypes
+  Components_Camera_Ov3640Driver
+)
+register_fprime_module()
