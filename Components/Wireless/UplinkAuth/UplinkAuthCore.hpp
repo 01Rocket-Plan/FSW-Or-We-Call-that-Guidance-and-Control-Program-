@@ -21,8 +21,9 @@ enum class AuthStatus {
 
 typedef void (*ForwardFn)(void* ctx);
 
-//! Anti-replay + HMAC-SHA256 for table-listed opcodes.
-//! HMAC-required opcode set / provisional values: **待 Edward 定**.
+//! Anti-replay + HMAC-SHA256 (deny-by-default; exemption table only).
+//! PSK loaded only via IAuthNvStore (external config / NVS) — never embedded.
+//! Provisional opcode values: **待 Edward 定**.
 class UplinkAuthCore {
   public:
     static constexpr std::size_t kTagBytes = 32;
@@ -31,16 +32,24 @@ class UplinkAuthCore {
     static constexpr const char* kDomainTag = "01RP-UPL-v1";
     static constexpr std::size_t kDomainTagLen = 11;
     static constexpr std::uint32_t kCmdCounterForbidden = 0xFFFFFFFFu;
-    static constexpr std::uint16_t kProvisionalHmacOpcode0 =
-        OpcodeAuthTable::kProvisionalHmacOpcode0;
+    static constexpr std::uint16_t kProvisionalAbortOpcode =
+        OpcodeAuthTable::kProvisionalAbortOpcode;
+    static constexpr std::uint16_t kProvisionalGimbalOpcode =
+        OpcodeAuthTable::kProvisionalGimbalOpcode;
     static constexpr std::size_t kMacHeaderBytes = 11 + 1 + 4 + 2 + 2;
 
     explicit UplinkAuthCore(IAuthNvStore& store);
     AuthStatus init();
 
-    const OpcodeAuthTable& hmacTable() const { return m_hmacTable; }
-    OpcodeAuthTable& hmacTable() { return m_hmacTable; }
-    void setHmacTable(const OpcodeAuthTable& table) { m_hmacTable = table; }
+    //! Exemption table (opcodes that skip HMAC). Default = gimbal only.
+    const OpcodeAuthTable& hmacExemptTable() const { return m_hmacExempt; }
+    OpcodeAuthTable& hmacExemptTable() { return m_hmacExempt; }
+    void setHmacExemptTable(const OpcodeAuthTable& table) { m_hmacExempt = table; }
+
+    //! Backward-compatible alias used by older call sites / tests.
+    const OpcodeAuthTable& hmacTable() const { return m_hmacExempt; }
+    OpcodeAuthTable& hmacTable() { return m_hmacExempt; }
+    void setHmacTable(const OpcodeAuthTable& table) { m_hmacExempt = table; }
 
     AuthStatus accept(std::uint32_t cmdCounter, std::uint16_t opcode,
                       std::uint8_t vehicleId, const std::uint8_t* args,
@@ -58,7 +67,7 @@ class UplinkAuthCore {
 
   private:
     IAuthNvStore& m_store;
-    OpcodeAuthTable m_hmacTable;
+    OpcodeAuthTable m_hmacExempt;
     std::uint32_t m_lastCmdCounter = 0;
     std::uint8_t m_psk[kMaxPskBytes];
     std::size_t m_pskLen = 0;

@@ -22,7 +22,7 @@ void storeBe16(std::uint8_t* p, std::uint16_t v) {
 }  // namespace
 
 UplinkAuthCore::UplinkAuthCore(IAuthNvStore& store)
-    : m_store(store), m_hmacTable(OpcodeAuthTable::makeDefault()) {
+    : m_store(store), m_hmacExempt(OpcodeAuthTable::makeDefault()) {
     std::memset(m_psk, 0, sizeof(m_psk));
 }
 
@@ -32,6 +32,7 @@ AuthStatus UplinkAuthCore::init() {
         last = 0;
     }
     m_lastCmdCounter = last;
+    // PSK only from external NVS / config interface — never a compiled-in flight key.
     std::size_t pskLen = 0;
     if (m_store.readPsk(m_psk, kMaxPskBytes, pskLen) && pskLen > 0) {
         m_pskLen = pskLen;
@@ -95,7 +96,8 @@ AuthStatus UplinkAuthCore::accept(std::uint32_t cmdCounter, std::uint16_t opcode
         return AuthStatus::Replay;
     }
 
-    if (m_hmacTable.requiresHmac(opcode)) {
+    // Deny-by-default: require HMAC unless exempt (gimbal only in default table).
+    if (m_hmacExempt.requiresHmac(opcode)) {
         if (m_pskLen == 0) {
             return AuthStatus::MissingKey;
         }

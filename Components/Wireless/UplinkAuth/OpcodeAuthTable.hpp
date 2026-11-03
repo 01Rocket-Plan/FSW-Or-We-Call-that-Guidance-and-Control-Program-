@@ -6,50 +6,59 @@
 
 namespace UplinkAuth {
 
-//! Configurable table of opcodes that require HMAC verification.
-//! Values below are **待 Edward 定** (provisional placeholders only).
+//! HMAC policy: **deny-by-default** — every opcode requires HMAC unless listed
+//! in this exemption table. Unknown / newly invented opcodes always require HMAC.
+//!
+//! Provisional constants below are **待 Edward 定** (not flight-frozen values).
 struct OpcodeAuthTable {
     static constexpr std::size_t kMaxEntries = 8;
 
-    std::uint16_t opcodes[kMaxEntries];
+    //! Provisional abort / override-class opcode — **待 Edward 定**.
+    //! Named constant only; NOT an exemption. Default policy still requires HMAC.
+    static constexpr std::uint16_t kProvisionalAbortOpcode = 0x0001;
+
+    //! Provisional US gimbal (雲台) servo-control opcode — **待 Edward 定**.
+    //! Sole default HMAC exemption. Exemption ≠ whitelist bypass (§8 still applies).
+    static constexpr std::uint16_t kProvisionalGimbalOpcode = 0x0200;
+
+    std::uint16_t exemptOpcodes[kMaxEntries];
     std::size_t count;
 
-    //! Provisional placeholder opcode requiring HMAC — **待 Edward 定**.
-    //! Lives only in this parameter table; call sites use the table, not bare literals.
-    static constexpr std::uint16_t kProvisionalHmacOpcode0 = 0x0001;
-
-    //! Default table: single provisional entry. **待 Edward 定** — not a flight constant.
+    //! Default: only gimbal is exempt. **待 Edward 定**.
     static OpcodeAuthTable makeDefault() {
         OpcodeAuthTable t;
         t.count = 1;
-        t.opcodes[0] = kProvisionalHmacOpcode0;
+        t.exemptOpcodes[0] = kProvisionalGimbalOpcode;
         return t;
     }
 
-    bool requiresHmac(std::uint16_t opcode) const {
+    bool isExempt(std::uint16_t opcode) const {
         for (std::size_t i = 0; i < count && i < kMaxEntries; ++i) {
-            if (opcodes[i] == opcode) {
+            if (exemptOpcodes[i] == opcode) {
                 return true;
             }
         }
         return false;
     }
 
-    void setOpcodes(const std::uint16_t* list, std::size_t n) {
+    //! Inverse of exemption: unknown opcodes always return true.
+    bool requiresHmac(std::uint16_t opcode) const { return !isExempt(opcode); }
+
+    void setExemptOpcodes(const std::uint16_t* list, std::size_t n) {
         count = (n > kMaxEntries) ? kMaxEntries : n;
         for (std::size_t i = 0; i < count; ++i) {
-            opcodes[i] = list[i];
+            exemptOpcodes[i] = list[i];
         }
     }
 
-    bool addOpcode(std::uint16_t opcode) {
-        if (requiresHmac(opcode)) {
+    bool addExempt(std::uint16_t opcode) {
+        if (isExempt(opcode)) {
             return true;
         }
         if (count >= kMaxEntries) {
             return false;
         }
-        opcodes[count++] = opcode;
+        exemptOpcodes[count++] = opcode;
         return true;
     }
 };

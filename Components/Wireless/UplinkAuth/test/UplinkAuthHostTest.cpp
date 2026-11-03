@@ -38,14 +38,15 @@ using UplinkAuth::RamAuthNvStore;
 using UplinkAuth::Sha256;
 using UplinkAuth::UplinkAuthCore;
 
-// FAKE test-only PSK — clearly labeled, never a flight key.
+// FAKE test-only PSK — clearly labeled, never a flight key. Loaded via NVS fake.
 const std::uint8_t kFakePsk[] = {
     'F', 'A', 'K', 'E', '_', 'T', 'E', 'S', 'T', '_', 'P', 'S', 'K', '_',
     'D', 'O', '_', 'N', 'O', 'T', '_', 'U', 'S', 'E', '_', 'I', 'N', '_',
     'F', 'L', 'I', 'G', 'H', 'T', '!', '!'};
 constexpr std::size_t kFakePskLen = sizeof(kFakePsk);
 
-constexpr std::uint16_t kHmacOp0 = OpcodeAuthTable::kProvisionalHmacOpcode0;
+constexpr std::uint16_t kAbort = OpcodeAuthTable::kProvisionalAbortOpcode;
+constexpr std::uint16_t kGimbal = OpcodeAuthTable::kProvisionalGimbalOpcode;
 
 void makeTagWithDomain(const char* domain, std::size_t domainLen, std::uint8_t vehicleId,
                        std::uint32_t cmdCounter, std::uint16_t opcode,
@@ -112,9 +113,9 @@ void testReplayRejected() {
     CHECK(core.init() == AuthStatus::Ok);
     const std::uint8_t args[] = {0xAA};
     std::uint8_t tag[32];
-    makeTag(0x01, 1, kHmacOp0, args, 1, tag);
-    CHECK(core.accept(1, kHmacOp0, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
-    CHECK(core.accept(1, kHmacOp0, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::Replay);
+    makeTag(0x01, 1, kAbort, args, 1, tag);
+    CHECK(core.accept(1, kAbort, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
+    CHECK(core.accept(1, kAbort, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::Replay);
 }
 
 void testHmacOkAndFail() {
@@ -124,11 +125,11 @@ void testHmacOkAndFail() {
     CHECK(core.init() == AuthStatus::Ok);
     const std::uint8_t args[] = {0x01, 0x02};
     std::uint8_t tag[32];
-    makeTag(0x02, 10, kHmacOp0, args, 2, tag);
-    CHECK(core.accept(10, kHmacOp0, 0x02, args, 2, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
-    makeTag(0x02, 11, kHmacOp0, args, 2, tag);
+    makeTag(0x02, 10, kAbort, args, 2, tag);
+    CHECK(core.accept(10, kAbort, 0x02, args, 2, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
+    makeTag(0x02, 11, kAbort, args, 2, tag);
     tag[0] ^= 0xFFu;
-    CHECK(core.accept(11, kHmacOp0, 0x02, args, 2, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
+    CHECK(core.accept(11, kAbort, 0x02, args, 2, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
 }
 
 void testTamperedArgsRejected() {
@@ -139,8 +140,8 @@ void testTamperedArgsRejected() {
     const std::uint8_t argsGood[] = {0x10, 0x20, 0x30};
     const std::uint8_t argsBad[] = {0x10, 0x20, 0x31};
     std::uint8_t tag[32];
-    makeTag(0x01, 3, kHmacOp0, argsGood, 3, tag);
-    CHECK(core.accept(3, kHmacOp0, 0x01, argsBad, 3, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
+    makeTag(0x01, 3, kAbort, argsGood, 3, tag);
+    CHECK(core.accept(3, kAbort, 0x01, argsBad, 3, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
 }
 
 void testWrongDomainRejected() {
@@ -150,8 +151,8 @@ void testWrongDomainRejected() {
     CHECK(core.init() == AuthStatus::Ok);
     const std::uint8_t args[] = {0x42};
     std::uint8_t tag[32];
-    makeTagWithDomain("01RP-UPL-v0", 11, 0x01, 4, kHmacOp0, args, 1, tag);
-    CHECK(core.accept(4, kHmacOp0, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
+    makeTagWithDomain("01RP-UPL-v0", 11, 0x01, 4, kAbort, args, 1, tag);
+    CHECK(core.accept(4, kAbort, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
 }
 
 void testArgLenMismatchRejected() {
@@ -162,9 +163,9 @@ void testArgLenMismatchRejected() {
     const std::uint8_t args2[] = {0x01, 0x02};
     const std::uint8_t args3[] = {0x01, 0x02, 0x00};
     std::uint8_t tag[32];
-    makeTag(0x01, 5, kHmacOp0, args2, 2, tag);
-    CHECK(core.accept(5, kHmacOp0, 0x01, args3, 3, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
-    CHECK(core.accept(6, kHmacOp0, 0x01, nullptr, 2, tag, 32, nullptr, nullptr) == AuthStatus::BadInput);
+    makeTag(0x01, 5, kAbort, args2, 2, tag);
+    CHECK(core.accept(5, kAbort, 0x01, args3, 3, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
+    CHECK(core.accept(6, kAbort, 0x01, nullptr, 2, tag, 32, nullptr, nullptr) == AuthStatus::BadInput);
 }
 
 void testForbiddenCounterRejected() {
@@ -172,7 +173,7 @@ void testForbiddenCounterRejected() {
     store.setPsk(kFakePsk, kFakePskLen);
     UplinkAuthCore core(store);
     CHECK(core.init() == AuthStatus::Ok);
-    CHECK(core.accept(UplinkAuthCore::kCmdCounterForbidden, 0x00A0, 0x01, nullptr, 0, nullptr, 0,
+    CHECK(core.accept(UplinkAuthCore::kCmdCounterForbidden, kAbort, 0x01, nullptr, 0, nullptr, 0,
                       nullptr, nullptr) == AuthStatus::CounterInvalid);
 }
 
@@ -185,8 +186,8 @@ void testPersistBeforeForward() {
     probe.store = &store;
     const std::uint8_t args[] = {0x7E};
     std::uint8_t tag[32];
-    makeTag(0x01, 7, kHmacOp0, args, 1, tag);
-    CHECK(core.accept(7, kHmacOp0, 0x01, args, 1, tag, 32, onForwardProbe, &probe) == AuthStatus::Ok);
+    makeTag(0x01, 7, kAbort, args, 1, tag);
+    CHECK(core.accept(7, kAbort, 0x01, args, 1, tag, 32, onForwardProbe, &probe) == AuthStatus::Ok);
     CHECK(probe.forwarded);
     CHECK(probe.writeCountAtForward >= 1u);
 }
@@ -201,47 +202,56 @@ void testStoreFailDoesNotForward() {
     store.setFailWrites(true);
     const std::uint8_t args[] = {0x01};
     std::uint8_t tag[32];
-    makeTag(0x01, 8, kHmacOp0, args, 1, tag);
-    CHECK(core.accept(8, kHmacOp0, 0x01, args, 1, tag, 32, onForwardProbe, &probe) == AuthStatus::StoreFail);
+    makeTag(0x01, 8, kAbort, args, 1, tag);
+    CHECK(core.accept(8, kAbort, 0x01, args, 1, tag, 32, onForwardProbe, &probe) == AuthStatus::StoreFail);
     CHECK(!probe.forwarded);
 }
 
-void testNonListedOpcodeSkipsHmac() {
+void testUnknownOpcodeWithoutTagRejected() {
     RamAuthNvStore store;
     store.setPsk(kFakePsk, kFakePskLen);
     UplinkAuthCore core(store);
     CHECK(core.init() == AuthStatus::Ok);
-    CHECK(!core.hmacTable().requiresHmac(0x00A0));
-    CHECK(core.accept(5, 0x00A0, 0x01, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::Ok);
+    constexpr std::uint16_t kUnknown = 0x00A0;
+    CHECK(core.hmacExemptTable().requiresHmac(kUnknown));
+    CHECK(core.accept(5, kUnknown, 0x01, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::BadInput);
 }
 
-void testNewlyAddedOpcodeRequiresHmac() {
+void testGimbalOpcodeWithoutTagAcceptedAtAuthLayer() {
     RamAuthNvStore store;
     store.setPsk(kFakePsk, kFakePskLen);
     UplinkAuthCore core(store);
     CHECK(core.init() == AuthStatus::Ok);
-    constexpr std::uint16_t kNewOp = 0x00B1;
-    CHECK(!core.hmacTable().requiresHmac(kNewOp));
-    CHECK(core.accept(20, kNewOp, 0x01, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::Ok);
-    CHECK(core.hmacTable().addOpcode(kNewOp));
-    CHECK(core.hmacTable().requiresHmac(kNewOp));
-    CHECK(core.accept(21, kNewOp, 0x01, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::BadInput);
-    const std::uint8_t args[] = {0x55};
+    CHECK(core.hmacExemptTable().isExempt(kGimbal));
+    CHECK(!core.hmacExemptTable().requiresHmac(kGimbal));
+    // Auth layer accepts without tag; §8 whitelist / param-range still required downstream.
+    CHECK(core.accept(5, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::Ok);
+}
+
+void testOverrideClassWrongTagRejected() {
+    RamAuthNvStore store;
+    store.setPsk(kFakePsk, kFakePskLen);
+    UplinkAuthCore core(store);
+    CHECK(core.init() == AuthStatus::Ok);
+    CHECK(core.hmacExemptTable().requiresHmac(kAbort));
+    const std::uint8_t args[] = {0x01};
     std::uint8_t tag[32];
-    makeTag(0x01, 22, kNewOp, args, 1, tag);
-    tag[0] ^= 0x01u;
-    CHECK(core.accept(22, kNewOp, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
-    makeTag(0x01, 23, kNewOp, args, 1, tag);
-    CHECK(core.accept(23, kNewOp, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
+    makeTag(0x01, 9, kAbort, args, 1, tag);
+    tag[0] ^= 0xFFu;
+    CHECK(core.accept(9, kAbort, 0x01, args, 1, tag, 32, nullptr, nullptr) == AuthStatus::AuthFail);
 }
 
 void testMissingKeyWhenHmacRequired() {
     RamAuthNvStore store;
     UplinkAuthCore core(store);
     CHECK(core.init() == AuthStatus::Ok);
+    CHECK(!core.pskLoaded());
     std::uint8_t tag[32];
     std::memset(tag, 0, sizeof(tag));
-    CHECK(core.accept(1, kHmacOp0, 0x01, nullptr, 0, tag, 32, nullptr, nullptr) == AuthStatus::MissingKey);
+    CHECK(core.accept(1, kAbort, 0x01, nullptr, 0, tag, 32, nullptr, nullptr) ==
+          AuthStatus::MissingKey);
 }
 
 void testPersistedCounterSurvivesReinit() {
@@ -250,7 +260,8 @@ void testPersistedCounterSurvivesReinit() {
     {
         UplinkAuthCore core(store);
         CHECK(core.init() == AuthStatus::Ok);
-        CHECK(core.accept(42, 0x00B0, 0x01, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::Ok);
+        CHECK(core.accept(42, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+              AuthStatus::Ok);
     }
     UplinkAuthCore core2(store);
     CHECK(core2.init() == AuthStatus::Ok);
@@ -264,14 +275,17 @@ void testBadTagLength() {
     CHECK(core.init() == AuthStatus::Ok);
     std::uint8_t tag[16];
     std::memset(tag, 0, sizeof(tag));
-    CHECK(core.accept(1, kHmacOp0, 0x01, nullptr, 0, tag, 16, nullptr, nullptr) == AuthStatus::BadInput);
+    CHECK(core.accept(1, kAbort, 0x01, nullptr, 0, tag, 16, nullptr, nullptr) ==
+          AuthStatus::BadInput);
 }
 
-void testDefaultTableUsesParameter() {
+void testDefaultExemptTableIsGimbalOnly() {
     OpcodeAuthTable t = OpcodeAuthTable::makeDefault();
     CHECK_EQ(t.count, 1u);
-    CHECK(t.requiresHmac(OpcodeAuthTable::kProvisionalHmacOpcode0));
-    CHECK(!t.requiresHmac(0x00FF));
+    CHECK(t.isExempt(OpcodeAuthTable::kProvisionalGimbalOpcode));
+    CHECK(!t.isExempt(OpcodeAuthTable::kProvisionalAbortOpcode));
+    CHECK(t.requiresHmac(OpcodeAuthTable::kProvisionalAbortOpcode));
+    CHECK(t.requiresHmac(0x00FF));  // unknown always requires HMAC
 }
 
 }  // namespace
@@ -287,12 +301,13 @@ int main() {
     testForbiddenCounterRejected();
     testPersistBeforeForward();
     testStoreFailDoesNotForward();
-    testNonListedOpcodeSkipsHmac();
-    testNewlyAddedOpcodeRequiresHmac();
+    testUnknownOpcodeWithoutTagRejected();
+    testGimbalOpcodeWithoutTagAcceptedAtAuthLayer();
+    testOverrideClassWrongTagRejected();
     testMissingKeyWhenHmacRequired();
     testPersistedCounterSurvivesReinit();
     testBadTagLength();
-    testDefaultTableUsesParameter();
+    testDefaultExemptTableIsGimbalOnly();
     if (g_failures == 0) {
         std::printf("ALL TESTS PASSED\n");
         return 0;
