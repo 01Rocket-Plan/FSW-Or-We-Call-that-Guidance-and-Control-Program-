@@ -1,13 +1,15 @@
 module Components {
 
-  @ 射頻硬體型號（尚未定案 → UNASSIGNED；待 Edward 定）
-  enum RfHwModel : U8 { UNASSIGNED = 0 }
+  @ 射頻硬體型號 — 主飛行鏈路：LoRa-02（433 MHz，SX1278-class）
+  @ 備註（非本 enum 取值／本 PR 不實作）：HC-12（SI4438 433 MHz）＝備援鏈；
+  @ NRF24L01（2.4 GHz）＝地面站／發射台用，不上箭（Edward 設計文件）
+  enum RfHwModel : U8 { LORA_02 = 0 }
 
-  @ 射頻角色：AIR_GROUND_LINK＝箭地無線鏈路
+  @ 射頻角色：AIR_GROUND_LINK＝箭地無線鏈路（主飛行鏈）
   enum RfHwRole : U8 { AIR_GROUND_LINK = 0 }
 
   @ RF 數傳真驅動；Base ID 0x8400（首席已核准）
-  @ 硬體型號 UNASSIGNED（TBD／待 Edward 定）；角色＝箭地無線鏈路（AIR_GROUND_LINK）
+  @ 硬體型號 LORA_02（433 MHz／SX1278-class，主飛行鏈）；角色＝AIR_GROUND_LINK
   @ 握手 OFF→INIT→SELFTEST→READY／FAULT；連續 txTimeout → FAULT
   passive component RfDriver {
 
@@ -15,7 +17,6 @@ module Components {
     output port dataOut: Svc.ComDataWithContext
     output port comStatusOut: Svc.ComStatus
     output port healthOut: RfHealth
-
     sync input port run: Svc.Sched
 
     time get port timeCaller
@@ -28,8 +29,8 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 硬體型號 — UNASSIGNED（射頻型號 TBD，待 Edward 定）
-    param model: RfHwModel default RfHwModel.UNASSIGNED
+    @ 硬體型號 — LoRa-02（433 MHz，SX1278-class，主飛行鏈）
+    param model: RfHwModel default RfHwModel.LORA_02
     @ 角色 — 箭地無線鏈路
     param role: RfHwRole default RfHwRole.AIR_GROUND_LINK
 
