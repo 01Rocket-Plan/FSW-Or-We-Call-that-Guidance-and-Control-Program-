@@ -77,6 +77,7 @@
 |----------|----------|------------|------|---------|
 | SdLogger 紀錄佇列 | `SdLogger` | `RecordQueueHwm` | `0x2000` | **0x2002**（local 0x02） |
 | SdLogger SD 寫入緩衝池 | `SdLogger` | `SdWritePoolHwm` | `0x2000` | **0x2003**（local 0x03） |
+| SdLogger 影像分塊佇列 | `SdLogger` | `ImageQueueHwm` | `0x2000` | **0x2011**（local 0x11） |
 | 通訊佇列 | `ComQueue` | 待命名 | `0x8200` | 待該組補（骨架） |
 | F´ `bufferManager` 等標準池 | `Platform`／F´ 標準 | 待命名 | `0x0000–0x0FFF` | 待該組補 |
 | 其他組內部佇列 | 各組 | 待命名 | 各組段 | 待該組補 |
@@ -102,6 +103,13 @@
 | 0x0A | **0x200A** | `ProducerSeq` | U32 | 最近寫入之 SampleHeader.seq（子Bot2） |
 | 0x0B | **0x200B** | `CardModel` | `SdCardModel` | Micro SDHC UHS-I 16GB（子Bot2） |
 | 0x0C | **0x200C** | `CardRole` | `SdCardRole` | DS_LOG / US_LOG（子Bot2） |
+| 0x0D | **0x200D** | `ImageChunkCount` | U32 | 成功寫入影像分塊數（子Bot2） |
+| 0x0E | **0x200E** | `ImageDropCount` | U32 | 影像佇列滿丟棄數（子Bot2） |
+| 0x0F | **0x200F** | `ImageFrameCount` | U32 | 完成影像幀數（見 END）（子Bot2） |
+| 0x10 | **0x2010** | `ImageBytesWritten` | U32 | 累計影像 payload bytes（子Bot2） |
+| 0x11 | **0x2011** | `ImageQueueHwm` | U32 | 影像分塊佇列高水位（子Bot2） |
+| 0x12 | **0x2012** | `LastImageFrame` | U32 | 最近接受 frameNumber（子Bot2） |
+| 0x13 | **0x2013** | `LastImageChunk` | U32 | 最近接受 chunkIndex（子Bot2） |
 
 ### Events
 
@@ -113,6 +121,12 @@
 | 0x03 | **0x2003** | `EnterFault` | warning high | `reason: U8` |
 | 0x04 | **0x2004** | `SeqGap` | warning high | `expected: U32`, `got: U32`（upstream seq discontinuity） |
 | 0x05 | **0x2005** | `TimeNonMonotonic` | warning high | `prev_s: F64`, `now_s: F64`（timestamp went backwards） |
+| 0x06 | **0x2006** | `ImageChunkDrop` | warning high | `dropped: U32`, `queueDepth: U32`（影像佇列滿丟最新） |
+| 0x07 | **0x2007** | `ImageFrameGap` | warning high | `expected: U32`, `got: U32`（frameNumber 不連續） |
+| 0x08 | **0x2008** | `ImageChunkGap` | warning high | `frameNumber: U32`, `expected: U32`, `got: U32` |
+| 0x09 | **0x2009** | `ImageTruncatedSeen` | warning high | `frameNumber: U32`, `chunkIndex: U32`（CamChunkFlag.TRUNCATED） |
+
+影像輸入：`usImageIn: Ov3640ImageOut`、`dsImageIn: Esp32CamImageOut`（2KB 分塊；flags END=1／TRUNCATED=2）；獨立 `IMAGE_QUEUE_DEPTH`（預設 8）；頻道 `RecordChannel::IMAGE=11`。
 
 Sim 實例：base **`0x2080`**，local 對照相同（abs = 0x2080 + local）。
 

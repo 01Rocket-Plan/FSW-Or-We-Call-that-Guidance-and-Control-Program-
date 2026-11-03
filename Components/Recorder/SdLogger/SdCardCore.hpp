@@ -31,7 +31,7 @@ class SdCardCore {
   uint32_t poolSize() const { return m_poolSize; }
 
   static constexpr uint32_t kMagic = 0x524C4F47u;  // 'RLOG'
-  static constexpr uint16_t kMaxPayload = 256;
+  static constexpr uint16_t kMaxPayload = 2056;  // 2048 image + 8B meta
 
  private:
   ISdMedia& m_media;

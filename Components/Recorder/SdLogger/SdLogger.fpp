@@ -21,7 +21,7 @@ module Components {
   enum SdSimFault { NONE, FULL, NACK, WRITE_FAIL, CARD_MISSING }
 
   @ DS/US SD logger. Owns one record queue and one SD write buffer pool; both have HWM channels.
-  @ Dictionary locals 0x00–0x07 / events 0x00–0x05 owned by 子Bot1; new TLM from local 0x08 (abs 0x2008).
+  @ Dictionary locals 0x00–0x07 / events 0x00–0x05 owned by 子Bot1; Bot2 TLM 0x08–0x0C; image EVR from 0x06 / TLM from 0x0D.
   passive component SdLogger {
 
     @ Rate-group tick (e.g. rg1Hz / rg10Hz) for flush / HWM publish — topology decides
@@ -40,6 +40,11 @@ module Components {
     @ US sample inputs (record-only layers; no I2C/SPI from Recorder)
     sync input port mpu6050In: RocketTypes.Mpu6050Data
     sync input port humTempIn: RocketTypes.HumTempData
+
+    @ US_CAM 2KB image chunks (Ov3640 imageOut → sdLogger)
+    sync input port usImageIn: Ov3640ImageOut
+    @ DS_CAM 2KB image chunks (Esp32Cam imageOut → sdLogger)
+    sync input port dsImageIn: Esp32CamImageOut
 
     @ F´ time service only (LOGGING timestamps)
     time get port timeCaller
@@ -103,6 +108,27 @@ module Components {
     @ local 0x0C / abs 0x200C — configured DS/US role
     telemetry CardRole: SdCardRole
 
+    @ local 0x0D / abs 0x200D — image chunks successfully written
+    telemetry ImageChunkCount: U32
+
+    @ local 0x0E / abs 0x200E — image chunks dropped (image queue full)
+    telemetry ImageDropCount: U32
+
+    @ local 0x0F / abs 0x200F — image frames completed (END seen)
+    telemetry ImageFrameCount: U32
+
+    @ local 0x10 / abs 0x2010 — cumulative image payload bytes written
+    telemetry ImageBytesWritten: U32
+
+    @ local 0x11 / abs 0x2011 — image chunk queue high-water mark
+    telemetry ImageQueueHwm: U32
+
+    @ local 0x12 / abs 0x2012 — last accepted image frameNumber
+    telemetry LastImageFrame: U32
+
+    @ local 0x13 / abs 0x2013 — last accepted image chunkIndex
+    telemetry LastImageChunk: U32
+
     # ------------------------------------------------------------------
     # Events — local IDs 0x00.. (absolute = 0x2000 + local; topology may remap)
     # ------------------------------------------------------------------
@@ -137,6 +163,26 @@ module Components {
       severity warning high \
       format "SdLogger time non-monotonic prev_s={} now_s={}"
 
+    @ local 0x06 / abs 0x2006 — image queue full: drop newest chunk (never block)
+    event ImageChunkDrop(dropped: U32, queueDepth: U32) \
+      severity warning high \
+      format "SdLogger image chunk drop={} depth={}"
+
+    @ local 0x07 / abs 0x2007 — image frameNumber discontinuity
+    event ImageFrameGap(expected: U32, got: U32) \
+      severity warning high \
+      format "SdLogger image frame gap expected={} got={}"
+
+    @ local 0x08 / abs 0x2008 — image chunkIndex discontinuity within a frame
+    event ImageChunkGap(frameNumber: U32, expected: U32, got: U32) \
+      severity warning high \
+      format "SdLogger image chunk gap frame={} expected={} got={}"
+
+    @ local 0x09 / abs 0x2009 — accepted chunk carried CamChunkFlag.TRUNCATED
+    event ImageTruncatedSeen(frameNumber: U32, chunkIndex: U32) \
+      severity warning high \
+      format "SdLogger image truncated seen frame={} chunk={}"
+
     @ Max depth of the inbound record queue (HWM ceiling)
     param RECORD_QUEUE_DEPTH: U32 default 64
     @ SD write buffer pool size (buffers)
@@ -145,6 +191,8 @@ module Components {
     param CARD_MODEL: SdCardModel default SdCardModel.MICRO_SDHC_UHS_I_16GB
     @ Instance role DS_LOG or US_LOG
     param CARD_ROLE: SdCardRole default SdCardRole.DS_LOG
+    @ Max depth of the inbound image-chunk queue (2KB entries)
+    param IMAGE_QUEUE_DEPTH: U32 default 8
   }
 
   @ SdLogger Sim：同一 SdLoggerCore + SdCardSimDevice（base id 0x2080）
@@ -162,6 +210,9 @@ module Components {
     sync input port sepCmdIn: RocketTypes.SepCmdPort
     sync input port mpu6050In: RocketTypes.Mpu6050Data
     sync input port humTempIn: RocketTypes.HumTempData
+
+    sync input port usImageIn: Ov3640ImageOut
+    sync input port dsImageIn: Esp32CamImageOut
 
     time get port timeCaller
     telemetry port tlmOut
@@ -192,6 +243,13 @@ module Components {
     telemetry ProducerSeq: U32
     telemetry CardModel: SdCardModel
     telemetry CardRole: SdCardRole
+    telemetry ImageChunkCount: U32
+    telemetry ImageDropCount: U32
+    telemetry ImageFrameCount: U32
+    telemetry ImageBytesWritten: U32
+    telemetry ImageQueueHwm: U32
+    telemetry LastImageFrame: U32
+    telemetry LastImageChunk: U32
 
     event QueueFullDrop(dropped: U32, queueDepth: U32) \
       severity warning high \
@@ -217,10 +275,27 @@ module Components {
       severity warning high \
       format "SdLoggerSim time non-monotonic prev_s={} now_s={}"
 
+    event ImageChunkDrop(dropped: U32, queueDepth: U32) \
+      severity warning high \
+      format "SdLoggerSim image chunk drop={} depth={}"
+
+    event ImageFrameGap(expected: U32, got: U32) \
+      severity warning high \
+      format "SdLoggerSim image frame gap expected={} got={}"
+
+    event ImageChunkGap(frameNumber: U32, expected: U32, got: U32) \
+      severity warning high \
+      format "SdLoggerSim image chunk gap frame={} expected={} got={}"
+
+    event ImageTruncatedSeen(frameNumber: U32, chunkIndex: U32) \
+      severity warning high \
+      format "SdLoggerSim image truncated seen frame={} chunk={}"
+
     param RECORD_QUEUE_DEPTH: U32 default 64
     param SD_WRITE_POOL_SIZE: U32 default 8
     param CARD_MODEL: SdCardModel default SdCardModel.MICRO_SDHC_UHS_I_16GB
     param CARD_ROLE: SdCardRole default SdCardRole.DS_LOG
+    param IMAGE_QUEUE_DEPTH: U32 default 8
   }
 
 }

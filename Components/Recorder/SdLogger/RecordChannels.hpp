@@ -19,6 +19,21 @@ enum class RecordChannel : uint16_t {
   SEP_CMD = 8,
   MPU6050 = 9,
   HUM_TEMP = 10,
+  IMAGE = 11,  // Ov3640 / Esp32Cam 2KB chunks
+};
+
+//! CamChunkFlag bits (Camera CamTypes) — END|TRUNCATED
+constexpr uint8_t kCamChunkFlagEnd = 1;
+constexpr uint8_t kCamChunkFlagTruncated = 2;
+
+//! Image chunk queued for media write (separate from PackedRecord 256B samples)
+struct ImageChunkRecord {
+  uint32_t frameNumber = 0;
+  uint32_t chunkIndex = 0;
+  uint8_t flags = 0;
+  uint16_t len = 0;
+  double t_s = 0.0;
+  uint8_t bytes[2048]{};
 };
 
 struct PackedRecord {

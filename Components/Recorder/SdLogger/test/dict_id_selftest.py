@@ -12,8 +12,13 @@ req_tlm = [
     "WriteCount", "DropCount", "RecordQueueHwm", "SdWritePoolHwm",
     "SdErrorCount", "SdStatus", "LastSeq", "LastT_s",
     "HsState", "LoggerSeq", "ProducerSeq", "CardModel", "CardRole",
+    "ImageChunkCount", "ImageDropCount", "ImageFrameCount", "ImageBytesWritten",
+    "ImageQueueHwm", "LastImageFrame", "LastImageChunk",
 ]
-req_ev = ["QueueFullDrop", "SdError", "EnterReady", "EnterFault", "SeqGap", "TimeNonMonotonic"]
+req_ev = [
+    "QueueFullDrop", "SdError", "EnterReady", "EnterFault", "SeqGap", "TimeNonMonotonic",
+    "ImageChunkDrop", "ImageFrameGap", "ImageChunkGap", "ImageTruncatedSeen",
+]
 
 errors = []
 for n in req_tlm:
@@ -53,6 +58,25 @@ if "SdCardRole" not in fpp or "DS_LOG" not in fpp or "US_LOG" not in fpp:
     errors.append("missing SdCardRole DS_LOG/US_LOG")
 if "passive component SdLoggerSim" not in fpp:
     errors.append("missing SdLoggerSim component")
+if "usImageIn" not in fpp or "dsImageIn" not in fpp:
+    errors.append("missing usImageIn/dsImageIn ports")
+if "IMAGE_QUEUE_DEPTH" not in fpp:
+    errors.append("missing IMAGE_QUEUE_DEPTH param")
+if "Ov3640ImageOut" not in fpp or "Esp32CamImageOut" not in fpp:
+    errors.append("missing camera image port types on SdLogger")
+
+for abs_id, name in (
+    (0x2006, "ImageChunkDrop"),
+    (0x2007, "ImageFrameGap"),
+    (0x2008, "ImageChunkGap"),
+    (0x2009, "ImageTruncatedSeen"),
+    (0x200D, "ImageChunkCount"),
+    (0x2013, "LastImageChunk"),
+):
+    needle_l = f"**0x{abs_id:04x}**"
+    needle_u = f"**0x{abs_id:04X}**"
+    if (needle_l not in doc and needle_u not in doc) or f"`{name}`" not in doc:
+        errors.append(f"doc missing {needle_u} / {name}")
 
 if errors:
     print("FAIL")

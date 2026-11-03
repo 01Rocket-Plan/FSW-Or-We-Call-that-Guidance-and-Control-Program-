@@ -28,6 +28,8 @@ class SdLogger final : public SdLoggerComponentBase, private ISdLoggerSink {
   void sepCmdIn_handler(FwIndexType portNum, const RocketTypes::SepCmd& c) override;
   void mpu6050In_handler(FwIndexType portNum, const RocketTypes::Mpu6050Sample& s) override;
   void humTempIn_handler(FwIndexType portNum, const RocketTypes::HumTempSample& s) override;
+  void usImageIn_handler(FwIndexType portNum, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) override;
+  void dsImageIn_handler(FwIndexType portNum, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) override;
 
   void START_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
   void STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) override;
@@ -42,6 +44,10 @@ class SdLogger final : public SdLoggerComponentBase, private ISdLoggerSink {
   void onSdError(SdMediaStatus status, uint8_t code) override;
   void onEnterReady() override;
   void onEnterFault(uint8_t reason) override;
+  void onImageChunkDrop(uint32_t dropped, uint32_t depth) override;
+  void onImageFrameGap(uint32_t expected, uint32_t got) override;
+  void onImageChunkGap(uint32_t frameNumber, uint32_t expected, uint32_t got) override;
+  void onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex) override;
 
   void loadParams();
   void writeTlm();

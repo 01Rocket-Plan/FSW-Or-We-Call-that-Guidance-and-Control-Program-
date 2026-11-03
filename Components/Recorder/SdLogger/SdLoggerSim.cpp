@@ -38,9 +38,15 @@ SdLoggerSim::SdLoggerSim(const char* compName)
       m_model(SdCardModel::MICRO_SDHC_UHS_I_16GB),
       m_role(SdCardRole::DS_LOG) {}
 
+F64 SdLoggerSim::now_s() {
+  const Fw::Time now = this->getTime();
+  return static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;
+}
+
 void SdLoggerSim::loadParams() {
   Fw::ParamValid v;
   m_core.setQueueDepth(this->paramGet_RECORD_QUEUE_DEPTH(v));
+  m_core.setImageQueueDepth(this->paramGet_IMAGE_QUEUE_DEPTH(v));
   m_card.setPoolSize(this->paramGet_SD_WRITE_POOL_SIZE(v));
   m_model = this->paramGet_CARD_MODEL(v);
   m_role = this->paramGet_CARD_ROLE(v);
@@ -63,6 +69,13 @@ void SdLoggerSim::writeTlm() {
   this->tlmWrite_ProducerSeq(m_core.lastProducerSeq());
   this->tlmWrite_CardModel(m_model);
   this->tlmWrite_CardRole(m_role);
+  this->tlmWrite_ImageChunkCount(m_core.imageChunkCount());
+  this->tlmWrite_ImageDropCount(m_core.imageDropCount());
+  this->tlmWrite_ImageFrameCount(m_core.imageFrameCount());
+  this->tlmWrite_ImageBytesWritten(m_core.imageBytesWritten());
+  this->tlmWrite_ImageQueueHwm(m_core.imageQueueHwm());
+  this->tlmWrite_LastImageFrame(m_core.lastImageFrame());
+  this->tlmWrite_LastImageChunk(m_core.lastImageChunk());
 }
 
 void SdLoggerSim::ingestPacked(const PackedRecord& rec) { (void)m_core.ingest(rec); }
@@ -194,5 +207,30 @@ void SdLoggerSim::onSdError(SdMediaStatus status, uint8_t code) {
 }
 void SdLoggerSim::onEnterReady() { this->log_ACTIVITY_HI_EnterReady(); }
 void SdLoggerSim::onEnterFault(uint8_t reason) { this->log_WARNING_HI_EnterFault(reason); }
+
+void SdLoggerSim::usImageIn_handler(FwIndexType, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) {
+  const U8* ptr = data.getData();
+  const U16 len = static_cast<U16>(data.getSize() > 2048 ? 2048 : data.getSize());
+  (void)m_core.ingestImageChunk(frameNumber, chunkIndex, flags, ptr, len, now_s());
+}
+
+void SdLoggerSim::dsImageIn_handler(FwIndexType, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) {
+  const U8* ptr = data.getData();
+  const U16 len = static_cast<U16>(data.getSize() > 2048 ? 2048 : data.getSize());
+  (void)m_core.ingestImageChunk(frameNumber, chunkIndex, flags, ptr, len, now_s());
+}
+
+void SdLoggerSim::onImageChunkDrop(uint32_t dropped, uint32_t depth) {
+  this->log_WARNING_HI_ImageChunkDrop(dropped, depth);
+}
+void SdLoggerSim::onImageFrameGap(uint32_t expected, uint32_t got) {
+  this->log_WARNING_HI_ImageFrameGap(expected, got);
+}
+void SdLoggerSim::onImageChunkGap(uint32_t frameNumber, uint32_t expected, uint32_t got) {
+  this->log_WARNING_HI_ImageChunkGap(frameNumber, expected, got);
+}
+void SdLoggerSim::onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex) {
+  this->log_WARNING_HI_ImageTruncatedSeen(frameNumber, chunkIndex);
+}
 
 }  // namespace Components

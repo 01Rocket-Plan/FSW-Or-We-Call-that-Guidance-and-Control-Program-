@@ -40,6 +40,7 @@ F64 SdLogger::now_s() {
 void SdLogger::loadParams() {
   Fw::ParamValid v;
   m_core.setQueueDepth(this->paramGet_RECORD_QUEUE_DEPTH(v));
+  m_core.setImageQueueDepth(this->paramGet_IMAGE_QUEUE_DEPTH(v));
   m_card.setPoolSize(this->paramGet_SD_WRITE_POOL_SIZE(v));
   m_model = this->paramGet_CARD_MODEL(v);
   m_role = this->paramGet_CARD_ROLE(v);
@@ -62,6 +63,13 @@ void SdLogger::writeTlm() {
   this->tlmWrite_ProducerSeq(m_core.lastProducerSeq());
   this->tlmWrite_CardModel(m_model);
   this->tlmWrite_CardRole(m_role);
+  this->tlmWrite_ImageChunkCount(m_core.imageChunkCount());
+  this->tlmWrite_ImageDropCount(m_core.imageDropCount());
+  this->tlmWrite_ImageFrameCount(m_core.imageFrameCount());
+  this->tlmWrite_ImageBytesWritten(m_core.imageBytesWritten());
+  this->tlmWrite_ImageQueueHwm(m_core.imageQueueHwm());
+  this->tlmWrite_LastImageFrame(m_core.lastImageFrame());
+  this->tlmWrite_LastImageChunk(m_core.lastImageChunk());
 }
 
 void SdLogger::ingestPacked(const PackedRecord& rec) { (void)m_core.ingest(rec); }
@@ -188,5 +196,30 @@ void SdLogger::onSdError(SdMediaStatus status, uint8_t code) {
 }
 void SdLogger::onEnterReady() { this->log_ACTIVITY_HI_EnterReady(); }
 void SdLogger::onEnterFault(uint8_t reason) { this->log_WARNING_HI_EnterFault(reason); }
+
+void SdLogger::usImageIn_handler(FwIndexType, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) {
+  const U8* ptr = data.getData();
+  const U16 len = static_cast<U16>(data.getSize() > 2048 ? 2048 : data.getSize());
+  (void)m_core.ingestImageChunk(frameNumber, chunkIndex, flags, ptr, len, now_s());
+}
+
+void SdLogger::dsImageIn_handler(FwIndexType, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) {
+  const U8* ptr = data.getData();
+  const U16 len = static_cast<U16>(data.getSize() > 2048 ? 2048 : data.getSize());
+  (void)m_core.ingestImageChunk(frameNumber, chunkIndex, flags, ptr, len, now_s());
+}
+
+void SdLogger::onImageChunkDrop(uint32_t dropped, uint32_t depth) {
+  this->log_WARNING_HI_ImageChunkDrop(dropped, depth);
+}
+void SdLogger::onImageFrameGap(uint32_t expected, uint32_t got) {
+  this->log_WARNING_HI_ImageFrameGap(expected, got);
+}
+void SdLogger::onImageChunkGap(uint32_t frameNumber, uint32_t expected, uint32_t got) {
+  this->log_WARNING_HI_ImageChunkGap(frameNumber, expected, got);
+}
+void SdLogger::onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex) {
+  this->log_WARNING_HI_ImageTruncatedSeen(frameNumber, chunkIndex);
+}
 
 }  // namespace Components
