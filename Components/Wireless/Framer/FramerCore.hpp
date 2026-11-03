@@ -78,7 +78,7 @@ class FramerCore {
   static uint32_t crc32(const uint8_t* data, size_t len);
 
  private:
-  size_t m_frameMax = 0;  // 0 = unset (TBD / 待 Edward 定)
+  size_t m_frameMax = 256;  // LoRa-02 256 Byte buffer
   IFramerEvents* m_events = nullptr;
   void emitError(FramerError e, uint32_t detail);
 };

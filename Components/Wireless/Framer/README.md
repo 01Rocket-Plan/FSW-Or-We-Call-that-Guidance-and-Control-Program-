@@ -3,7 +3,7 @@
 - 負責：無線組（子Bot1）
 - Base ID：`0x8100`
 - 範圍：§2 空中幀組幀（同步字／長度／標頭／CRC-32）
-- `frameMax_B`：TBD（待 Edward 定射頻 MTU）；prm 預設 0＝未設上限
+- `frameMax_B`：預設 **256**（對齊 LoRa-02／SX1278-class 256 Byte buffer；Edward）
 
 ## 幀佈局（大端）
 | 偏移 | 欄位 |

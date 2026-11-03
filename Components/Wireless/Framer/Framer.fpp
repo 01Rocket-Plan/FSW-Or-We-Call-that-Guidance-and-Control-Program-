@@ -1,7 +1,7 @@
 module Components {
 
   @ Framer：§2 空中幀組幀；Base ID 0x8100；被動元件
-  @ frameMax_B 預設 0＝未設定（TBD／待 Edward 定射頻 MTU）
+  @ frameMax_B 預設 256＝對齊 LoRa-02（SX1278-class）256 Byte buffer（Edward）
   passive component Framer {
 
     sync input port comIn: Svc.ComDataWithContext
@@ -19,8 +19,8 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 單幀上限（bytes）；0＝未設定（TBD）
-    param frameMax_B: U32 default 0
+    @ 單幀上限（bytes）；預設 256＝LoRa-02 buffer
+    param frameMax_B: U32 default 256
 
     telemetry FramesBuilt: U32
     telemetry LastFrameLen: U32
