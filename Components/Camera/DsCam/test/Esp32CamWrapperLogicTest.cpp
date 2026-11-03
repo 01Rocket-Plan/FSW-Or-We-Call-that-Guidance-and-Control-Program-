@@ -37,9 +37,9 @@ int main() {
   CHECK(CamI2cConfig::kPinSdaPlaceholder == 0xFF);
   CHECK(CamI2cConfig::kPinSclPlaceholder == 0xFF);
 
-  std::printf("W4) CamStatus.hsState field (not reserved 'state')\n");
+  std::printf("W4) CamStatus.camState field (not reserved 'state')\n");
   CamStatus s = core.status();
-  CHECK(s.hsState == CamState::INIT);
+  CHECK(s.camState == CamState::INIT);
 
   if (g_fail) {
     std::printf("Esp32CamWrapperLogicTest: FAILED (%d)\n", g_fail);

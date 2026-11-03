@@ -2,7 +2,7 @@
 
 - 負責：相機組（Arthur）／子Bot1
 - FPP 宣告：型號 `ESP32_CAM`、角色 `DS_CAM`
-- 共用型別：`Components/Camera/Ov3640Driver/CamTypes`（欄位 `hsState`／fault／frameCount／model／role；**不**使用 FPP 保留字 `state`）
+- 共用型別：`Components/Camera/Ov3640Driver/CamTypes`（欄位 `camState`／fault／frameCount／model／role；**不**使用 FPP 保留字 `state`）
 - 範圍：`Esp32CamCore` + `Esp32CamSimDevice` + F´ 外殼 `Esp32Cam`／`Esp32CamSim`
 - 飛控連線：I2C → `ICamLink`；時脈預設 400 kHz；`I2C_ADDR`／`I2C_PIN_SDA`／`I2C_PIN_SCL` 為 placeholder（Anatoly 腳位表）
 - 完整錄影：ESP32-CAM 本機 SD（`ILocalSdStore`）；預覽：`IGroundPreviewLink`（不經 ICamLink／遙測）

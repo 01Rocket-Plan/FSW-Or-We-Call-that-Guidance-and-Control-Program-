@@ -28,7 +28,7 @@ $CXX "${CFLAGS[@]}" \
   -o /tmp/esp32cam_wrapper_logic_test
 /tmp/esp32cam_wrapper_logic_test
 
-echo "== Ov3640SimTest (shared CamTypes hsState) =="
+echo "== Ov3640SimTest (shared CamTypes camState) =="
 $CXX "${CFLAGS[@]}" \
   "$R/Components/Camera/Ov3640Driver/test/Ov3640SimTest.cpp" \
   "$R/Components/Camera/Ov3640Driver/Ov3640Core.cpp" \

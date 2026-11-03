@@ -36,7 +36,7 @@
 | `0xB0` | FC→CAM | `POWER_ON` / 軟啟（可選，亦可用指令埠） | 無 |
 | `0xB3` | FC→CAM | `RESET` | 無 |
 | `0xC0` | CAM→FC | `FRAME_NOTIFY` | `index:u32le`, `bytes:u32le`, `width:u16le`, `height:u16le`（12 bytes，**無像素**） |
-| `0xE0` | CAM→FC | `STATUS` | `hsState:u8`, `fault:u8`, `frameCount:u32le`（6 bytes；對應 CamStatus.hsState） |
+| `0xE0` | CAM→FC | `STATUS` | `camState:u8`, `fault:u8`, `frameCount:u32le`（6 bytes；對應 CamStatus.camState） |
 
 ## 地面預覽（不在本文件鏈路）
 

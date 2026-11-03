@@ -175,11 +175,11 @@ static void test6_captureRejectedWhenNotReady() {
 }
 
 static void test7_telemetryFourFields() {
-  std::printf("7) CamStatus fields only (hsState/fault/frameCount/model+role)\n");
+  std::printf("7) CamStatus fields only (camState/fault/frameCount/model+role)\n");
   Rig r;
   CHECK(r.driveToReady());
   CamStatus s = r.core.status();
-  CHECK(s.hsState == CamState::READY);
+  CHECK(s.camState == CamState::READY);
   CHECK(s.fault == CamFault::NONE);
   CHECK(s.frameCount == 0);
   CHECK(s.model == CamModel::ESP32_CAM);

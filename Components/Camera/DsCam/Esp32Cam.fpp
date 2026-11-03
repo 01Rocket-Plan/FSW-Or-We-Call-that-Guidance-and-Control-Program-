@@ -27,7 +27,7 @@ module Components {
     sync command CAPTURE_START()
     sync command CAPTURE_STOP()
 
-    @ 電傳：僅 CamStatus（hsState / fault / frameCount / model+role）
+    @ 電傳：僅 CamStatus（camState / fault / frameCount / model+role）
     telemetry Status: CamStatus
 
     event StateChanged(from: CamState, to: CamState) \
