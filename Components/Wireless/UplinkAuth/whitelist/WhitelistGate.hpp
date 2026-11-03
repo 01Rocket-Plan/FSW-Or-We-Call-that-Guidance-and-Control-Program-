@@ -72,7 +72,8 @@ struct WhitelistEntry {
   // Bitmask of allowed VehicleRole (bit 0 = DS, bit 1 = US).
   uint8_t vehicleMask = 0;
   // If true, gate may ALLOW without authVerified (HMAC-exempt opcodes only).
-  // Edward rule: only US gimbal servo is HMAC-exempt; still must pass this row.
+  // 勘誤 v0.1a / Edward: default all opcodes need HMAC; exemption table holds
+  // US gimbal servo only (待 Edward 定). Exempt ≠ whitelist bypass.
   bool hmacExempt = false;
   // Expected argument length. UINT16_MAX = any length accepted.
   uint16_t expectedArgLen = 0;
