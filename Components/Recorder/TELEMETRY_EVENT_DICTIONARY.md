@@ -10,8 +10,8 @@
 
 | 規則 | 說明 |
 |------|------|
-| seq 連續 | 每個紀錄頻道／樣本序號連續；缺口可事後偵測 |
-| 時間戳單調 | `t_s` 只取 F´ 時間服務，不得 sleep／系統時鐘 |
+| seq 連續 | 每個紀錄頻道／樣本序號連續；缺口發 `SeqGap(expected,got)`（0x2004） |
+| 時間戳單調 | `t_s` 只取 F´ 時間服務，不得 sleep／系統時鐘；倒退發 `TimeNonMonotonic(prev_s,now_s)`（0x2005） |
 | 佇列滿 | 丟棄並發事件，**不得阻塞**呼叫端 |
 
 ---
@@ -66,6 +66,8 @@
 | parachute deploy commanded | `FlightMode` | 建議 `ChuteDeployCmd(stage,cause)` | `0x1400` | 待該組補 |
 | undervoltage load shed | `UvStateComp` | 既有 `shedL1Requested`／`shedL2Requested`／`levelChanged` | `0x6200` | 待該組定 |
 | queue-full drop | 各佇列擁有者 | `SdLogger.QueueFullDrop`；`ComQueue` 等 | 見 §C／§D | SdLogger 已定；其餘待該組補 |
+| channel seq discontinuity（LOGGING） | `SdLogger` | `SeqGap(expected,got)` | `0x2000` | **0x2004** |
+| timestamp non-monotonic（LOGGING） | `SdLogger` | `TimeNonMonotonic(prev_s,now_s)` | `0x2000` | **0x2005** |
 
 ---
 
@@ -104,6 +106,8 @@
 | 0x01 | **0x2001** | `SdError` | warning high | `status: SdCardStatus`, `code: U8` |
 | 0x02 | **0x2002** | `EnterReady` | activity high | — |
 | 0x03 | **0x2003** | `EnterFault` | warning high | `reason: U8` |
+| 0x04 | **0x2004** | `SeqGap` | warning high | `expected: U32`, `got: U32`（upstream seq discontinuity） |
+| 0x05 | **0x2005** | `TimeNonMonotonic` | warning high | `prev_s: F64`, `now_s: F64`（timestamp went backwards） |
 
 Sim 實例：base **`0x2080`**，local 對照相同（abs = 0x2080 + local）。
 
@@ -129,7 +133,7 @@ FPP 硬體型號／角色：**無**（SdLogger 不宣告舵機／感測器 `Serv
 |------|------|
 | §9 TELEMETRY 映射列（主表） | 12 |
 | Handshake 列 | 13 |
-| §9 EVENTS 映射列 | 11 |
+| §9 EVENTS 映射列 | 13 |
 | HWM 列（含占位） | 5 |
 | **SdLogger 具體遙測 ID** | **8**（0x2000–0x2007） |
-| **SdLogger 具體事件 ID** | **4**（local 0x00–0x03） |
+| **SdLogger 具體事件 ID** | **6**（local 0x00–0x05；abs 0x2000–0x2005） |

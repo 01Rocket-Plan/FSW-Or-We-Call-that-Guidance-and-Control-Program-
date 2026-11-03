@@ -12,7 +12,7 @@ req_tlm = [
     "WriteCount", "DropCount", "RecordQueueHwm", "SdWritePoolHwm",
     "SdErrorCount", "SdStatus", "LastSeq", "LastT_s",
 ]
-req_ev = ["QueueFullDrop", "SdError", "EnterReady", "EnterFault"]
+req_ev = ["QueueFullDrop", "SdError", "EnterReady", "EnterFault", "SeqGap", "TimeNonMonotonic"]
 
 errors = []
 for n in req_tlm:
@@ -34,9 +34,23 @@ for i, name in enumerate(req_tlm):
             if needle not in doc:
                 errors.append(f"doc missing abs id {needle} for {name}")
 
-# severity on QueueFullDrop
-if "warning high" not in fpp.split("QueueFullDrop", 1)[1][:200]:
-    errors.append("QueueFullDrop severity not warning high")
+# severity on QueueFullDrop / SeqGap / TimeNonMonotonic
+for ev in ("QueueFullDrop", "SeqGap", "TimeNonMonotonic"):
+    chunk = fpp.split(ev, 1)[1][:240]
+    if "warning high" not in chunk:
+        errors.append(f"{ev} severity not warning high")
+
+# SeqGap / TimeNonMonotonic arg shapes
+if "SeqGap(expected: U32, got: U32)" not in fpp:
+    errors.append("SeqGap args must be expected:U32, got:U32")
+if "TimeNonMonotonic(prev_s: F64, now_s: F64)" not in fpp:
+    errors.append("TimeNonMonotonic args must be prev_s:F64, now_s:F64")
+
+# Documented abs IDs for new events
+for abs_id, name in ((0x2004, "SeqGap"), (0x2005, "TimeNonMonotonic")):
+    needle_id = f"**0x{abs_id:04x}**"
+    if needle_id not in doc or f"`{name}`" not in doc:
+        errors.append(f"doc missing {needle_id} / {name}")
 
 if "SdCardStatus" not in fpp:
     errors.append("missing SdCardStatus enum")
@@ -48,4 +62,4 @@ if errors:
     sys.exit(1)
 print("PASS: SdLogger dict self-test OK")
 print("TLM:", ", ".join(f"0x{0x2000+i:04x}:{n}" for i,n in enumerate(req_tlm)))
-print("EV :", ", ".join(req_ev))
+print("EV :", ", ".join(f"0x{0x2000+i:04x}:{n}" for i,n in enumerate(req_ev)))

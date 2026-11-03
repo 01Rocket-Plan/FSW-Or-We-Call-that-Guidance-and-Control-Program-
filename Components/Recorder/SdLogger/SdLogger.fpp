@@ -79,6 +79,16 @@ module Components {
       severity warning high \
       format "SdLogger FAULT reason={}"
 
+    @ local 0x04 / abs 0x2004 — upstream channel seq discontinuity (expected vs got)
+    event SeqGap(expected: U32, got: U32) \
+      severity warning high \
+      format "SdLogger seq gap expected={} got={}"
+
+    @ local 0x05 / abs 0x2005 — sample timestamp went backwards (prev vs now, seconds)
+    event TimeNonMonotonic(prev_s: F64, now_s: F64) \
+      severity warning high \
+      format "SdLogger time non-monotonic prev_s={} now_s={}"
+
     @ Max depth of the inbound record queue (HWM ceiling)
     param RECORD_QUEUE_DEPTH: U32 default 64
     @ SD write buffer pool size (buffers)
