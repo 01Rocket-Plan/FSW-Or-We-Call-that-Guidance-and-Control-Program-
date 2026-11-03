@@ -123,6 +123,25 @@ void Esp32CamCore::notifyFrameTruncated(uint32_t length) {
   enterFault(CamFault::FRAME_TRUNCATED, length);
 }
 
+bool Esp32CamCore::ingestCapturedFrame(const uint8_t* data, uint32_t length) {
+  if (m_state != CamState::READY || !m_captureOn) {
+    return false;
+  }
+  if (data == nullptr || length == 0) {
+    return false;
+  }
+  const uint32_t frameNumber = m_frameCount + 1u;
+  const bool accepted = m_streamer.streamFrame(data, length, frameNumber);
+  if (!accepted) {
+    // 截斷：事件 only，維持 READY／擷取中，不計 frameCount
+    notifyFrameTruncated(length);
+    return false;
+  }
+  m_frameCount++;
+  m_noFrameTicks = 0;
+  return true;
+}
+
 void Esp32CamCore::sendHandshake() {
   if (m_link == nullptr) {
     return;

@@ -30,6 +30,27 @@ struct Recorder : public ICamSink {
   }
 };
 
+struct ChunkRecorder : public ICamImageChunkSink {
+  uint32_t chunks = 0;
+  uint32_t endChunks = 0;
+  uint32_t truncChunks = 0;
+  uint32_t lastFrame = 0;
+  uint32_t lastIndex = 0;
+  uint8_t lastFlags = 0;
+  uint32_t lastLen = 0;
+  void onImageChunk(uint32_t frameNumber, uint32_t chunkIndex, uint8_t flags,
+                    const uint8_t* data, uint32_t length) override {
+    (void)data;
+    ++chunks;
+    lastFrame = frameNumber;
+    lastIndex = chunkIndex;
+    lastFlags = flags;
+    lastLen = length;
+    if (flags & static_cast<uint8_t>(CamChunkFlag::END)) ++endChunks;
+    if (flags & static_cast<uint8_t>(CamChunkFlag::TRUNCATED)) ++truncChunks;
+  }
+};
+
 struct Rig {
   Esp32CamSimDevice dev;
   Esp32CamCore core;
@@ -238,6 +259,64 @@ static void test10_frameTruncatedEventOnly() {
   CHECK(r.core.frameCount() > 0);
 }
 
+static void test11_multiChunkImageOut() {
+  std::printf("11) 2KB multi-chunk imageOut (5000 B → 3 chunks, END, frameCount++)\n");
+  Rig r;
+  ChunkRecorder ch;
+  r.core.setImageChunkSink(&ch);
+  r.core.setFrameMaxBytes(65536);
+  CHECK(r.driveToReady());
+  CHECK(r.core.captureStart());
+  uint8_t buf[5000];
+  for (uint32_t i = 0; i < sizeof(buf); ++i) buf[i] = static_cast<uint8_t>(i & 0xFF);
+  const uint32_t before = r.core.frameCount();
+  CHECK(r.core.ingestCapturedFrame(buf, sizeof(buf)));
+  CHECK(r.core.frameCount() == before + 1);
+  CHECK(ch.chunks == 3);  // 2048+2048+904
+  CHECK(ch.endChunks == 1);
+  CHECK(ch.truncChunks == 0);
+  CHECK(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::END));
+  CHECK(!(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::TRUNCATED)));
+  CHECK(ch.lastIndex == 2);
+  CHECK(ch.lastLen == 904);
+  CHECK(r.core.state() == CamState::READY);
+}
+
+static void test12_truncationKeepsReadyNextCounts() {
+  std::printf("12) FRAME_MAX truncate: TRUNCATED|END, stay READY, next frame counts\n");
+  Rig r;
+  ChunkRecorder ch;
+  r.core.setImageChunkSink(&ch);
+  r.core.setFrameMaxBytes(3000);  // 2048+952 trunc
+  CHECK(r.driveToReady());
+  CHECK(r.core.captureStart());
+  uint8_t big[5000];
+  for (uint32_t i = 0; i < sizeof(big); ++i) big[i] = 0xAB;
+  const uint32_t before = r.core.frameCount();
+  const uint32_t faultsBefore = r.rec.faults;
+  CHECK(!r.core.ingestCapturedFrame(big, sizeof(big)));
+  CHECK(r.core.frameCount() == before);  // not counted
+  CHECK(r.core.state() == CamState::READY);
+  CHECK(r.core.captureOn());
+  CHECK(r.core.fault() == CamFault::NONE);
+  CHECK(r.rec.faults == faultsBefore + 1);
+  CHECK(r.rec.lastFault == CamFault::FRAME_TRUNCATED);
+  CHECK(ch.truncChunks >= 1);
+  CHECK(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::END));
+  CHECK(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::TRUNCATED));
+  // next normal frame still counts
+  uint8_t ok[100];
+  for (uint32_t i = 0; i < sizeof(ok); ++i) ok[i] = 1;
+  ch.chunks = 0;
+  ch.endChunks = 0;
+  ch.truncChunks = 0;
+  CHECK(r.core.ingestCapturedFrame(ok, sizeof(ok)));
+  CHECK(r.core.frameCount() == before + 1);
+  CHECK(r.core.state() == CamState::READY);
+  CHECK(ch.endChunks == 1);
+  CHECK(ch.truncChunks == 0);
+}
+
 int main() {
   test1_happyPath();
   test2_typeRoleMismatch();
@@ -249,11 +328,13 @@ int main() {
   test8_i2cClockDefault();
   test9_previewPathIsolation();
   test10_frameTruncatedEventOnly();
+  test11_multiChunkImageOut();
+  test12_truncationKeepsReadyNextCounts();
 
   if (g_fail != 0) {
     std::printf("Esp32CamSimTest: FAILED (%d checks)\n", g_fail);
     return 1;
   }
-  std::printf("Esp32CamSimTest: 10/10 passed\n");
+  std::printf("Esp32CamSimTest: 12/12 passed\n");
   return 0;
 }

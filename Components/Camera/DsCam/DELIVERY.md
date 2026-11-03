@@ -12,6 +12,10 @@
 2. 整張 JPEG vs 2KB 分段 → Bot2：CamChunkFlag + 2KB chunked `Fw.Buffer`（frameNumber/chunkIndex/flags）
 3. 截斷壞幀硬傳 → Bot2：`CamFault::FRAME_TRUNCATED`；丟棄壞幀 + 事件。DsCam：`enterFault(FRAME_TRUNCATED)` **僅事件、不進 FAULT、不停擷取**。
 
+## 2KB chunked imageOut（首席要求，對齊 Bot2 Ov3640）
+- Port `Esp32CamImageOut(frameNumber, chunkIndex, flags, ref data: Fw.Buffer)`；`Esp32Cam_FRAME_BUF_MAX=2048`
+- 共用 `CamChunkFlag`；超過 `FRAME_MAX_BYTES` → 最後塊 `END|TRUNCATED`、`FrameTruncated`／`FRAME_TRUNCATED` 事件、**不計 frameCount**、**維持 READY**
+
 ## FPP 宣告
 - **Model:** `ESP32_CAM`　**Role:** `DS_CAM`
 - Telemetry `CamStatus`：`camState`, `fault`, `frameCount`, `model`, `role`（依首席建議用 `camState`）

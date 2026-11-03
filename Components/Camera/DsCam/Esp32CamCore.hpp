@@ -8,6 +8,7 @@
 
 #include "Components/Camera/Ov3640Driver/CamTypes.hpp"
 #include "Components/Camera/DsCam/ICamLink.hpp"
+#include "Components/Camera/DsCam/Esp32CamImageStreamer.hpp"
 #include <cstdint>
 
 namespace Components {
@@ -45,6 +46,12 @@ class Esp32CamCore {
   bool captureStop();
   // 過大／壞幀：事件 only，不進 FAULT（CamFault::FRAME_TRUNCATED）
   void notifyFrameTruncated(uint32_t length);
+  // 2KB 分塊影像輸出（對齊 Ov3640ImageOut）；截斷則不計 frameCount、維持 READY
+  void setImageChunkSink(ICamImageChunkSink* sink) { m_streamer.setSink(sink); }
+  void setFrameMaxBytes(uint32_t n) { m_streamer.setFrameMaxBytes(n); }
+  uint32_t frameMaxBytes() const { return m_streamer.frameMaxBytes(); }
+  bool ingestCapturedFrame(const uint8_t* data, uint32_t length);
+  uint32_t lastImageChunkCount() const { return m_streamer.lastChunkCount(); }
 
   CamStatus status() const;
   CamState state() const { return m_state; }
@@ -78,6 +85,7 @@ class Esp32CamCore {
   bool m_captureOn = false;
   bool m_selftestMsgSeen = false;
   bool m_selftestFrameSeen = false;
+  Esp32CamImageStreamer m_streamer;
 };
 
 }  // namespace Components
