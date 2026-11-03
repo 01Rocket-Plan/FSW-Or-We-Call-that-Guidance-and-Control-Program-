@@ -39,6 +39,13 @@ void Esp32CamCore::enter(CamState s) {
 }
 
 void Esp32CamCore::enterFault(CamFault f, uint32_t detail) {
+  // FRAME_TRUNCATED：僅事件／紀錄，不進 FAULT、不停擷取（對齊 Bot2 PR#12／Edward）
+  if (f == CamFault::FRAME_TRUNCATED) {
+    if (m_sink != nullptr) {
+      m_sink->onFault(f, detail);
+    }
+    return;
+  }
   if (m_state == CamState::FAULT) {
     return;
   }
@@ -110,6 +117,10 @@ bool Esp32CamCore::captureStop() {
     m_link->send(&cmd, 1);
   }
   return true;
+}
+
+void Esp32CamCore::notifyFrameTruncated(uint32_t length) {
+  enterFault(CamFault::FRAME_TRUNCATED, length);
 }
 
 void Esp32CamCore::sendHandshake() {

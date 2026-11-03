@@ -43,6 +43,8 @@ class Esp32CamCore {
   bool reset();
   bool captureStart();
   bool captureStop();
+  // 過大／壞幀：事件 only，不進 FAULT（CamFault::FRAME_TRUNCATED）
+  void notifyFrameTruncated(uint32_t length);
 
   CamStatus status() const;
   CamState state() const { return m_state; }

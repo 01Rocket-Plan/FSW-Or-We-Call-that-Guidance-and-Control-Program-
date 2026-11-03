@@ -217,6 +217,27 @@ static void test9_previewPathIsolation() {
   CHECK(r.dev.maxNotifyPayload() <= 13u);
 }
 
+static void test10_frameTruncatedEventOnly() {
+  std::printf("10) FRAME_TRUNCATED event only — stay READY, keep capturing\n");
+  Rig r;
+  CHECK(r.driveToReady());
+  CHECK(r.core.captureStart());
+  CHECK(r.core.captureOn());
+  const uint32_t faultsBefore = r.rec.faults;
+  r.core.notifyFrameTruncated(99999);
+  CHECK(r.core.state() == CamState::READY);
+  CHECK(r.core.captureOn());
+  CHECK(r.core.fault() == CamFault::NONE);
+  CHECK(r.rec.faults == faultsBefore + 1);
+  CHECK(r.rec.lastFault == CamFault::FRAME_TRUNCATED);
+  // still can tick capture
+  for (int i = 0; i < 20; ++i) {
+    r.step100Hz();
+  }
+  CHECK(r.core.state() == CamState::READY);
+  CHECK(r.core.frameCount() > 0);
+}
+
 int main() {
   test1_happyPath();
   test2_typeRoleMismatch();
@@ -227,11 +248,12 @@ int main() {
   test7_telemetryFourFields();
   test8_i2cClockDefault();
   test9_previewPathIsolation();
+  test10_frameTruncatedEventOnly();
 
   if (g_fail != 0) {
     std::printf("Esp32CamSimTest: FAILED (%d checks)\n", g_fail);
     return 1;
   }
-  std::printf("Esp32CamSimTest: 9/9 passed\n");
+  std::printf("Esp32CamSimTest: 10/10 passed\n");
   return 0;
 }

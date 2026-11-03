@@ -35,3 +35,7 @@ $CXX "${CFLAGS[@]}" \
   "$R/Components/Camera/Ov3640Driver/Ov3640SimDevice.cpp" \
   -o /tmp/ov3640_host_test_from_esp32cam
 /tmp/ov3640_host_test_from_esp32cam
+
+echo "== Ov3640Driver full host suite (Sim + Adapter) =="
+"$R/Components/Camera/Ov3640Driver/run_host_tests.sh"
+
