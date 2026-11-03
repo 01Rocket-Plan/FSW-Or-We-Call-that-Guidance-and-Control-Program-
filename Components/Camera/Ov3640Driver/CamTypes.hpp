@@ -1,5 +1,4 @@
-// CamTypes：相機共用 C++ 型別（與 CamTypes.fpp / Ov3640Driver.fpp 順序一致）
-// 規則：不引入 F´ 標頭；enum 數值固定，供 Core 與 Sim 共用。
+// CamTypes：相機共用 C++ 型別（與 CamTypes.fpp 順序一致）
 #ifndef COMPONENTS_CAMERA_OV3640DRIVER_CAMTYPES_HPP
 #define COMPONENTS_CAMERA_OV3640DRIVER_CAMTYPES_HPP
 
@@ -14,16 +13,19 @@ enum class CamFault : uint8_t {
   ID_MISMATCH = 1,
   TYPE_ROLE_MISMATCH = 2,
   BUS_TIMEOUT = 3,
-  FRAME_TIMEOUT = 4
+  FRAME_TIMEOUT = 4,
+  FRAME_TRUNCATED = 5
 };
 
 enum class CamModel : uint8_t { OV3640 = 0, ESP32_CAM = 1 };
 
 enum class CamRole : uint8_t { US_CAM = 0, DS_CAM = 1 };
 
-// 遙測 CamStatus：camState / fault / frameCount / model / role
-// （Arthur「四欄」：型號與角色合稱一欄；結構上拆成兩個列舉欄位）
-// camState：FPP 保留字 state 不可用
+// Bit flags for imageOut chunks (END | TRUNCATED allowed)
+enum class CamChunkFlag : uint8_t { NONE = 0, END = 1, TRUNCATED = 2 };
+
+inline uint8_t camChunkFlagU8(CamChunkFlag f) { return static_cast<uint8_t>(f); }
+
 struct CamStatus {
   CamState camState = CamState::OFF;
   CamFault fault = CamFault::NONE;

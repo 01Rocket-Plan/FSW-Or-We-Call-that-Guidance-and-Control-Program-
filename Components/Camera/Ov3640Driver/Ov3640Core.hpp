@@ -26,9 +26,12 @@ class IOv3640FrameSource {
 class IOv3640Sink {
  public:
   virtual ~IOv3640Sink() = default;
-  virtual void onFrame(const uint8_t* data, uint32_t length, uint32_t frameIndex) = 0;
+  // Stream/accept one logical frame. Return true → count toward frameCount; false → truncated/rejected.
+  virtual bool onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) = 0;
   virtual void onStateChange(CamState from, CamState to) = 0;
   virtual void onFault(CamFault code, uint32_t detail) = 0;
+  // Emitted on each FAULT→INIT auto-retry (attempt in 1..R).
+  virtual void onRecoverAttempt(uint32_t attempt, uint32_t limit) = 0;
 };
 
 struct Ov3640Params {
@@ -37,6 +40,11 @@ struct Ov3640Params {
   uint8_t entriesPerTick = 8;
   CamModel model = CamModel::OV3640;
   CamRole role = CamRole::US_CAM;
+  // FAULT auto-recover on 1 Hz: every K ticks retry INIT, up to R times; then latch.
+  uint32_t faultRecoverK = 5;
+  uint32_t faultRecoverR = 3;
+  // Max bytes streamed per logical frame (adapter enforces; Core forwards length).
+  uint32_t frameMaxBytes = 65536;
 };
 
 class Ov3640Core {
@@ -56,7 +64,6 @@ class Ov3640Core {
   void start();
   void stop();
   void reset();
-  // 僅 READY 回 true；否則 false（呼叫端回 EXECUTION_ERROR）
   bool captureStart();
   void captureStop();
   bool capturing() const { return m_capturing; }
@@ -67,6 +74,8 @@ class Ov3640Core {
   CamStatus status() const { return m_status; }
   uint16_t lastChipId() const { return m_lastChipId; }
   uint32_t initIndex() const { return m_initIdx; }
+  uint32_t recoverAttempts() const { return m_recoverAttempts; }
+  bool recoverLatched() const { return m_recoverLatched; }
 
  private:
   void enterState(CamState s);
@@ -74,7 +83,9 @@ class Ov3640Core {
   bool stepInit();
   bool stepSelftest(uint32_t tickHz);
   bool stepReady(uint32_t tickHz);
+  bool stepFault(uint32_t tickHz);
   void recordBus(bool ok);
+  void beginInitHandshake();
 
   IOv3640Sccb* m_sccb = nullptr;
   IOv3640FrameSource* m_frameSrc = nullptr;
@@ -90,6 +101,10 @@ class Ov3640Core {
   bool m_idOk = false;
   bool m_testFrameOk = false;
   bool m_capturing = false;
+
+  uint32_t m_faultTicks = 0;
+  uint32_t m_recoverAttempts = 0;
+  bool m_recoverLatched = false;
 };
 
 }  // namespace Components

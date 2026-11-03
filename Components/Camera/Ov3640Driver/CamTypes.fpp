@@ -1,4 +1,4 @@
-@ 相機共用型別（CamState / CamFault / CamModel / CamRole / CamStatus）
+@ 相機共用型別（CamState / CamFault / CamModel / CamRole / CamStatus / CamChunkFlag）
 @ 與 Ov3640Core／Esp32CamCore 的 C++ 鏡射 enum 順序一致。
 module Components {
 
@@ -16,6 +16,8 @@ module Components {
     TYPE_ROLE_MISMATCH = 2
     BUS_TIMEOUT = 3
     FRAME_TIMEOUT = 4
+    @ 幀超過 FRAME_MAX_BYTES；事件 FrameTruncated 使用（CamStatus.fault 可不置位）
+    FRAME_TRUNCATED = 5
   }
 
   enum CamModel {
@@ -28,7 +30,14 @@ module Components {
     DS_CAM = 1
   }
 
-  @ 遙測：camState、fault、frameCount、型號與角色（分兩個列舉欄位；camState 因 FPP 保留字改名）
+  @ imageOut 分塊旗標（可位元 OR：END|TRUNCATED）
+  enum CamChunkFlag {
+    NONE = 0
+    END = 1
+    TRUNCATED = 2
+  }
+
+  @ 遙測：camState、fault、frameCount、型號與角色（CamStatus 欄位不變）
   struct CamStatus {
     camState: CamState
     fault: CamFault

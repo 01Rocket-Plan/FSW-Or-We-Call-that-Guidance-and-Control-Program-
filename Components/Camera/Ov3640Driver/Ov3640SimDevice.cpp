@@ -6,9 +6,14 @@ Ov3640SimDevice::Ov3640SimDevice() {
   for (auto& b : m_regsLo) b = 0;
   m_regsLo[Ov3640Regs::PIDH & 0xFF] = m_pidh;
   m_regsLo[Ov3640Regs::PIDL & 0xFF] = m_pidl;
-  for (uint32_t i = 0; i < kSimFrameBytes; ++i) {
-    m_frameBuf[i] = static_cast<uint8_t>(0xA0 + i);
+  for (uint32_t i = 0; i < kSimFrameCap; ++i) {
+    m_frameBuf[i] = static_cast<uint8_t>(0xA0 + (i & 0x1Fu));
   }
+}
+
+void Ov3640SimDevice::setReportedFrameLength(uint32_t n) {
+  m_reportedLen = (n > kSimFrameCap) ? kSimFrameCap : n;
+  if (m_reportedLen == 0) m_reportedLen = kSimFrameBytes;
 }
 
 void Ov3640SimDevice::advance() {
@@ -81,7 +86,7 @@ bool Ov3640SimDevice::pollFrame(Ov3640FrameView& out) {
     return false;
   }
   out.data = m_frameBuf;
-  out.length = kSimFrameBytes;
+  out.length = m_reportedLen;
   out.complete = true;
   if (m_frameEveryN > 0) {
     m_frameAvail = false;

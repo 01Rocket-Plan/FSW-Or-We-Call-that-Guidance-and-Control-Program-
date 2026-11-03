@@ -1,4 +1,3 @@
-// Ov3640DriverSim：同一 Core，接 Ov3640SimDevice（host／拓樸 Sim）
 #ifndef COMPONENTS_CAMERA_OV3640DRIVER_OV3640DRIVERSIM_HPP
 #define COMPONENTS_CAMERA_OV3640DRIVER_OV3640DRIVERSIM_HPP
 
@@ -26,18 +25,21 @@ class Ov3640DriverSim final : public Ov3640DriverSimComponentBase, private IOv36
   void parameterUpdated(FwPrmIdType id) override;
   void parametersLoaded() override;
 
-  void onFrame(const uint8_t* data, uint32_t length, uint32_t frameIndex) override;
+  bool onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) override;
   void onStateChange(CamState from, CamState to) override;
   void onFault(CamFault code, uint32_t detail) override;
+  void onRecoverAttempt(uint32_t attempt, uint32_t limit) override;
 
   void loadParams();
   void writeTlm();
+  bool streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber);
 
-  Ov3640SimDevice m_dev;
   Ov3640Core m_core;
+  Ov3640SimDevice m_dev;
+  U32 m_frameMaxBytes = 65536;
   U32 m_tlmDiv = 0;
-  static constexpr U32 kImgCap = 2048;
-  U8 m_imgScratch[kImgCap]{};
+  static constexpr U32 kChunk = 2048;
+  U8 m_imgScratch[kChunk]{};
 };
 
 }  // namespace Components

@@ -20,7 +20,11 @@ void Ov3640Driver::loadParams() {
   p.entriesPerTick = this->paramGet_ENTRIES_PER_TICK(v);
   p.model = this->paramGet_MODEL(v);
   p.role = this->paramGet_ROLE(v);
+  p.faultRecoverK = this->paramGet_FAULT_RECOVER_K(v);
+  p.faultRecoverR = this->paramGet_FAULT_RECOVER_R(v);
+  p.frameMaxBytes = this->paramGet_FRAME_MAX_BYTES(v);
   m_sccbAddr = this->paramGet_SCCB_ADDR(v);
+  m_frameMaxBytes = p.frameMaxBytes == 0 ? 65536u : p.frameMaxBytes;
   m_core.setParams(p);
 }
 
@@ -32,7 +36,6 @@ void Ov3640Driver::writeTlm() {
 }
 
 void Ov3640Driver::sched1Hz_handler(FwIndexType, U32) {
-  // 握手／健康：1 Hz（核心拒絕 1 kHz；此埠只接 rg1Hz）
   m_core.tick(1u);
   writeTlm();
 }
@@ -102,13 +105,40 @@ bool Ov3640Driver::pollFrame(Ov3640FrameView& out) {
   return m_extFrames->pollFrame(out);
 }
 
-void Ov3640Driver::onFrame(const uint8_t* data, uint32_t length, uint32_t frameIndex) {
-  if (!this->isConnected_imageOut_OutputPort(0)) return;
-  if (!data || length == 0) return;
-  const U32 n = (length < kImgCap) ? length : kImgCap;
-  std::memcpy(m_imgScratch, data, n);
-  Fw::Buffer buf(m_imgScratch, n, frameIndex);
-  this->imageOut_out(0, frameIndex, buf);
+bool Ov3640Driver::streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+  if (!this->isConnected_imageOut_OutputPort(0)) return false;
+  if (!data || length == 0) return false;
+
+  const U32 limit = (length < m_frameMaxBytes) ? length : m_frameMaxBytes;
+  const bool truncated = length > m_frameMaxBytes;
+  U32 sent = 0;
+  U32 chunkIdx = 0;
+  while (sent < limit) {
+    U32 n = limit - sent;
+    if (n > kChunk) n = kChunk;
+    std::memcpy(m_imgScratch, data + sent, n);
+    sent += n;
+    U8 flags = 0;
+    if (sent >= limit) {
+      flags = static_cast<U8>(CamChunkFlag::END);
+      if (truncated) {
+        flags = static_cast<U8>(static_cast<U8>(CamChunkFlag::END) |
+                                static_cast<U8>(CamChunkFlag::TRUNCATED));
+      }
+    }
+    Fw::Buffer buf(m_imgScratch, n, frameNumber);
+    this->imageOut_out(0, frameNumber, chunkIdx, flags, buf);
+    ++chunkIdx;
+  }
+  if (truncated) {
+    this->log_WARNING_HI_FrameTruncated(frameNumber, sent);
+    return false;
+  }
+  return true;
+}
+
+bool Ov3640Driver::onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+  return streamChunks(data, length, frameNumber);
 }
 
 void Ov3640Driver::onStateChange(CamState from, CamState to) {
@@ -118,6 +148,11 @@ void Ov3640Driver::onStateChange(CamState from, CamState to) {
 
 void Ov3640Driver::onFault(CamFault code, uint32_t detail) {
   this->log_WARNING_HI_FaultRaised(code, detail);
+  writeTlm();
+}
+
+void Ov3640Driver::onRecoverAttempt(uint32_t attempt, uint32_t limit) {
+  this->log_ACTIVITY_HI_RecoverAttempt(attempt, limit);
   writeTlm();
 }
 

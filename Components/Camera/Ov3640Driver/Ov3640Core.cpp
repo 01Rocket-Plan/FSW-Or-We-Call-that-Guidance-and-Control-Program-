@@ -39,16 +39,20 @@ void Ov3640Core::setParams(const Ov3640Params& p) {
   m_status.role = p.role;
 }
 
+void Ov3640Core::beginInitHandshake() {
+  m_initIdx = 0;
+  m_busMisses = 0;
+  m_noFrameTicks = 0;
+  m_idOk = false;
+  m_testFrameOk = false;
+  m_capturing = false;
+  m_status.fault = CamFault::NONE;
+  enterState(CamState::INIT);
+}
+
 void Ov3640Core::start() {
   if (m_status.camState == CamState::OFF) {
-    m_initIdx = 0;
-    m_busMisses = 0;
-    m_noFrameTicks = 0;
-    m_idOk = false;
-    m_testFrameOk = false;
-    m_capturing = false;
-    m_status.fault = CamFault::NONE;
-    enterState(CamState::INIT);
+    beginInitHandshake();
   }
 }
 
@@ -69,6 +73,9 @@ void Ov3640Core::reset() {
   m_idOk = false;
   m_testFrameOk = false;
   m_capturing = false;
+  m_faultTicks = 0;
+  m_recoverAttempts = 0;
+  m_recoverLatched = false;
   m_status.fault = CamFault::NONE;
   m_status.frameCount = 0;
   m_status.model = m_params.model;
@@ -97,6 +104,8 @@ void Ov3640Core::enterState(CamState s) {
 
 void Ov3640Core::enterFault(CamFault f, uint32_t detail) {
   m_status.fault = f;
+  m_faultTicks = 0;
+  m_capturing = false;
   if (m_sink) m_sink->onFault(f, detail);
   enterState(CamState::FAULT);
 }
@@ -125,7 +134,7 @@ bool Ov3640Core::tick(uint32_t tickHz) {
     case CamState::READY:
       return stepReady(tickHz);
     case CamState::FAULT:
-      return false;
+      return stepFault(tickHz);
   }
   return false;
 }
@@ -200,6 +209,9 @@ bool Ov3640Core::stepSelftest(uint32_t tickHz) {
     if (got) {
       m_testFrameOk = true;
       m_noFrameTicks = 0;
+      m_recoverAttempts = 0;
+      m_recoverLatched = false;
+      m_faultTicks = 0;
       enterState(CamState::READY);
       return true;
     }
@@ -224,10 +236,14 @@ bool Ov3640Core::stepReady(uint32_t tickHz) {
     got = m_frameSrc->pollFrame(view) && view.complete && view.length > 0;
   }
   if (got) {
-    ++m_status.frameCount;
     m_noFrameTicks = 0;
+    const uint32_t frameNumber = m_status.frameCount + 1u;
+    bool accepted = true;
     if (m_sink) {
-      m_sink->onFrame(view.data, view.length, m_status.frameCount);
+      accepted = m_sink->onFrame(view.data, view.length, frameNumber);
+    }
+    if (accepted) {
+      ++m_status.frameCount;
     }
   } else if (tickHz == 100u) {
     ++m_noFrameTicks;
@@ -236,6 +252,33 @@ bool Ov3640Core::stepReady(uint32_t tickHz) {
       return true;
     }
   }
+  return true;
+}
+
+bool Ov3640Core::stepFault(uint32_t tickHz) {
+  // After R failed retries, latch — only RESET clears.
+  if (m_recoverLatched) {
+    return false;
+  }
+  if (tickHz != 1u) {
+    return false;
+  }
+  const uint32_t K = m_params.faultRecoverK == 0 ? 1u : m_params.faultRecoverK;
+  const uint32_t R = m_params.faultRecoverR;
+  ++m_faultTicks;
+  if (m_faultTicks < K) {
+    return false;
+  }
+  m_faultTicks = 0;
+  if (m_recoverAttempts >= R) {
+    m_recoverLatched = true;
+    return false;
+  }
+  ++m_recoverAttempts;
+  if (m_sink) {
+    m_sink->onRecoverAttempt(m_recoverAttempts, R);
+  }
+  beginInitHandshake();
   return true;
 }
 
