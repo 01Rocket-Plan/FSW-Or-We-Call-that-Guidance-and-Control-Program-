@@ -97,6 +97,11 @@
 | 0x05 | **0x2005** | `SdStatus` | `SdCardStatus` | OK／INIT／BUSY／CARD_MISSING／IO_ERROR／FULL |
 | 0x06 | **0x2006** | `LastSeq` | U32 | 最近接受序號 |
 | 0x07 | **0x2007** | `LastT_s` | F64 | 最近接受時間戳（s） |
+| 0x08 | **0x2008** | `HsState` | `RocketTypes.DrvState` | Logger handshake（子Bot2） |
+| 0x09 | **0x2009** | `LoggerSeq` | U32 | 最近 logger 連續寫入序號（子Bot2） |
+| 0x0A | **0x200A** | `ProducerSeq` | U32 | 最近寫入之 SampleHeader.seq（子Bot2） |
+| 0x0B | **0x200B** | `CardModel` | `SdCardModel` | Micro SDHC UHS-I 16GB（子Bot2） |
+| 0x0C | **0x200C** | `CardRole` | `SdCardRole` | DS_LOG / US_LOG（子Bot2） |
 
 ### Events
 
@@ -111,7 +116,7 @@
 
 Sim 實例：base **`0x2080`**，local 對照相同（abs = 0x2080 + local）。
 
-FPP 硬體型號／角色：**無**（SdLogger 不宣告舵機／感測器 `ServoModel`／`ServoRole`；SD 卡狀態用 `SdCardStatus`）。
+FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡）；`SdCardRole` DS_LOG／US_LOG。讀卡模組／轉接板型號：**TBD**。SD 狀態用 `SdCardStatus`。
 
 ---
 

@@ -1,10 +1,9 @@
-// Dictionary ID self-test for SdLogger (紀錄組子Bot1).
+// Dictionary ID self-test for SdLogger (紀錄組子Bot1 IDs + 子Bot2 TLM from 0x2008).
 #include <gtest/gtest.h>
 #include "Components/Recorder/SdLogger/SdLoggerComponentAc.hpp"
 
 namespace {
 
-//! Access protected EVENTID_/CHANNELID_ enums without constructing the component.
 class SdLoggerIdProbe : public Components::SdLoggerComponentBase {
   public:
     enum {
@@ -22,9 +21,27 @@ class SdLoggerIdProbe : public Components::SdLoggerComponentBase {
         kTlmSdStatus = CHANNELID_SDSTATUS,
         kTlmLastSeq = CHANNELID_LASTSEQ,
         kTlmLastT_s = CHANNELID_LASTT_S,
+        kTlmHsState = CHANNELID_HSSTATE,           // abs 0x2008
+        kTlmLoggerSeq = CHANNELID_LOGGERSEQ,       // abs 0x2009
+        kTlmProducerSeq = CHANNELID_PRODUCERSEQ,   // abs 0x200A
+        kTlmCardModel = CHANNELID_CARDMODEL,       // abs 0x200B
+        kTlmCardRole = CHANNELID_CARDROLE,         // abs 0x200C
     };
 
     void schedIn_handler(FwIndexType, U32) override {}
+    void imuIn_handler(FwIndexType, const RocketTypes::ImuSample&) override {}
+    void baroIn_handler(FwIndexType, const RocketTypes::BaroSample&) override {}
+    void envIn_handler(FwIndexType, const RocketTypes::EnvSample&) override {}
+    void gnssIn_handler(FwIndexType, const RocketTypes::GnssFix&) override {}
+    void stateIn_handler(FwIndexType, const RocketTypes::StateOut&) override {}
+    void finCmdIn_handler(FwIndexType, const RocketTypes::FinCmd&) override {}
+    void servoCmdIn_handler(FwIndexType, const RocketTypes::ServoCmd&) override {}
+    void sepCmdIn_handler(FwIndexType, const RocketTypes::SepCmd&) override {}
+    void mpu6050In_handler(FwIndexType, const RocketTypes::Mpu6050Sample&) override {}
+    void humTempIn_handler(FwIndexType, const RocketTypes::HumTempSample&) override {}
+    void START_cmdHandler(FwOpcodeType, U32) override {}
+    void STOP_cmdHandler(FwOpcodeType, U32) override {}
+    void FLUSH_cmdHandler(FwOpcodeType, U32) override {}
 };
 
 }  // namespace
@@ -47,4 +64,15 @@ TEST(SdLoggerDictId, TelemetryLocalOpcodes) {
     EXPECT_EQ(SdLoggerIdProbe::kTlmSdStatus, 0x5);
     EXPECT_EQ(SdLoggerIdProbe::kTlmLastSeq, 0x6);
     EXPECT_EQ(SdLoggerIdProbe::kTlmLastT_s, 0x7);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmHsState, 0x8);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmLoggerSeq, 0x9);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmProducerSeq, 0xA);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmCardModel, 0xB);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmCardRole, 0xC);
+}
+
+TEST(SdLoggerDictId, ModelRoleEnumsPresent) {
+    EXPECT_EQ(static_cast<FwEnumStoreType>(Components::SdCardModel::MICRO_SDHC_UHS_I_16GB), 0);
+    EXPECT_EQ(static_cast<FwEnumStoreType>(Components::SdCardRole::DS_LOG), 0);
+    EXPECT_EQ(static_cast<FwEnumStoreType>(Components::SdCardRole::US_LOG), 1);
 }
