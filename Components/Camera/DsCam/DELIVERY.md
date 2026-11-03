@@ -2,7 +2,7 @@
 
 ## Commit / artifacts
 - Branch: `camera/esp32cam` (worktree `/workspace/camera/review/esp32cam/repo`) — **not pushed**
-- **HEAD:** `293a4c595503e23ba8ff349be5d000a2d37cedba`
+- **HEAD:** `aae1ad4ae4bf246567ec92377a4e8b33acb8ea85`
 - **Base:** `camera/ov3640` @ `d66ec9b2ba47e36faeb4ef8ed1c5535e4685f603`
 - Bundle: `/workspace/camera/deliver/esp32cam.bundle`（requires `d66ec9b`）
 - Patch series: `/workspace/camera/deliver/esp32cam.patch`（from `d66ec9b`）
