@@ -28,9 +28,9 @@ module Components {
     DS_CAM = 1
   }
 
-  @ 遙測：state、fault、frameCount、型號與角色（分兩個列舉欄位）
+  @ 遙測：camState、fault、frameCount、型號與角色（分兩個列舉欄位；camState 因 FPP 保留字改名）
   struct CamStatus {
-    state: CamState
+    camState: CamState
     fault: CamFault
     frameCount: U32
     model: CamModel

@@ -40,12 +40,13 @@ void Ov3640Core::setParams(const Ov3640Params& p) {
 }
 
 void Ov3640Core::start() {
-  if (m_status.state == CamState::OFF) {
+  if (m_status.camState == CamState::OFF) {
     m_initIdx = 0;
     m_busMisses = 0;
     m_noFrameTicks = 0;
     m_idOk = false;
     m_testFrameOk = false;
+    m_capturing = false;
     m_status.fault = CamFault::NONE;
     enterState(CamState::INIT);
   }
@@ -57,6 +58,7 @@ void Ov3640Core::stop() {
   m_noFrameTicks = 0;
   m_idOk = false;
   m_testFrameOk = false;
+  m_capturing = false;
 }
 
 void Ov3640Core::reset() {
@@ -66,6 +68,7 @@ void Ov3640Core::reset() {
   m_lastChipId = 0;
   m_idOk = false;
   m_testFrameOk = false;
+  m_capturing = false;
   m_status.fault = CamFault::NONE;
   m_status.frameCount = 0;
   m_status.model = m_params.model;
@@ -73,10 +76,22 @@ void Ov3640Core::reset() {
   enterState(CamState::OFF);
 }
 
+bool Ov3640Core::captureStart() {
+  if (m_status.camState != CamState::READY) return false;
+  m_capturing = true;
+  m_noFrameTicks = 0;
+  return true;
+}
+
+void Ov3640Core::captureStop() {
+  m_capturing = false;
+  m_noFrameTicks = 0;
+}
+
 void Ov3640Core::enterState(CamState s) {
-  const CamState from = m_status.state;
+  const CamState from = m_status.camState;
   if (from == s) return;
-  m_status.state = s;
+  m_status.camState = s;
   if (m_sink) m_sink->onStateChange(from, s);
 }
 
@@ -100,7 +115,7 @@ void Ov3640Core::recordBus(bool ok) {
 bool Ov3640Core::tick(uint32_t tickHz) {
   if (tickHz != 1u && tickHz != 100u) return false;
 
-  switch (m_status.state) {
+  switch (m_status.camState) {
     case CamState::OFF:
       return false;
     case CamState::INIT:
@@ -127,11 +142,11 @@ bool Ov3640Core::stepInit() {
     recordBus(ok);
     if (ok) {
       ++m_initIdx;
-    } else if (m_status.state == CamState::FAULT) {
+    } else if (m_status.camState == CamState::FAULT) {
       return true;
     }
   }
-  if (m_status.state == CamState::FAULT) return true;
+  if (m_status.camState == CamState::FAULT) return true;
   if (m_initIdx >= kInitTableSize) {
     m_idOk = false;
     m_testFrameOk = false;
@@ -160,10 +175,10 @@ bool Ov3640Core::stepSelftest(uint32_t tickHz) {
     uint8_t hi = 0, lo = 0;
     const bool ok1 = m_sccb->readReg(Ov3640Regs::PIDH, &hi);
     recordBus(ok1);
-    if (m_status.state == CamState::FAULT) return true;
+    if (m_status.camState == CamState::FAULT) return true;
     const bool ok2 = m_sccb->readReg(Ov3640Regs::PIDL, &lo);
     recordBus(ok2);
-    if (m_status.state == CamState::FAULT) return true;
+    if (m_status.camState == CamState::FAULT) return true;
     if (!ok1 || !ok2) {
       return true;
     }
@@ -200,6 +215,9 @@ bool Ov3640Core::stepSelftest(uint32_t tickHz) {
 }
 
 bool Ov3640Core::stepReady(uint32_t tickHz) {
+  if (!m_capturing) {
+    return true;
+  }
   Ov3640FrameView view{};
   bool got = false;
   if (m_frameSrc) {

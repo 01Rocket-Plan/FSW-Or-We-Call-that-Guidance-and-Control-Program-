@@ -56,8 +56,12 @@ class Ov3640Core {
   void start();
   void stop();
   void reset();
+  // 僅 READY 回 true；否則 false（呼叫端回 EXECUTION_ERROR）
+  bool captureStart();
+  void captureStop();
+  bool capturing() const { return m_capturing; }
 
-  CamState state() const { return m_status.state; }
+  CamState state() const { return m_status.camState; }
   CamFault fault() const { return m_status.fault; }
   uint32_t frameCount() const { return m_status.frameCount; }
   CamStatus status() const { return m_status; }
@@ -85,6 +89,7 @@ class Ov3640Core {
   uint16_t m_lastChipId = 0;
   bool m_idOk = false;
   bool m_testFrameOk = false;
+  bool m_capturing = false;
 };
 
 }  // namespace Components

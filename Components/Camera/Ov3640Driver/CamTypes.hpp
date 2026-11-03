@@ -21,10 +21,11 @@ enum class CamModel : uint8_t { OV3640 = 0, ESP32_CAM = 1 };
 
 enum class CamRole : uint8_t { US_CAM = 0, DS_CAM = 1 };
 
-// 遙測 CamStatus：state / fault / frameCount / model / role
+// 遙測 CamStatus：camState / fault / frameCount / model / role
 // （Arthur「四欄」：型號與角色合稱一欄；結構上拆成兩個列舉欄位）
+// camState：FPP 保留字 state 不可用
 struct CamStatus {
-  CamState state = CamState::OFF;
+  CamState camState = CamState::OFF;
   CamFault fault = CamFault::NONE;
   uint32_t frameCount = 0;
   CamModel model = CamModel::OV3640;

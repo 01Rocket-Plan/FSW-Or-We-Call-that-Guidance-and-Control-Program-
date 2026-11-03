@@ -77,6 +77,7 @@ void testNormalPath() {
   assert(f.core.lastChipId() == 0x364C);
   assert(f.core.status().model == CamModel::OV3640);
   assert(f.core.status().role == CamRole::US_CAM);
+  assert(f.core.captureStart());
 
   const uint32_t before = f.core.frameCount();
   const uint32_t sinkBefore = f.sink.frameEvents;
@@ -87,7 +88,7 @@ void testNormalPath() {
 
   f.sink.pullTlm(f.core);
   // 遙測只有 CamStatus 五個邏輯欄位，不含影像指標／緩衝
-  assert(f.sink.tlm.state == CamState::READY);
+  assert(f.sink.tlm.camState == CamState::READY);
   assert(f.sink.tlm.frameCount == f.core.frameCount());
   // CamStatus 僅狀態欄位（可有 padding）；不得也不會承載影像緩衝
   assert(f.sink.tlm.fault == CamFault::NONE);
@@ -145,6 +146,7 @@ void testFrameTimeout() {
   Fixture f;
   f.core.start();
   assert(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  assert(f.core.captureStart());
   f.sim.setFrameEveryN(0xFFFFFFFFu);
   f.sim.setFrameAvailable(false);
   assert(runUntil(f.core, f.sim, 100u, CamState::FAULT, 128u));
@@ -156,6 +158,7 @@ void testStopResetRehandshake() {
   Fixture f;
   f.core.start();
   assert(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  assert(f.core.captureStart());
   run(f.core, f.sim, 100u, 3u);
   assert(f.core.frameCount() >= 3u);
 
@@ -238,6 +241,7 @@ void testParamFrameTimeoutAnd1Hz() {
   f.core.setParams(p);
   f.core.start();
   assert(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  assert(f.core.captureStart());
   f.sim.setFrameEveryN(0xFFFFFFFFu);
   f.sim.setFrameAvailable(false);
   for (uint32_t i = 0; i < 5; ++i) {
@@ -253,6 +257,7 @@ void testParamFrameTimeoutAnd1Hz() {
   g.core.setParams(pg);
   g.core.start();
   assert(runUntil(g.core, g.sim, 100u, CamState::READY, 64u));
+  assert(g.core.captureStart());
   g.sim.setFrameEveryN(0xFFFFFFFFu);
   g.sim.setFrameAvailable(false);
   for (uint32_t i = 0; i < 10; ++i) {
@@ -271,6 +276,7 @@ void testTelemetryHasNoImage() {
   Fixture f;
   f.core.start();
   assert(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  assert(f.core.captureStart());
   run(f.core, f.sim, 100u, 2u);
   assert(f.sink.frameEvents >= 2u);
   assert(f.sink.lastData[0] == 0xA0);  // sim 幀內容
@@ -286,8 +292,22 @@ void testTelemetryHasNoImage() {
 
 }  // namespace
 
+void testCaptureRejectedWhenNotReady() {
+  Fixture f;
+  assert(!f.core.captureStart());  // OFF
+  f.core.start();
+  assert(f.core.state() == CamState::INIT);
+  assert(!f.core.captureStart());  // INIT
+  assert(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  assert(f.core.captureStart());
+  f.core.captureStop();
+  assert(!f.core.capturing());
+  assert(f.core.captureStart());
+}
+
 int main() {
   testNormalPath();
+  testCaptureRejectedWhenNotReady();
   testBadChipId();
   testTypeRoleMismatch();
   testBusTimeout();
@@ -297,7 +317,7 @@ int main() {
   testRecoveryAfterBusFault();
   testParamFrameTimeoutAnd1Hz();
   testTelemetryHasNoImage();
-  std::printf("Ov3640SimTest: all 10 tests passed\n");
+  std::printf("Ov3640SimTest: all 11 tests passed\n");
   std::printf("FPP declares model=OV3640 role=US_CAM (see Ov3640Driver.fpp constants)\n");
   return 0;
 }
