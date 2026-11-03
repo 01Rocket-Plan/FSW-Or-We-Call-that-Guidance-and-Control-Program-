@@ -15,7 +15,6 @@ class Ov3640Driver final : public Ov3640DriverComponentBase,
   explicit Ov3640Driver(const char* compName);
   ~Ov3640Driver() override = default;
 
-  // 注入外部 DVP 幀來源（不取得所有權）。未注入時 pollFrame 回 false。
   void configure(IOv3640FrameSource* externalFrames);
 
  private:
@@ -29,28 +28,27 @@ class Ov3640Driver final : public Ov3640DriverComponentBase,
   void parameterUpdated(FwPrmIdType id) override;
   void parametersLoaded() override;
 
-  // IOv3640Sccb — 經 sccbWrite / sccbWriteRead 埠
   bool writeReg(uint16_t reg, uint8_t val) override;
   bool readReg(uint16_t reg, uint8_t* val) override;
-
-  // IOv3640FrameSource — 轉呼叫外部來源
   bool pollFrame(Ov3640FrameView& out) override;
 
-  // IOv3640Sink
-  void onFrame(const uint8_t* data, uint32_t length, uint32_t frameIndex) override;
+  bool onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) override;
   void onStateChange(CamState from, CamState to) override;
   void onFault(CamFault code, uint32_t detail) override;
+  void onRecoverAttempt(uint32_t attempt, uint32_t limit) override;
 
   void loadParams();
   void writeTlm();
+  bool streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber);
 
   Ov3640Core m_core;
   IOv3640FrameSource* m_extFrames = nullptr;
   U32 m_sccbAddr = 0x3C;
+  U32 m_frameMaxBytes = 65536;
   U32 m_tlmDiv = 0;
-  // 靜態幀暫存（無動態配置）：imageOut 送出前拷貝長度上限
-  static constexpr U32 kImgCap = 2048;
-  U8 m_imgScratch[kImgCap]{};
+  // Only one chunk buffer — never hold a full JPEG in RAM.
+  static constexpr U32 kChunk = 2048;
+  U8 m_imgScratch[kChunk]{};
 };
 
 }  // namespace Components

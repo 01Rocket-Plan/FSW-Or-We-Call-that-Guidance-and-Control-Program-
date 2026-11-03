@@ -21,6 +21,8 @@ enum class Ov3640SimFault : uint8_t {
 class Ov3640SimDevice : public IOv3640Sccb, public IOv3640FrameSource {
  public:
   static constexpr uint32_t kSimFrameBytes = 16;
+  // Host-test capacity for multi-chunk / truncation paths (not flight RAM).
+  static constexpr uint32_t kSimFrameCap = 8192;
 
   Ov3640SimDevice();
 
@@ -29,6 +31,8 @@ class Ov3640SimDevice : public IOv3640Sccb, public IOv3640FrameSource {
   void setStuckValue(uint8_t v) { m_stuck = v; }
   void setFrameAvailable(bool avail) { m_frameAvail = avail; }
   void setFrameEveryN(uint32_t n);
+  // Host-test only: report length up to kSimFrameCap (multi-chunk / truncation).
+  void setReportedFrameLength(uint32_t n);
 
   bool writeReg(uint16_t reg, uint8_t val) override;
   bool readReg(uint16_t reg, uint8_t* val) override;
@@ -48,11 +52,12 @@ class Ov3640SimDevice : public IOv3640Sccb, public IOv3640FrameSource {
   uint8_t m_pidh = Ov3640Regs::EXPECTED_PIDH;
   uint8_t m_pidl = Ov3640Regs::EXPECTED_PIDL;
   uint8_t m_stuck = 0;
-  uint8_t m_frameBuf[kSimFrameBytes];
+  uint8_t m_frameBuf[kSimFrameCap];
 
   Ov3640SimFault m_fault = Ov3640SimFault::NONE;
   bool m_frameAvail = true;
   uint32_t m_frameEveryN = 0;
+  uint32_t m_reportedLen = kSimFrameBytes;
   uint32_t m_frameTick = 0;
   uint32_t m_writeCount = 0;
   uint32_t m_readCount = 0;

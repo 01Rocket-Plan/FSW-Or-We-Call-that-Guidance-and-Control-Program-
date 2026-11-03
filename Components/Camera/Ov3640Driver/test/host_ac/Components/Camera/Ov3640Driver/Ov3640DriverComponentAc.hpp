@@ -24,7 +24,6 @@ class Ov3640DriverComponentBase {
   virtual void STOP_cmdHandler(FwOpcodeType op, U32 seq) = 0;
   virtual void CAPTURE_START_cmdHandler(FwOpcodeType op, U32 seq) = 0;
   virtual void CAPTURE_STOP_cmdHandler(FwOpcodeType op, U32 seq) = 0;
-  // Sim-only (default no-op on flight base; Sim overrides)
   virtual void SIM_INJECT_cmdHandler(FwOpcodeType op, U32 seq, U8 fault) {
     (void)fault; cmdResponse_out(op, seq, Fw::CmdResponse::OK);
   }
@@ -40,6 +39,9 @@ class Ov3640DriverComponentBase {
   CamModel paramGet_MODEL(Fw::ParamValid& /*v*/) { return m_prmModel; }
   CamRole paramGet_ROLE(Fw::ParamValid& /*v*/) { return m_prmRole; }
   U32 paramGet_SCCB_ADDR(Fw::ParamValid& /*v*/) { return m_prmAddr; }
+  U32 paramGet_FAULT_RECOVER_K(Fw::ParamValid& /*v*/) { return m_prmRecoverK; }
+  U32 paramGet_FAULT_RECOVER_R(Fw::ParamValid& /*v*/) { return m_prmRecoverR; }
+  U32 paramGet_FRAME_MAX_BYTES(Fw::ParamValid& /*v*/) { return m_prmFrameMax; }
 
   void tlmWrite_Status(const CamStatus& s) { m_lastTlm = s; ++m_tlmWrites; }
   void log_ACTIVITY_HI_StateChanged(CamState from, CamState to) {
@@ -47,6 +49,12 @@ class Ov3640DriverComponentBase {
   }
   void log_WARNING_HI_FaultRaised(CamFault code, U32 detail) {
     m_lastFault = code; m_lastFaultDetail = detail; ++m_faultEvents;
+  }
+  void log_ACTIVITY_HI_RecoverAttempt(U32 attempt, U32 limit) {
+    m_lastRecoverAttempt = attempt; m_lastRecoverLimit = limit; ++m_recoverEvents;
+  }
+  void log_WARNING_HI_FrameTruncated(U32 frameNumber, U32 bytesSent) {
+    m_lastTruncFrame = frameNumber; m_lastTruncBytes = bytesSent; ++m_truncEvents;
   }
   void cmdResponse_out(FwOpcodeType op, U32 seq, Fw::CmdResponse resp) {
     m_lastOp = op; m_lastSeq = seq; m_lastResp = resp; ++m_cmdResponses;
@@ -56,8 +64,14 @@ class Ov3640DriverComponentBase {
   bool isConnected_sccbWrite_OutputPort(FwIndexType) const { return m_sccbConnected; }
   bool isConnected_sccbWriteRead_OutputPort(FwIndexType) const { return m_sccbConnected; }
 
-  void imageOut_out(FwIndexType, U32 index, Fw::Buffer& data) {
-    m_lastImageIndex = index; m_lastImageSize = data.getSize(); ++m_imageOuts;
+  void imageOut_out(FwIndexType, U32 frameNumber, U32 chunkIndex, U8 flags, Fw::Buffer& data) {
+    m_lastFrameNumber = frameNumber;
+    m_lastChunkIndex = chunkIndex;
+    m_lastFlags = flags;
+    m_lastImageSize = data.getSize();
+    ++m_imageOuts;
+    if (flags & static_cast<U8>(CamChunkFlag::END)) ++m_endChunks;
+    if (flags & static_cast<U8>(CamChunkFlag::TRUNCATED)) ++m_truncChunks;
   }
 
   Drv::I2cStatus sccbWrite_out(FwIndexType, U32 addr, Fw::Buffer& buf) {
@@ -86,12 +100,13 @@ class Ov3640DriverComponentBase {
   void hostSetImageConnected(bool v) { m_imageConnected = v; }
   void hostSetSccbConnected(bool v) { m_sccbConnected = v; }
   void hostSetSccbFail(bool v) { m_sccbFail = v; }
-  void hostSetParams(U32 bus, U32 frame, U8 entries, CamModel model, CamRole role, U32 addr) {
+  void hostSetParams(U32 bus, U32 frame, U8 entries, CamModel model, CamRole role, U32 addr,
+                      U32 recoverK = 5, U32 recoverR = 3, U32 frameMax = 65536) {
     m_prmBus = bus; m_prmFrame = frame; m_prmEntries = entries;
     m_prmModel = model; m_prmRole = role; m_prmAddr = addr;
+    m_prmRecoverK = recoverK; m_prmRecoverR = recoverR; m_prmFrameMax = frameMax;
   }
 
-  // Expose handlers for host tests
   void hostSched1Hz(U32 ctx = 0) { sched1Hz_handler(0, ctx); }
   void hostSched100Hz(U32 ctx = 0) { sched100Hz_handler(0, ctx); }
   void hostCmdPowerOn(FwOpcodeType op = 1, U32 seq = 1) { POWER_ON_cmdHandler(op, seq); }
@@ -107,6 +122,12 @@ class Ov3640DriverComponentBase {
   U32 m_tlmWrites = 0;
   U32 m_stateEvents = 0;
   U32 m_faultEvents = 0;
+  U32 m_recoverEvents = 0;
+  U32 m_truncEvents = 0;
+  U32 m_lastRecoverAttempt = 0;
+  U32 m_lastRecoverLimit = 0;
+  U32 m_lastTruncFrame = 0;
+  U32 m_lastTruncBytes = 0;
   CamState m_lastFrom = CamState::OFF;
   CamState m_lastTo = CamState::OFF;
   CamFault m_lastFault = CamFault::NONE;
@@ -116,7 +137,11 @@ class Ov3640DriverComponentBase {
   U32 m_lastSeq = 0;
   Fw::CmdResponse m_lastResp{Fw::CmdResponse::OK};
   U32 m_imageOuts = 0;
-  U32 m_lastImageIndex = 0;
+  U32 m_endChunks = 0;
+  U32 m_truncChunks = 0;
+  U32 m_lastFrameNumber = 0;
+  U32 m_lastChunkIndex = 0;
+  U8 m_lastFlags = 0;
   U32 m_lastImageSize = 0;
   U32 m_sccbWrites = 0;
   U32 m_sccbReads = 0;
@@ -134,6 +159,9 @@ class Ov3640DriverComponentBase {
   CamModel m_prmModel = CamModel::OV3640;
   CamRole m_prmRole = CamRole::US_CAM;
   U32 m_prmAddr = 0x3C;
+  U32 m_prmRecoverK = 5;
+  U32 m_prmRecoverR = 3;
+  U32 m_prmFrameMax = 65536;
 };
 
 }  // namespace Components
