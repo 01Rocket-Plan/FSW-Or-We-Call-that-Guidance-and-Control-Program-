@@ -15,3 +15,7 @@ Components/EnvSensing/host_test/test_imu_core
 # Local Edward gate extracts (do not commit / do not share)
 .local_gate*
 .local_gates*
+
+# Wireless host-test binaries
+**/build_linkloss_test
+**/build_whitelist_test
