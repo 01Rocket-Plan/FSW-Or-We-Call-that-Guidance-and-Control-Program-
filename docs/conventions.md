@@ -31,7 +31,7 @@
 - `Deployments/UsMcu`（UsMcuDeployment）：US 飛控 MCU，**不含**控制律（無 Controller／ActuatorMgr／尾翼 ServoDriver）。
 - `Deployments/DsCam`（DsCamDeployment）：ESP32-CAM 獨立板，不併入 DsMcu。
 - `Deployments/UsCam`（UsCamDeployment）：OV3640 獨立板，不併入 UsMcu。
-- `Deployments/PadMcu`（PadMcuDeployment）：發射架 ESP32，不上箭（Issue #24）。箭 → 架走有線臍帶 UART，架 ↔ 地面走 NRF24L01。
+- `Deployments/PadMcu`（PadMcuDeployment）：發射架 ESP32，不上箭（Issue #24）。箭 ↔ 架走有線臍帶 UART（雙向），架 ↔ 地面走 NRF24L01。
 
 ## 5. Base ID 分配（暫定，MCU 組可提修改）
 | 範圍 | 用途 |
@@ -44,7 +44,7 @@
 | 0x5000–0x5FFF | GNSS（GnssDriver 0x5000） |
 | 0x6000–0x6FFF | 電源（PowerMonitor 0x6000、NvFlags 0x6100、UvStateComp 0x6200） |
 | 0x7000–0x7FFF | 相機（DsCam 0x7000、UsCam 0x7100） |
-| 0x8000–0x8FFF | 無線（TlmSend 0x8000、Framer 0x8100、ComQueue 0x8200、UplinkAuth 0x8300、RfDriver 0x8400（PR #15）、UmbilicalTx 0x8500、Nrf24Driver 0x8600（預留）、PadController 0x8700） |
+| 0x8000–0x8FFF | 無線（TlmSend 0x8000、Framer 0x8100、ComQueue 0x8200、UplinkAuth 0x8300、RfDriver 0x8400（PR #15）、UmbilicalLink 0x8500、Nrf24Driver 0x8600（預留）、PadController 0x8700） |
 Sim 驅動用同元件基底 +0x80。五部署可重用同一表（相機部署只用 0x7000 段；PadMcu 只用 0x0000 與 0x8600–0x87FF 段）。
 
 ## 6. 禁止事項

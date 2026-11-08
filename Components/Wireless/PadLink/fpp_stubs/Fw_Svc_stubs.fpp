@@ -1,5 +1,5 @@
 # Host fpp-check stubs until lib/fprime is vendored (MCU group).
-# Minimal Fw/Svc surface needed by PadLink／PadController／UmbilicalTx.
+# Minimal Fw/Svc surface needed by PadLink／PadController／UmbilicalLink.
 
 module Fw {
 

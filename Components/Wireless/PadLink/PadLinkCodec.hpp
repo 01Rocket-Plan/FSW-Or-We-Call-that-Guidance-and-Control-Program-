@@ -1,5 +1,5 @@
 // PadLinkCodec：發射架相關兩條鏈路共用的精簡幀（Issue #24）
-//   (1) 箭 → 發射架：有線臍帶 UART（RocketStatus）
+//   (1) 箭 ↔ 發射架：有線臍帶 UART（箭 → 架 RocketStatus；架 → 箭 PadToRocket）
 //   (2) 發射架 ↔ 地面站：NRF24L01 2.4 GHz（PadStatus／GroundCmd）
 //
 // 為什麼不沿用 Framer（§2 幀）：Framer 固定開銷 30 B，NRF24L01 單包只有 32 B。
@@ -34,6 +34,7 @@ static constexpr std::size_t kMaxFrameBytes = kOverheadBytes + kMaxPayload;    /
 
 enum class PadMsgType : std::uint8_t {
   ROCKET_STATUS = 0x11,  // 箭 → 架（臍帶）
+  PAD_TO_ROCKET = 0x12,  // 架 → 箭（臍帶）
   PAD_STATUS = 0x21,     // 架 → 地面（NRF24）
   GROUND_CMD = 0x31,     // 地面 → 架（NRF24）
 };
@@ -99,6 +100,28 @@ static constexpr std::size_t kRocketStatusBytes = 7;
 std::size_t packRocketStatus(const RocketStatusMsg& m, std::uint8_t* out, std::size_t cap);
 bool unpackRocketStatus(const std::uint8_t* p, std::size_t len, RocketStatusMsg& m);
 
+//! 架 → 箭 旗標（PadToRocket.flags）。
+enum PadToRocketFlag : std::uint8_t {
+  PTR_IGNITER_ON = 1u << 0,        // 點火繼電器本拍有輸出
+  PTR_THRUST_CONFIRMED = 1u << 1,  // 推力已確認（之後就會鬆夾持）
+  PTR_CLAMP_RELEASED = 1u << 2,    // 夾持已鬆（不會再夾回）
+  PTR_ROCKET_LINK_OK = 1u << 3,    // 架這端有收到箭體狀態（讓箭知道自己的 READY 有被看到）
+};
+
+//! 架 → 箭（臍帶）。6 B。
+//! 方案 A（Issue #24，Edward 2026-11-08）：鬆夾持由架決定，箭只用 RocketStatus.ready 否決；
+//! 這則訊息只是讓箭知道架的狀態（例如倒數中，可預先準備起飛偵測），不是放行指令。
+struct PadToRocketMsg {
+  std::uint8_t padState = 0;       // PadState
+  std::uint8_t lastReason = 0;     // PadReason
+  std::uint16_t countdown_ds = 0;  // 倒數剩餘 ×10（0.1 s）
+  std::uint8_t flags = 0;          // PadToRocketFlag
+  std::uint8_t padBootId = 0;      // 架這次開機的 bootId（箭可藉此發現架重開機）
+};
+static constexpr std::size_t kPadToRocketBytes = 6;
+std::size_t packPadToRocket(const PadToRocketMsg& m, std::uint8_t* out, std::size_t cap);
+bool unpackPadToRocket(const std::uint8_t* p, std::size_t len, PadToRocketMsg& m);
+
 //! 架上互鎖位元（架 → 地面狀態燈）。全部為 1＝綠。
 enum PadInterlockBit : std::uint16_t {
   IL_SEATED = 1u << 0,          // 箭體到位
@@ -159,6 +182,7 @@ std::size_t packGroundCmd(const GroundCmdMsg& m, std::uint8_t* out, std::size_t 
 bool unpackGroundCmd(const std::uint8_t* p, std::size_t len, GroundCmdMsg& m);
 
 static_assert(kRocketStatusBytes <= kMaxPayload, "RocketStatus must fit one NRF24 packet");
+static_assert(kPadToRocketBytes <= kMaxPayload, "PadToRocket must fit one frame");
 static_assert(kPadStatusBytes <= kMaxPayload, "PadStatus must fit one NRF24 packet");
 static_assert(kGroundCmdBytes <= kMaxPayload, "GroundCmd must fit one NRF24 packet");
 

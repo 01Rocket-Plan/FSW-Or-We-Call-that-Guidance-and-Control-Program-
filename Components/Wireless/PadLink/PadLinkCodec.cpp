@@ -26,6 +26,7 @@ std::uint32_t get32(const std::uint8_t* p) {
 
 bool knownType(std::uint8_t t) {
   return t == static_cast<std::uint8_t>(PadMsgType::ROCKET_STATUS) ||
+         t == static_cast<std::uint8_t>(PadMsgType::PAD_TO_ROCKET) ||
          t == static_cast<std::uint8_t>(PadMsgType::PAD_STATUS) ||
          t == static_cast<std::uint8_t>(PadMsgType::GROUND_CMD);
 }
@@ -126,6 +127,28 @@ bool unpackRocketStatus(const std::uint8_t* p, std::size_t len, RocketStatusMsg&
   m.ready = (p[3] == 1u);
   m.battV_mV = get16(p + 4);
   m.bootCount = p[6];
+  return true;
+}
+
+std::size_t packPadToRocket(const PadToRocketMsg& m, std::uint8_t* out, std::size_t cap) {
+  if (out == nullptr || cap < kPadToRocketBytes) return 0;
+  out[0] = m.padState;
+  out[1] = m.lastReason;
+  put16(out + 2, m.countdown_ds);
+  out[4] = m.flags;
+  out[5] = m.padBootId;
+  return kPadToRocketBytes;
+}
+
+bool unpackPadToRocket(const std::uint8_t* p, std::size_t len, PadToRocketMsg& m) {
+  if (p == nullptr || len != kPadToRocketBytes) return false;
+  if (p[0] > 8u) return false;      // PadState 最大 NO_LIFTOFF＝8
+  if ((p[4] & 0xF0u) != 0u) return false;  // 未定義旗標
+  m.padState = p[0];
+  m.lastReason = p[1];
+  m.countdown_ds = get16(p + 2);
+  m.flags = p[4];
+  m.padBootId = p[5];
   return true;
 }
 

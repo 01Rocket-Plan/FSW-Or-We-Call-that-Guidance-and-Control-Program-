@@ -1,7 +1,7 @@
 // PadControllerCore：發射架主控（PadMcu，ESP32）— Issue #24
 //
 // 一顆 Core 同時負責：
-//   - 臍帶 UART 收箭體狀態（箭 → 架），監看新鮮度
+//   - 臍帶 UART 收箭體狀態（箭 → 架），監看新鮮度；回送架上狀態（架 → 箭）
 //   - NRF24 收地面指令（地面 → 架）、組架上狀態幀（架 → 地面）
 //   - 發射許可互鎖、待點火倒數、點火窗、推力確認後鬆夾持、離軌判斷
 //
@@ -118,6 +118,9 @@ class PadControllerCore {
   PadOutputs tick(const PadInputs& in, double now_s);
   //! 組一幀 PadStatus（建議 10 Hz 送 NRF24）。回傳長度。
   std::size_t buildStatusFrame(std::uint8_t* out, std::size_t cap);
+  //! 組一幀 PadToRocket（建議 10 Hz 寫臍帶 UART）。回傳長度。
+  //! 只是狀態回報（方案 A）：鬆夾持仍由架決定，箭只能用 READY 否決。
+  std::size_t buildUmbilicalFrame(std::uint8_t* out, std::size_t cap);
 
   PadState state() const { return m_state; }
   PadReason lastReason() const { return m_reason; }
@@ -163,7 +166,9 @@ class PadControllerCore {
   double m_tRelease_s = 0.0;
 
   PadInputs m_lastIn{};
+  PadOutputs m_lastOut{};
   std::uint16_t m_statusSeq = 0;
+  std::uint16_t m_umbilicalSeq = 0;
 };
 
 }  // namespace PadLink

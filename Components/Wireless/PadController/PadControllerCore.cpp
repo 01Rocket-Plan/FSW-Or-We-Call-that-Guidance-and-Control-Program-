@@ -254,6 +254,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
   out.igniterOn = (m_state == PadState::IGNITION) && in.keyOn;
   out.clampRelease = m_state == PadState::RELEASED || m_state == PadState::LIFTED_OFF ||
                      m_state == PadState::NO_LIFTOFF;
+  m_lastOut = out;
   return out;
 }
 
@@ -273,6 +274,27 @@ std::size_t PadControllerCore::buildStatusFrame(std::uint8_t* out, std::size_t c
   std::uint8_t payload[kPadStatusBytes];
   if (packPadStatus(m, payload, sizeof(payload)) == 0) return 0;
   return encodeFrame(PadMsgType::PAD_STATUS, m_statusSeq++, payload, sizeof(payload), out, cap);
+}
+
+std::size_t PadControllerCore::buildUmbilicalFrame(std::uint8_t* out, std::size_t cap) {
+  PadToRocketMsg m;
+  m.padState = static_cast<std::uint8_t>(m_state);
+  m.lastReason = static_cast<std::uint8_t>(m_reason);
+  m.countdown_ds = clampU16(m_countdownRemaining_s * 10.0);
+  std::uint8_t f = 0;
+  if (m_lastOut.igniterOn) f |= PTR_IGNITER_ON;
+  if (m_state == PadState::RELEASED || m_state == PadState::LIFTED_OFF ||
+      m_state == PadState::NO_LIFTOFF) {
+    f |= PTR_THRUST_CONFIRMED;  // 只有推力確認後才會進 RELEASED
+  }
+  if (m_lastOut.clampRelease) f |= PTR_CLAMP_RELEASED;
+  if (m_rocketFresh) f |= PTR_ROCKET_LINK_OK;
+  m.flags = f;
+  m.padBootId = m_gate.bootId();
+  std::uint8_t payload[kPadToRocketBytes];
+  if (packPadToRocket(m, payload, sizeof(payload)) == 0) return 0;
+  return encodeFrame(PadMsgType::PAD_TO_ROCKET, m_umbilicalSeq++, payload, sizeof(payload), out,
+                     cap);
 }
 
 }  // namespace PadLink

@@ -1,15 +1,15 @@
-#include "UmbilicalTxCore.hpp"
+#include "UmbilicalLinkCore.hpp"
 
 namespace PadLink {
 
-bool UmbilicalTxCore::computeReady(double now_s) const {
+bool UmbilicalLinkCore::computeReady(double now_s) const {
   if (!m_haveBit) return false;
   if (now_s - m_bitAt_s > m_p.bitMaxAge_s) return false;
   if ((m_bit & kRocketBitHardMask) != kRocketBitHardMask) return false;
   return m_mode == kModePadIdle || m_mode == kModeArmed;
 }
 
-bool UmbilicalTxCore::tick(double now_s) {
+bool UmbilicalLinkCore::tick(double now_s) {
   if (m_haveTx && (now_s - m_lastTx_s) < m_p.period_s) return false;
   m_haveTx = true;
   m_lastTx_s = now_s;
@@ -34,6 +34,22 @@ bool UmbilicalTxCore::tick(double now_s) {
     ++m_writeFail;  // 起飛後臍帶拔脫是預期的：只計數，不報錯
   }
   return true;
+}
+
+void UmbilicalLinkCore::onUmbilicalBytes(const std::uint8_t* data, std::size_t len,
+                                         double now_s) {
+  if (data == nullptr) return;
+  DecodedFrame f;
+  for (std::size_t i = 0; i < len; ++i) {
+    if (!m_deframer.push(data[i], f)) continue;
+    if (f.type != PadMsgType::PAD_TO_ROCKET) continue;  // 臍帶上箭只收架狀態
+    PadToRocketMsg m;
+    if (!unpackPadToRocket(f.payload, f.len, m)) continue;
+    m_pad = m;
+    m_havePad = true;
+    m_lastPadRx_s = now_s;
+    ++m_rx;
+  }
 }
 
 }  // namespace PadLink

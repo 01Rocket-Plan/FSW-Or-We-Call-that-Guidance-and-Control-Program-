@@ -8,10 +8,16 @@
 | # | 鏈路 | 實體 | 方向 | 內容 | 程式 |
 |---|---|---|---|---|---|
 | 1 | 箭 ↔ 地面站 | LoRa Ra-02 433 MHz（SX1278） | 雙向 | 遙測、密碼中止 | `RfDriver`、`Framer`…（既有 PR） |
-| 2 | 箭 → 發射架 | **有線臍帶 UART**（箭尾 umbilical，離軌時拔脫） | 單向 | 箭體 READY／BIT、飛行模式、電池電壓 | `UmbilicalTx`（DsMcu）→ `PadController`（PadMcu） |
+| 2 | 箭 ↔ 發射架 | **有線臍帶 UART**（箭尾 umbilical，離軌時拔脫） | 雙向 | 箭 → 架：READY／BIT、飛行模式、電池電壓；架 → 箭：架狀態、倒數、點火／推力確認／夾持旗標 | `UmbilicalLink`（DsMcu）↔ `PadController`（PadMcu） |
 | 3 | 發射架 ↔ 地面站 | **NRF24L01 2.4 GHz**（不上箭，xmind） | 雙向 | 架上狀態燈；ARM／LAUNCH／ABORT／DISARM／心跳 | `PadController`（PadMcu） |
 
-為什麼臍帶只做單向：點火指令只走「地面 → 架」，火箭無線電不在點火迴路裡（gate C15 第三輪）。箭上沒有任何東西需要從架子收。
+臍帶是雙向的（Issue #24 審查更正）。誰決定鬆夾持：**方案 A**（Edward 2026-11-08 定案）
+
+- 鬆夾持由**架**決定：推力確認＋全部互鎖過才鬆。
+- 箭用 `RocketStatus.ready` **否決**：ready 掉了，倒數中 → 架退回 SAFE；點火後臍帶斷 → HOLD_ABORT。
+- 架 → 箭 的 `PadToRocket` 只是狀態回報，不是放行指令。箭不回「放行」，所以箭上 MCU 當掉不會讓夾臂一直夾著燒中的馬達（那是方案 B 的風險）。
+- 點火指令仍只走「地面 → 架」，火箭不在點火迴路裡（gate C15 第三輪）。
+- 箭收到架狀態後要不要用（例如倒數中預先準備起飛偵測）是 FlightMode 的事，`UmbilicalLink` 只經 `padStatusOut` 轉交。
 
 ## 幀格式（兩條新鏈路共用，`PadLinkCodec`）
 
@@ -33,6 +39,7 @@ Framer 的 §2 幀固定開銷 30 B，NRF24L01 單包只有 32 B，塞不進去�
 | type | 名稱 | 方向 | 酬載 |
 |---|---|---|---|
 | `0x11` | RocketStatus | 箭 → 架 | flightMode、bitFlags、ready、battV_mV、bootCount（7 B） |
+| `0x12` | PadToRocket | 架 → 箭 | padState、lastReason、countdown_ds、flags（點火中／推力確認／夾持已鬆／架有收到箭）、padBootId（6 B） |
 | `0x21` | PadStatus | 架 → 地面 | padState、lastReason、interlocks、rocketMode、rocketBit、tilt、padV、倒數、lastCmdCounter、lastCmdResult、bootId（19 B） |
 | `0x31` | GroundCmd | 地面 → 架 | op、counter、bootId、16 B 截短 HMAC tag（22 B） |
 
@@ -76,7 +83,7 @@ RELEASED ──3 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回�
 ## 待 Edward 定
 
 1. **ABORT／DISARM 要不要簽名？** 目前不驗（往安全方向，被偽造最多是被迫中止）。
-2. 門檻（全部是假設）：倒數 30 s、點火窗 2 s、推力確認 0.1 s、離軌逾時 3 s、地面鏈路逾時 1 s、臍帶逾時 0.5 s、架傾角 5°、架電源 11 V。
+2. 門檻（全部是假設）：倒數 30 s、點火窗 2 s、推力確認 0.1 s、離軌逾時 3 s、地面鏈路逾時 1 s、臍帶逾時 0.5 s、箭端收架狀態逾時 0.5 s、架傾角 5°、架電源 11 V。
 3. 推力確認感測器型號（荷重元？）；離軌開關、seated 開關、傾角計型號與腳位。
 4. `bootId` 來源：建議 PadMcu 的 NvFlags 開機計數（U8 會繞回，256 次開機才重複一次）。
 5. 地面站端程式（組 GroundCmd、顯示 PadStatus 燈號）：協定已固定在 `PadLinkCodec.hpp`，地面工具可直接 include。
@@ -84,14 +91,14 @@ RELEASED ──3 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回�
 ## 本 PR 不含
 
 - NRF24L01 驅動（SPI）、臍帶 UART 驅動、GPIO／ADC 驅動 → 硬體型號定案後各開一個 PR（Base ID 已預留，見 `docs/conventions.md`）。
-- F´ 元件外殼 `.cpp`（`PadController.cpp`／`UmbilicalTx.cpp`）：FPP 已過 `fpp-check`、`fpp-to-cpp`；外殼在拓樸整合時接。
-- `FlightMode` 邏輯（CONTRIBUTING 第 7 條）。`UmbilicalTx` 只讀 `ModePort`。
+- F´ 元件外殼 `.cpp`（`PadController.cpp`／`UmbilicalLink.cpp`）：FPP 已過 `fpp-check`、`fpp-to-cpp`；外殼在拓樸整合時接。
+- `FlightMode` 邏輯（CONTRIBUTING 第 7 條）。`UmbilicalLink` 只讀 `ModePort`，架狀態只轉交、不做決定。
 
 ## 自測
 
 ```
-bash Components/Wireless/PadLink/run_host_tests.sh   # 16 項
+bash Components/Wireless/PadLink/run_host_tests.sh   # 18 項
 fpp-check Components/Wireless/PadLink/fpp_stubs/Fw_Svc_stubs.fpp RocketTypes/RocketTypes.fpp \
   Components/Wireless/PadLink/PadLink.fpp Components/Wireless/PadController/PadController.fpp \
-  Components/Wireless/UmbilicalTx/UmbilicalTx.fpp
+  Components/Wireless/UmbilicalLink/UmbilicalLink.fpp
 ```

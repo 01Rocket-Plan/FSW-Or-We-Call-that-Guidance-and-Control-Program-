@@ -1,7 +1,7 @@
 module Components {
 
   @ 發射架主控（PadMcu，ESP32）；Base ID 0x8700
-  @ 臍帶 UART 收箭體狀態（箭 → 架）、NRF24 收地面指令／送架上狀態（架 ↔ 地面）、
+  @ 臍帶 UART 收箭體狀態（箭 → 架）並回送架上狀態（架 → 箭）、NRF24 收地面指令／送架上狀態（架 ↔ 地面）、
   @ 發射許可互鎖、待點火倒數、點火窗、推力確認後鬆夾持、離軌判斷。
   @ 邏輯全部在 PadControllerCore（host 可測）；本元件只是 F´ 外殼。
   @ 點火只走地面 → 架，火箭不在點火迴路裡（gate C15）；實體鑰匙在硬體串聯。
@@ -18,6 +18,10 @@ module Components {
 
     @ 架上狀態幀 → NRF24 驅動（10 Hz）
     output port radioOut: Fw.BufferSend
+
+    @ 架 → 箭 狀態幀（PadToRocket）→ 臍帶 UART 驅動（10 Hz）
+    @ 方案 A：只是狀態回報；鬆夾持由架決定，箭只能用 READY 否決
+    output port umbilicalOut: Fw.BufferSend
 
     @ 讀架上硬體
     output port ioGet: Components.PadIoGet
