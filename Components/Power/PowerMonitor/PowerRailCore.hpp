@@ -1,6 +1,7 @@
 #ifndef POWERRAIL_CORE_HPP
 #define POWERRAIL_CORE_HPP
 
+#include <limits>
 #include <cstdint>
 #include <cmath>
 
