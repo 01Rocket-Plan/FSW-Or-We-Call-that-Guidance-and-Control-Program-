@@ -1,6 +1,7 @@
 // ComQueueCore：無線下行優先佇列（與 F´ 無關，可在 host 測試）
 // 規則：不 sleep、不讀系統時間；每個 run 最多推進 maxPktsPerRun 幀（≥1）。
 // P0..P4：全層滿丟最新（拒收新幀並計數）。EVT_QUEUE_FULL_DROP ≤1 次／100 tick（附累計數）。
+// 只留最新（latest-only）：登記的 (層, apid) 在該層最多排一幀，新幀覆蓋尚未送出的舊幀（例：P0 的 GNSS fix）。
 // 執行緒安全：F´ 殼以 guarded comIn 持元件 mutex；Core 本身無鎖、無阻塞，
 // 呼叫端須在同一把 mutex 下呼叫 enqueue／runEmit（host 測試用 std::mutex 模擬）。
 #ifndef WIRELESS_COMQUEUECORE_HPP
@@ -36,6 +37,7 @@ class ComQueueCore {
   static constexpr uint8_t kMaxDepth = 16;
   static constexpr uint32_t kDropEventPeriodTicks = 100;  // 1 s @ rg100Hz
   static constexpr uint8_t kDefaultMaxPktsPerRun = 4;
+  static constexpr uint8_t kMaxLatestOnly = 4;
 
   ComQueueCore();
 
@@ -47,7 +49,12 @@ class ComQueueCore {
   bool setMaxPktsPerRun(uint8_t n);
   uint8_t maxPktsPerRun() const { return m_maxPktsPerRun; }
 
-  // 入列。該層滿：拒收新幀、計數、回 false（各層一致）。
+  // 登記 (層, apid) 為只留最新。同組重複登記視為成功；表滿（kMaxLatestOnly）回 false。
+  bool setLatestOnly(ComPriority p, uint16_t apid);
+  bool isLatestOnly(ComPriority p, uint16_t apid) const;
+
+  // 入列。只留最新且該層已有同 apid 幀：原位覆蓋（保留排隊位置）、回 true、計入 coalesceCount，不算丟包。
+  // 其餘：該層滿則拒收新幀、計數、回 false（各層一致）。
   bool enqueue(ComPriority p, const ComFrame& f);
 
   // 取最高優先層 FIFO 最舊一幀。
@@ -71,6 +78,7 @@ class ComQueueCore {
   uint8_t hwm(ComPriority p) const;
   uint32_t dropCount(ComPriority p) const;
   uint32_t dropCountTotal() const;
+  uint32_t coalesceCount(ComPriority p) const;
   uint32_t queuedTotal() const;
 
  private:
@@ -84,6 +92,7 @@ class ComQueueCore {
 
     void reset();
     bool pushDropNewest(const ComFrame& f);
+    bool replaceApid(const ComFrame& f);
     bool pop(ComFrame& out);
   };
 
@@ -96,6 +105,14 @@ class ComQueueCore {
   ComQueueEvent m_event = ComQueueEvent::NONE;
   IComQueueEvents* m_events = nullptr;
   uint8_t m_maxPktsPerRun = kDefaultMaxPktsPerRun;
+
+  struct LatestOnlyKey {
+    ComPriority pri = ComPriority::P0;
+    uint16_t apid = 0;
+  };
+  LatestOnlyKey m_latestOnly[kMaxLatestOnly]{};
+  uint8_t m_latestOnlyN = 0;
+  uint32_t m_coalesce[static_cast<uint8_t>(ComPriority::NUM)]{};
 
   uint32_t m_dropTotal[static_cast<uint8_t>(ComPriority::NUM)]{};
   uint32_t m_dropSinceEmit[static_cast<uint8_t>(ComPriority::NUM)]{};

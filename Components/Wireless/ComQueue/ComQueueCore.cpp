@@ -21,6 +21,17 @@ bool ComQueueCore::Ring::pushDropNewest(const ComFrame& f) {
   return false;
 }
 
+bool ComQueueCore::Ring::replaceApid(const ComFrame& f) {
+  for (uint8_t i = 0; i < count; ++i) {
+    ComFrame& slot = buf[(head + i) % kMaxDepth];
+    if (slot.apid == f.apid) {
+      slot = f;
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ComQueueCore::Ring::pop(ComFrame& out) {
   if (count == 0) return false;
   out = buf[head];
@@ -50,6 +61,23 @@ bool ComQueueCore::setMaxPktsPerRun(uint8_t n) {
   if (n < 1) return false;
   m_maxPktsPerRun = n;
   return true;
+}
+
+bool ComQueueCore::setLatestOnly(ComPriority p, uint16_t apid) {
+  if (static_cast<uint8_t>(p) >= static_cast<uint8_t>(ComPriority::NUM)) return false;
+  if (isLatestOnly(p, apid)) return true;
+  if (m_latestOnlyN >= kMaxLatestOnly) return false;
+  m_latestOnly[m_latestOnlyN].pri = p;
+  m_latestOnly[m_latestOnlyN].apid = apid;
+  ++m_latestOnlyN;
+  return true;
+}
+
+bool ComQueueCore::isLatestOnly(ComPriority p, uint16_t apid) const {
+  for (uint8_t i = 0; i < m_latestOnlyN; ++i) {
+    if (m_latestOnly[i].pri == p && m_latestOnly[i].apid == apid) return true;
+  }
+  return false;
 }
 
 void ComQueueCore::noteDrop(ComPriority p) {
@@ -97,6 +125,11 @@ bool ComQueueCore::enqueue(ComPriority p, const ComFrame& f) {
   const uint8_t idx = static_cast<uint8_t>(p);
   if (idx >= static_cast<uint8_t>(ComPriority::NUM)) return false;
   Ring& r = m_ring[idx];
+  // 只留最新：已有同 apid 未送出 → 原位覆蓋，不佔新格、不算丟包（GNSS fix 不會塞滿 P0 擠掉事件）
+  if (isLatestOnly(p, f.apid) && r.replaceApid(f)) {
+    ++m_coalesce[idx];
+    return true;
+  }
   // 全層滿丟最新（P0 是關鍵事件，先發生的不能被後來的擠掉）
   const bool dropped = r.pushDropNewest(f);
   if (dropped) {
@@ -202,6 +235,12 @@ uint32_t ComQueueCore::dropCountTotal() const {
   uint32_t s = 0;
   for (uint8_t i = 0; i < static_cast<uint8_t>(ComPriority::NUM); ++i) s += m_dropTotal[i];
   return s;
+}
+
+uint32_t ComQueueCore::coalesceCount(ComPriority p) const {
+  const uint8_t idx = static_cast<uint8_t>(p);
+  if (idx >= static_cast<uint8_t>(ComPriority::NUM)) return 0;
+  return m_coalesce[idx];
 }
 
 uint32_t ComQueueCore::queuedTotal() const {

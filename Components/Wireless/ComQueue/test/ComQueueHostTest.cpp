@@ -70,6 +70,69 @@ void test_p0_drop_newest_keeps_earliest() {
   assert(!q.dequeue(out));
 }
 
+ComFrame mkApid(uint16_t apid, uint32_t len) {
+  ComFrame f = mk(len);
+  f.apid = apid;
+  return f;
+}
+
+// GNSS fix 在 P0 只留最新：舊座標被覆蓋、保留排隊位置、不算丟包
+void test_p0_gnss_latest_only() {
+  constexpr uint16_t kGnss = 0x20;  // 測試用 apid（實際值待拓樸定）
+  constexpr uint16_t kEvt = 0x10;
+  ComQueueCore q;
+  DropRec dr;
+  q.setEventSink(&dr);
+  q.setDepth(ComPriority::P0, 4);
+  assert(q.setLatestOnly(ComPriority::P0, kGnss));
+  assert(q.enqueue(ComPriority::P0, mkApid(kEvt, 1)));   // 事件 A
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 2)));  // fix #1
+  assert(q.enqueue(ComPriority::P0, mkApid(kEvt, 3)));   // 事件 B
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 4)));  // fix #2 覆蓋 #1
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 5)));  // fix #3 覆蓋 #2
+  assert(q.count(ComPriority::P0) == 3);
+  assert(q.coalesceCount(ComPriority::P0) == 2);
+  assert(q.dropCount(ComPriority::P0) == 0);
+  assert(dr.emits == 0);
+  ComFrame out{};
+  assert(q.dequeue(out) && out.len == 1);  // 事件 A
+  assert(q.dequeue(out) && out.len == 5 && out.apid == kGnss);  // 最新 fix，在 fix #1 的位置
+  assert(q.dequeue(out) && out.len == 3);  // 事件 B
+  assert(!q.dequeue(out));
+  // 已送出後再來的 fix 是新幀，正常入列
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 6)));
+  assert(q.count(ComPriority::P0) == 1);
+}
+
+// P0 被事件塞滿時：已排隊的 fix 照樣覆蓋；事件仍丟最新；沒排隊的 fix 進不來（事件優先）
+void test_p0_full_events_vs_gnss() {
+  constexpr uint16_t kGnss = 0x20;
+  constexpr uint16_t kEvt = 0x10;
+  ComQueueCore q;
+  q.setDepth(ComPriority::P0, 2);
+  assert(q.setLatestOnly(ComPriority::P0, kGnss));
+  assert(!q.isLatestOnly(ComPriority::P1, kGnss));
+  assert(q.enqueue(ComPriority::P0, mkApid(kEvt, 1)));
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 2)));
+  assert(q.enqueue(ComPriority::P0, mkApid(kGnss, 3)));   // 滿了仍可覆蓋
+  assert(!q.enqueue(ComPriority::P0, mkApid(kEvt, 4)));   // 事件丟最新
+  assert(q.dropCount(ComPriority::P0) == 1);
+  ComFrame out{};
+  assert(q.dequeue(out) && out.len == 1);
+  assert(q.dequeue(out) && out.len == 3);
+  ComQueueCore q2;
+  q2.setDepth(ComPriority::P0, 1);
+  assert(q2.setLatestOnly(ComPriority::P0, kGnss));
+  assert(q2.enqueue(ComPriority::P0, mkApid(kEvt, 1)));
+  assert(!q2.enqueue(ComPriority::P0, mkApid(kGnss, 2)));  // 不擠掉事件
+  assert(q2.dequeue(out) && out.len == 1);
+  // 登記表上限
+  ComQueueCore q3;
+  for (uint16_t a = 0; a < ComQueueCore::kMaxLatestOnly; ++a) assert(q3.setLatestOnly(ComPriority::P0, a));
+  assert(q3.setLatestOnly(ComPriority::P0, 0));  // 重複登記 OK
+  assert(!q3.setLatestOnly(ComPriority::P0, 99));
+}
+
 void test_p1_drop_newest() {
   ComQueueCore q;
   q.setDepth(ComPriority::P1, 2);
@@ -247,6 +310,8 @@ int main() {
   test_fifo_same_tier();
   test_cross_priority();
   test_p0_drop_newest_keeps_earliest();
+  test_p0_gnss_latest_only();
+  test_p0_full_events_vs_gnss();
   test_p1_drop_newest();
   test_high_water_monotonic();
   test_link_busy_hold();
@@ -255,6 +320,6 @@ int main() {
   test_max_pkts_per_run_cap();
   test_max_pkts_priority_across_runs();
   test_concurrent_enqueue_with_mutex();
-  std::printf("ComQueueHostTest: all 11 tests passed\n");
+  std::printf("ComQueueHostTest: all 13 tests passed\n");
   return 0;
 }
