@@ -53,19 +53,21 @@ void test_cross_priority() {
   assert(q.dequeue(out) && out.len == 10);
 }
 
-void test_p0_drop_oldest() {
+// P0 放關鍵事件：滿了丟最新，先發生的事件（例如 IMU 失效）要保住
+void test_p0_drop_newest_keeps_earliest() {
   ComQueueCore q;
   DropRec dr;
   q.setEventSink(&dr);
   q.setDepth(ComPriority::P0, 2);
   assert(q.enqueue(ComPriority::P0, mk(1)));
   assert(q.enqueue(ComPriority::P0, mk(2)));
-  assert(q.enqueue(ComPriority::P0, mk(3)));
+  assert(!q.enqueue(ComPriority::P0, mk(3)));
   assert(q.dropCount(ComPriority::P0) == 1);
   assert(dr.emits == 1);
   ComFrame out{};
+  assert(q.dequeue(out) && out.len == 1);
   assert(q.dequeue(out) && out.len == 2);
-  assert(q.dequeue(out) && out.len == 3);
+  assert(!q.dequeue(out));
 }
 
 void test_p1_drop_newest() {
@@ -244,7 +246,7 @@ void test_concurrent_enqueue_with_mutex() {
 int main() {
   test_fifo_same_tier();
   test_cross_priority();
-  test_p0_drop_oldest();
+  test_p0_drop_newest_keeps_earliest();
   test_p1_drop_newest();
   test_high_water_monotonic();
   test_link_busy_hold();

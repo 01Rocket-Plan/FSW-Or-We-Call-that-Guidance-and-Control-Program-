@@ -10,6 +10,6 @@ echo "== ComQueue host =="
 $CXX -std=c++17 -Wall -Wextra -pthread -I"$CQ" \
   "$CQ/test/ComQueueHostTest.cpp" \
   "$CQ/ComQueueCore.cpp" \
-  -o /tmp/comqueue_host_test
-/tmp/comqueue_host_test
+  -o "${TMPDIR:-/tmp}/comqueue_host_test"
+"${TMPDIR:-/tmp}/comqueue_host_test"
 echo "ALL COMQUEUE HOST TESTS PASSED"

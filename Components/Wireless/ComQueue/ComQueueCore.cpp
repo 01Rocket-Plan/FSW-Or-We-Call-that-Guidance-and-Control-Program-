@@ -9,20 +9,6 @@ void ComQueueCore::Ring::reset() {
   hwm = 0;
 }
 
-bool ComQueueCore::Ring::pushDropOldest(const ComFrame& f) {
-  bool dropped = false;
-  if (count >= depth) {
-    head = static_cast<uint8_t>((head + 1) % kMaxDepth);
-    --count;
-    dropped = true;
-  }
-  buf[tail] = f;
-  tail = static_cast<uint8_t>((tail + 1) % kMaxDepth);
-  ++count;
-  if (count > hwm) hwm = count;
-  return dropped;
-}
-
 bool ComQueueCore::Ring::pushDropNewest(const ComFrame& f) {
   if (count >= depth) {
     (void)f;
@@ -111,12 +97,7 @@ bool ComQueueCore::enqueue(ComPriority p, const ComFrame& f) {
   const uint8_t idx = static_cast<uint8_t>(p);
   if (idx >= static_cast<uint8_t>(ComPriority::NUM)) return false;
   Ring& r = m_ring[idx];
-  if (p == ComPriority::P0) {
-    const bool dropped = r.pushDropOldest(f);
-    if (dropped) noteDrop(p);
-    updateHighWater();
-    return true;
-  }
+  // 全層滿丟最新（P0 是關鍵事件，先發生的不能被後來的擠掉）
   const bool dropped = r.pushDropNewest(f);
   if (dropped) {
     noteDrop(p);

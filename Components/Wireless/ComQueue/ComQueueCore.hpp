@@ -1,6 +1,6 @@
 // ComQueueCore：無線下行優先佇列（與 F´ 無關，可在 host 測試）
 // 規則：不 sleep、不讀系統時間；每個 run 最多推進 maxPktsPerRun 幀（≥1）。
-// P0..P4：P0 滿丟最舊；其餘滿丟最新。EVT_QUEUE_FULL_DROP ≤1 次／100 tick（附累計數）。
+// P0..P4：全層滿丟最新（拒收新幀並計數）。EVT_QUEUE_FULL_DROP ≤1 次／100 tick（附累計數）。
 // 執行緒安全：F´ 殼以 guarded comIn 持元件 mutex；Core 本身無鎖、無阻塞，
 // 呼叫端須在同一把 mutex 下呼叫 enqueue／runEmit（host 測試用 std::mutex 模擬）。
 #ifndef WIRELESS_COMQUEUECORE_HPP
@@ -47,7 +47,7 @@ class ComQueueCore {
   bool setMaxPktsPerRun(uint8_t n);
   uint8_t maxPktsPerRun() const { return m_maxPktsPerRun; }
 
-  // 入列。P0 滿：丟最舊後插入，回 true；其餘滿：拒收新幀，回 false。
+  // 入列。該層滿：拒收新幀、計數、回 false（各層一致）。
   bool enqueue(ComPriority p, const ComFrame& f);
 
   // 取最高優先層 FIFO 最舊一幀。
@@ -83,7 +83,6 @@ class ComQueueCore {
     uint8_t hwm = 0;
 
     void reset();
-    bool pushDropOldest(const ComFrame& f);
     bool pushDropNewest(const ComFrame& f);
     bool pop(ComFrame& out);
   };

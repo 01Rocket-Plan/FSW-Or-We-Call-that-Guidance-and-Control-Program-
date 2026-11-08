@@ -1,11 +1,22 @@
 module Components {
 
-  @ 下行優先層（P0 最高）
-  enum ComPriority : U8 { P0 = 0, P1 = 1, P2 = 2, P3 = 3, P4 = 4 }
+  @ 下行優先層（P0 最高；分層表見 README，Edward 2026-11-08 定案）
+  enum ComPriority : U8 {
+    @ 關鍵事件：模式轉移、指令被拒、ABORT 回覆、SEP 分離、開傘、IMU 失效、低壓卸載
+    P0 = 0
+    @ 導航：GNSS fix、Estimator 姿態／傾角／速度、IMU
+    P1 = 1
+    @ 健康：flightMode 週期、電源三軌、舵面指令角
+    P2 = 2
+    @ 診斷：handshake、佇列 HWM／丟包數、GNSS data age
+    P3 = 3
+    @ 可犧牲：相機縮圖／分塊、除錯文字事件
+    P4 = 4
+  }
 
   @ comQueue：P0..P4 嚴格優先 FIFO；Base ID 0x8200
   @ passive＋guarded comIn（多 rate group 入列，元件 mutex）；run＝sync，僅掛 Core 0 rg100Hz
-  @ 每 run 最多吐 maxPktsPerRun 幀；P0 滿丟最舊、其餘丟最新；comStatusIn 忙碌不推進
+  @ 每 run 最多吐 maxPktsPerRun 幀；全層滿丟最新；comStatusIn 忙碌不推進
   @ Viktor：若拓樸量測顯示 rg 預算爆掉，再改 active
   passive component ComQueue {
 
