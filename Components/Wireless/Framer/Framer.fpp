@@ -1,7 +1,8 @@
 module Components {
 
   @ Framer：§2 空中幀組幀；Base ID 0x8100；被動元件
-  @ frameMax_B 預設 256＝對齊 LoRa-02（SX1278-class）256 Byte buffer（Edward）
+  @ 射頻型號：LoRa Ra-02（433 MHz），晶片 Semtech SX1278
+  @ frameMax_B 預設 255＝SX1278 單包酬載上限（FIFO 256 B，但 RegPayloadLength 為 8 bit，最大 255）
   passive component Framer {
 
     sync input port comIn: Svc.ComDataWithContext
@@ -19,8 +20,8 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 單幀上限（bytes）；預設 256＝LoRa-02 buffer
-    param frameMax_B: U32 default 256
+    @ 單幀上限（bytes）；預設 255＝LoRa Ra-02／SX1278 單包上限
+    param frameMax_B: U32 default 255
 
     telemetry FramesBuilt: U32
     telemetry LastFrameLen: U32

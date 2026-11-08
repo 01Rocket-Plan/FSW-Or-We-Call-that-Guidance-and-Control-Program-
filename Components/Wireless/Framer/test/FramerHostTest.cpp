@@ -1,4 +1,4 @@
-// FramerTest：9 個測試，覆蓋 §12.2 framer 全部測試條件 + frameMax_B=256
+// FramerTest：9 個測試，覆蓋 §12.2 framer 全部測試條件 + frameMax_B=255
 // 1) 已知向量組幀後 CRC 正確
 // 2) 超長酬載拒絕並發事件
 // 3) 欄位偏移與長度與 §2 表一致
@@ -6,8 +6,8 @@
 // 5) 大端序可重現（黃金向量）
 // 6) 緩衝不足拒絕並發事件
 // 7) APID 超 11 位拒絕並發事件
-// 8) 預設 frameMax_B=256
-// 9) 超過 256 Byte 拒絕；恰 256 通過
+// 8) 預設 frameMax_B=255（SX1278 單包上限）
+// 9) 超過 255 Byte 拒絕；恰 255 通過
 #include "FramerCore.hpp"
 #include <cassert>
 #include <cstdio>
@@ -212,38 +212,38 @@ int main() {
     std::printf("Test7 BAD_APID OK\n");
   }
 
-  // ---- Test 8: 預設 frameMax_B = 256（LoRa-02 buffer）----
+  // ---- Test 8: 預設 frameMax_B = 255（LoRa Ra-02／SX1278 單包上限）----
   {
     FramerCore core;
-    assert(core.frameMax() == 256);
-    std::printf("Test8 default frameMax_B=256 OK\n");
+    assert(core.frameMax() == 255);
+    std::printf("Test8 default frameMax_B=255 OK\n");
   }
 
-  // ---- Test 9: 總長超過 256 拒絕（對齊 LoRa-02 buffer）----
+  // ---- Test 9: 總長超過 255 拒絕（SX1278 單包上限）----
   {
-    // header 26 + trailer 4 = 30；payload 需 > 226 才讓 total > 256
-    uint8_t payload[227];
-    for (int i = 0; i < 227; ++i) payload[i] = static_cast<uint8_t>(i);
+    // header 26 + trailer 4 = 30；payload 需 > 225 才讓 total > 255
+    uint8_t payload[226];
+    for (int i = 0; i < 226; ++i) payload[i] = static_cast<uint8_t>(i);
     FrameRequest req{};
     req.apid = 1;
     req.payload = payload;
-    req.payloadLen = 227;  // total = 26+227+4 = 257 > 256
+    req.payloadLen = 226;  // total = 26+226+4 = 256 > 255
     uint8_t out[512];
     EvRecorder ev;
-    FramerCore core;  // default 256
+    FramerCore core;  // default 255
     core.setEventSink(&ev);
     FrameResult r = core.build(req, out, sizeof(out));
     assert(!r.ok);
     assert(ev.count == 1);
     assert(ev.last == FramerError::PAYLOAD_TOO_LARGE);
-    // 邊界：226 → total 256 應成功
-    req.payloadLen = 226;
+    // 邊界：225 → total 255 應成功
+    req.payloadLen = 225;
     ev.count = 0;
     r = core.build(req, out, sizeof(out));
     assert(r.ok);
-    assert(r.len == 256);
+    assert(r.len == 255);
     assert(ev.count == 0);
-    std::printf("Test9 frameMax 256 boundary OK\n");
+    std::printf("Test9 frameMax 255 boundary OK\n");
   }
 
   std::printf("ALL FRAMER TESTS PASSED\n");

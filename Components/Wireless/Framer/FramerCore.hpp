@@ -78,7 +78,7 @@ class FramerCore {
   static uint32_t crc32(const uint8_t* data, size_t len);
 
  private:
-  size_t m_frameMax = 256;  // LoRa-02 256 Byte buffer
+  size_t m_frameMax = 255;  // LoRa Ra-02 / Semtech SX1278: max payload 255 B (8-bit RegPayloadLength)
   IFramerEvents* m_events = nullptr;
   void emitError(FramerError e, uint32_t detail);
 };
