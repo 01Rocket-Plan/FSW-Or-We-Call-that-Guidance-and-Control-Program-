@@ -9,6 +9,6 @@
 7. `Components/MCU/FlightMode` 只有介面，狀態機邏輯由 Edward 撰寫。
 8. 要改共用型別（`RocketTypes/`）先提給首席工程師。
 
-9. 部署分四份：`DsMcu`／`UsMcu`／`DsCam`／`UsCam`；US MCU 不含控制律；相機不併入 MCU 主幹。
+9. 部署分五份：`DsMcu`／`UsMcu`／`DsCam`／`UsCam`／`PadMcu`；US MCU 不含控制律；相機不併入 MCU 主幹；`PadMcu` 是發射架板，不上箭。
 10. 自測保持輕量（`fpp-check`／`fprime-util check` 即可），勿過度著墨單元測試篇幅。
 11. **本機改完再推，一功能一 PR（Edward，2026-11-01）：** 不要在 GitHub 網頁介面直接改檔，也不要頻繁推送零碎小改動（會生出大量重複 PR、浪費平台儲存）。請在自己的機體上改完並自測後，再一次上傳最新版本、每個功能只開一個 PR；後續修正請推到同一條分支／同一個 PR。
