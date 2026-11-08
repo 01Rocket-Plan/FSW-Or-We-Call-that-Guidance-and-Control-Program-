@@ -92,30 +92,46 @@ AuthStatus UplinkAuthCore::accept(std::uint32_t cmdCounter, std::uint16_t opcode
     if (argLen > 0 && args == nullptr) {
         return AuthStatus::BadInput;
     }
+
+    // HMAC-exempt opcodes (gimbal only by default) use their OWN RAM-only counter.
+    // They must never touch the signed counter: an unsigned packet carrying a huge
+    // counter would otherwise push m_lastCmdCounter up and lock out every later
+    // signed command (abort included). The exempt counter is not persisted
+    // (no NVS wear, nothing security-relevant to protect) and restarts at 0 on boot;
+    // it only drops duplicate / out-of-order retransmissions.
+    if (!m_hmacExempt.requiresHmac(opcode)) {
+        if (cmdCounter <= m_lastExemptCounter) {
+            return AuthStatus::Replay;
+        }
+        m_lastExemptCounter = cmdCounter;
+        if (onForward != nullptr) {
+            onForward(forwardCtx);
+        }
+        return AuthStatus::Ok;
+    }
+
+    // Signed path (deny-by-default): only HMAC-verified commands advance and persist
+    // the signed anti-replay counter.
     if (cmdCounter <= m_lastCmdCounter) {
         return AuthStatus::Replay;
     }
-
-    // Deny-by-default: require HMAC unless exempt (gimbal only in default table).
-    if (m_hmacExempt.requiresHmac(opcode)) {
-        if (m_pskLen == 0) {
-            return AuthStatus::MissingKey;
-        }
-        if (authTag == nullptr || authTagLen != kTagBytes) {
-            return AuthStatus::BadInput;
-        }
-        std::uint8_t msg[kMacHeaderBytes + kMaxArgsBytes];
-        const std::size_t msgLen = buildMacMessage(
-            kDomainTag, kDomainTagLen, vehicleId, cmdCounter, opcode, args, argLen, msg,
-            sizeof(msg));
-        if (msgLen == 0) {
-            return AuthStatus::BadInput;
-        }
-        std::uint8_t expect[kTagBytes];
-        hmacSha256(m_psk, m_pskLen, msg, msgLen, expect);
-        if (!constTimeEqual(expect, authTag, kTagBytes)) {
-            return AuthStatus::AuthFail;
-        }
+    if (m_pskLen == 0) {
+        return AuthStatus::MissingKey;
+    }
+    if (authTag == nullptr || authTagLen != kTagBytes) {
+        return AuthStatus::BadInput;
+    }
+    std::uint8_t msg[kMacHeaderBytes + kMaxArgsBytes];
+    const std::size_t msgLen = buildMacMessage(
+        kDomainTag, kDomainTagLen, vehicleId, cmdCounter, opcode, args, argLen, msg,
+        sizeof(msg));
+    if (msgLen == 0) {
+        return AuthStatus::BadInput;
+    }
+    std::uint8_t expect[kTagBytes];
+    hmacSha256(m_psk, m_pskLen, msg, msgLen, expect);
+    if (!constTimeEqual(expect, authTag, kTagBytes)) {
+        return AuthStatus::AuthFail;
     }
 
     if (!m_store.writeLastCmdCounter(cmdCounter)) {

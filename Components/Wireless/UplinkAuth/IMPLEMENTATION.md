@@ -19,11 +19,11 @@
 ## 處理順序
 
 1. 幀 CRC、來源／目標 — 上游負責。
-2. `cmdCounter == 0xFFFFFFFF` → `CounterInvalid`。
-3. 防重放（無 window）：`cmdCounter` **嚴格大於** 最後值。
-4. 若 `requiresHmac(opcode)`（非豁免）：驗 HMAC；否則跳過。
-5. Persist `last` 至 NVS **之後**才 `onForward`；NVS 失敗 → `StoreFail`、不 forward。
-6. §8 白名單／參數範圍在本 Core 之外（下游）。
+2. `cmdCounter == 0xFFFFFFFF` → `CounterInvalid`（兩條路徑都適用）。
+3. 依 opcode 分兩條路徑，**兩個計數器互不影響**（PR #13 Edward 審查意見）：
+   - **需簽名（預設全部）**：`cmdCounter` 嚴格大於 `lastCmdCounter` → 驗 HMAC → Persist 至 NVS **之後**才 `onForward`；NVS 失敗 → `StoreFail`、不 forward。只有驗過簽名的指令會推進這個計數器。
+   - **HMAC 豁免（預設只有雲台）**：用**獨立**的 `lastExemptCounter`，只擋重送／亂序；只放 RAM、不寫 NVS、開機歸 0。免簽名封包任何人都能偽造，所以它不能碰簽名計數器，否則一包帶超大計數的雲台封包就能讓之後的中止指令全部被當成重放（鎖死）。
+4. §8 白名單／參數範圍在本 Core 之外（下游）。
 
 ## MAC 輸入（大端）
 

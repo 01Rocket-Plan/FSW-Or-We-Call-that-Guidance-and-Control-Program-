@@ -260,12 +260,76 @@ void testPersistedCounterSurvivesReinit() {
     {
         UplinkAuthCore core(store);
         CHECK(core.init() == AuthStatus::Ok);
-        CHECK(core.accept(42, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+        std::uint8_t tag[32];
+        makeTag(0x01, 42, kAbort, nullptr, 0, tag);
+        CHECK(core.accept(42, kAbort, 0x01, nullptr, 0, tag, 32, nullptr, nullptr) ==
               AuthStatus::Ok);
     }
     UplinkAuthCore core2(store);
     CHECK(core2.init() == AuthStatus::Ok);
     CHECK_EQ(core2.lastCmdCounter(), 42u);
+}
+
+// PR #13 review (Edward): an unsigned (exempt) packet must not advance the signed
+// counter — otherwise one gimbal packet with a huge counter locks out abort.
+void testExemptDoesNotAdvanceSignedCounter() {
+    RamAuthNvStore store;
+    store.setPsk(kFakePsk, kFakePskLen);
+    UplinkAuthCore core(store);
+    CHECK(core.init() == AuthStatus::Ok);
+    const std::uint32_t writesBefore = store.writeCount();
+    CHECK(core.accept(0xFFFFFFFEu, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::Ok);
+    CHECK_EQ(core.lastCmdCounter(), 0u);
+    CHECK_EQ(store.writeCount(), writesBefore);  // exempt path never writes NVS
+    std::uint8_t tag[32];
+    makeTag(0x01, 1, kAbort, nullptr, 0, tag);
+    CHECK(core.accept(1, kAbort, 0x01, nullptr, 0, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
+    CHECK_EQ(core.lastCmdCounter(), 1u);
+}
+
+void testSignedDoesNotBlockExempt() {
+    RamAuthNvStore store;
+    store.setPsk(kFakePsk, kFakePskLen);
+    UplinkAuthCore core(store);
+    CHECK(core.init() == AuthStatus::Ok);
+    std::uint8_t tag[32];
+    makeTag(0x01, 100, kAbort, nullptr, 0, tag);
+    CHECK(core.accept(100, kAbort, 0x01, nullptr, 0, tag, 32, nullptr, nullptr) == AuthStatus::Ok);
+    CHECK(core.accept(1, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::Ok);
+    CHECK_EQ(core.lastExemptCounter(), 1u);
+    CHECK_EQ(core.lastCmdCounter(), 100u);
+}
+
+void testExemptCounterOwnReplayWindow() {
+    RamAuthNvStore store;
+    store.setPsk(kFakePsk, kFakePskLen);
+    UplinkAuthCore core(store);
+    CHECK(core.init() == AuthStatus::Ok);
+    CHECK(core.accept(5, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::Ok);
+    CHECK(core.accept(5, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::Replay);
+    CHECK(core.accept(4, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+          AuthStatus::Replay);
+    CHECK(core.accept(6, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) == AuthStatus::Ok);
+    CHECK(core.accept(UplinkAuthCore::kCmdCounterForbidden, kGimbal, 0x02, nullptr, 0, nullptr, 0,
+                      nullptr, nullptr) == AuthStatus::CounterInvalid);
+}
+
+void testExemptCounterNotPersisted() {
+    RamAuthNvStore store;
+    store.setPsk(kFakePsk, kFakePskLen);
+    {
+        UplinkAuthCore core(store);
+        CHECK(core.init() == AuthStatus::Ok);
+        CHECK(core.accept(77, kGimbal, 0x02, nullptr, 0, nullptr, 0, nullptr, nullptr) ==
+              AuthStatus::Ok);
+    }
+    UplinkAuthCore core2(store);
+    CHECK(core2.init() == AuthStatus::Ok);
+    CHECK_EQ(core2.lastExemptCounter(), 0u);
+    CHECK_EQ(core2.lastCmdCounter(), 0u);
 }
 
 void testBadTagLength() {
@@ -307,6 +371,10 @@ int main() {
     testMissingKeyWhenHmacRequired();
     testPersistedCounterSurvivesReinit();
     testBadTagLength();
+    testExemptDoesNotAdvanceSignedCounter();
+    testSignedDoesNotBlockExempt();
+    testExemptCounterOwnReplayWindow();
+    testExemptCounterNotPersisted();
     testDefaultExemptTableIsGimbalOnly();
     if (g_failures == 0) {
         std::printf("ALL TESTS PASSED\n");

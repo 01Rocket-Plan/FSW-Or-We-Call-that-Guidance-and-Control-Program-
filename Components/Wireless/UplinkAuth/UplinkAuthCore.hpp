@@ -56,7 +56,10 @@ class UplinkAuthCore {
                       std::uint16_t argLen, const std::uint8_t* authTag,
                       std::size_t authTagLen, ForwardFn onForward, void* forwardCtx);
 
+    //! Signed (HMAC) anti-replay counter — persisted in NVS.
     std::uint32_t lastCmdCounter() const { return m_lastCmdCounter; }
+    //! HMAC-exempt counter — independent, RAM-only, restarts at 0 on boot.
+    std::uint32_t lastExemptCounter() const { return m_lastExemptCounter; }
     bool pskLoaded() const { return m_pskLen > 0; }
 
     static std::size_t buildMacMessage(const char* domainTag, std::size_t domainTagLen,
@@ -68,7 +71,8 @@ class UplinkAuthCore {
   private:
     IAuthNvStore& m_store;
     OpcodeAuthTable m_hmacExempt;
-    std::uint32_t m_lastCmdCounter = 0;
+    std::uint32_t m_lastCmdCounter = 0;     //!< signed path only
+    std::uint32_t m_lastExemptCounter = 0;  //!< exempt path only (RAM)
     std::uint8_t m_psk[kMaxPskBytes];
     std::size_t m_pskLen = 0;
 };
