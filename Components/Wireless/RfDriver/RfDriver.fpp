@@ -1,15 +1,15 @@
 module Components {
 
-  @ 射頻硬體型號 — 主飛行鏈路：LoRa-02（433 MHz，SX1278-class）
+  @ 射頻硬體型號 — 主飛行鏈路：LoRa Ra-02（433 MHz），晶片 Semtech SX1278
   @ 備註（非本 enum 取值／本 PR 不實作）：HC-12（SI4438 433 MHz）＝備援鏈；
   @ NRF24L01（2.4 GHz）＝地面站／發射台用，不上箭（Edward 設計文件）
-  enum RfHwModel : U8 { LORA_02 = 0 }
+  enum RfHwModel : U8 { LORA_RA_02 = 0 }
 
   @ 射頻角色：AIR_GROUND_LINK＝箭地無線鏈路（主飛行鏈）
   enum RfHwRole : U8 { AIR_GROUND_LINK = 0 }
 
   @ RF 數傳真驅動；Base ID 0x8400（首席已核准）
-  @ 硬體型號 LORA_02（433 MHz／SX1278-class，主飛行鏈）；角色＝AIR_GROUND_LINK
+  @ 硬體型號 LORA_RA_02（LoRa Ra-02，433 MHz，Semtech SX1278，主飛行鏈）；角色＝AIR_GROUND_LINK
   @ 握手 OFF→INIT→SELFTEST→READY／FAULT；連續 txTimeout → FAULT
   passive component RfDriver {
 
@@ -29,8 +29,8 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 硬體型號 — LoRa-02（433 MHz，SX1278-class，主飛行鏈）
-    param model: RfHwModel default RfHwModel.LORA_02
+    @ 硬體型號 — LoRa Ra-02（433 MHz），晶片 Semtech SX1278，主飛行鏈
+    param model: RfHwModel default RfHwModel.LORA_RA_02
     @ 角色 — 箭地無線鏈路
     param role: RfHwRole default RfHwRole.AIR_GROUND_LINK
 
