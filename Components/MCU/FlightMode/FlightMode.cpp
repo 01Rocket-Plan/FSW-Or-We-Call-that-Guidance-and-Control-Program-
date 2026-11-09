@@ -63,7 +63,8 @@ void FlightMode::stateIn_handler(FwIndexType, const RocketTypes::StateOut& s) {
   m_in.v_est_mps = std::sqrt(ve * ve + vn * vn + vu * vu);
   m_in.vU_mps = vu;
   m_in.tilt_rad = s.get_tilt_rad();
-  m_in.rate_rads = std::hypot(s.get_rate_body_rads()[0], s.get_rate_body_rads()[1]);
+  // 機體橫向角速度（俯仰 ωy、偏航 ωz，不含滾轉 ωx；conventions §2 業界標準）
+  m_in.rate_rads = std::hypot(s.get_rate_body_rads()[1], s.get_rate_body_rads()[2]);
   m_in.imu_fresh = s.get_imuValid();
   m_in.velValid = s.get_velValid();
   m_in.alt_m = s.get_alt_m();
