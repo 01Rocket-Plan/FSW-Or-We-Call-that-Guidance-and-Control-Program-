@@ -90,7 +90,7 @@ SSS 的 `abort_password` **不要**放進 repo（值也不要寫在任何檔案�
 | `accel_u_mps2` | `StateOut.accAxial_mps2`（Estimator 已對齊 SSS 定義） | ✅ |
 | `v_est_mps` | `|StateOut.vel_enu_mps|` | ✅ |
 | `tilt_rad` | `StateOut.tilt_rad` | ✅ |
-| `rate_rads` | `hypot(rate_body_rads[0], [1])`（橫向） | ✅ |
+| `rate_rads` | `hypot(rate_body_rads[1], [2])`（俯仰＋偏航，不含滾轉；SSS fixture 同日修成同一定義） | ✅ |
 | `imu_fresh` | `StateOut.imuValid` | ✅ |
 | `accel_high` | `accel_u_mps2 > 5`（SSS 夾具的定義）——在 tick 裡算 | 你算 |
 | 欠壓 | `UvState` | ✅（`uvState`） |
@@ -119,7 +119,7 @@ SSS 的 `abort_password` **不要**放進 repo（值也不要寫在任何檔案�
 |---|---|---|---|
 | C-1 | 箭上 `cmd.fire` → `motor_on` 點火 | **gate C15：點火只走地面 → 發射架，箭不在點火迴路**（`UmbilicalLink.fpp`） | FM-08 的 FIRE 閂鎖要改成看架的 `PTR_IGNITER_ON`／`PTR_THRUST_CONFIRMED` 旗標？ |
 | C-2 | 中止用密碼 `abort_password` | UplinkAuth HMAC＋白名單，密鑰不入庫 | FM-04 改成「收到已驗證的 ABORT 指令」 |
-| C-3 | 機體 X 指向鼻錐 | conventions：機體 **Z** 指向鼻錐 | 已在 Estimator 處理，FlightMode 只吃標量，不受影響 |
+| ~~C-3~~ | ~~機體 X 指向鼻錐~~ | ~~conventions：機體 Z 指向鼻錐~~ | **2026-11-10 已解**：repo 改成業界標準 X 指鼻錐，與 SSS 一致 |
 
 ## 檔案
 | 檔案 | 內容 |

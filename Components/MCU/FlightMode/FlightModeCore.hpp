@@ -66,7 +66,7 @@ struct FmInputs {
   float v_est_mps = 0.0f;      //!< ← |StateOut.vel_enu_mps|
   float vU_mps = 0.0f;         //!< ← StateOut.vel_enu_mps[2]
   float tilt_rad = 0.0f;       //!< ← StateOut.tilt_rad
-  float rate_rads = 0.0f;      //!< ← hypot(rate_body_rads[0], rate_body_rads[1])（橫向，不含滾轉）
+  float rate_rads = 0.0f;      //!< ← hypot(rate_body_rads[1], rate_body_rads[2])（俯仰＋偏航，不含滾轉 ωx）
   bool imu_fresh = false;      //!< ← StateOut.imuValid
   bool velValid = false;       //!< ← StateOut.velValid
   float alt_m = 0.0f;          //!< ← StateOut.alt_m（只紀錄；SSS：氣壓不觸發轉移）
