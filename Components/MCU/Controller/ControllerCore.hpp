@@ -5,16 +5,16 @@
 //         純 C++14，不含 F´、不 sleep、不讀系統時間。
 //
 // 控制律：PD，增益與限幅沿用 SSS FlightParams（kp_fin 1.2、kd_fin 0.25、±30°）。
-// 座標：repo conventions（機體 Z 沿長軸指向鼻錐，X／Y 橫向，右手）。
+// 座標：conventions §2（2026-11-10 業界標準）：機體 X 指鼻錐（滾轉）、Y 右（俯仰）、Z = X×Y（偏航）。
 //
-//   u_b = 世界 +U 在機體的分量 = R(q)ᵀ·(0,0,1)        （墊上直立 = (0,0,1)）
-//   e   = ẑ × u_b = (−u_y, u_x, 0)                    （把鼻轉回垂直需要的轉軸，小角≈傾角）
-//   δx  = sat(kp·e_x − kd·ω_x)，δy = sat(kp·e_y − kd·ω_y)
-//   fin = (δx, δy, −δx, −δy)                           （同 SSS 混控：1/3 一對、2/4 一對）
+//   u_b = 世界 +U 在機體的分量 = R(q)ᵀ·(0,0,1)        （墊上直立 = (1,0,0)）
+//   e   = x̂ × u_b = (0, −u_z, u_y)                    （把鼻轉回垂直需要的轉軸；e_y≈−pitch、e_z≈+yaw）
+//   δy  = sat(kp·e_y − kd·ω_y)（俯仰），δz = sat(kp·e_z − kd·ω_z)（偏航）
+//   fin = (δy, δz, −δy, −δz)                           （= SSS rigid_body.py：1/3 管 My、2/4 管 Mz）
 //
-// 「+δx」的意思＝要產生 +X 力矩的舵量。實體舵機正反向由 ActuatorMgr 每通道符號處理，
-// 冷測（SSS §5 冷測 2：點頭時陀螺與舵同號）驗證，不改這裡的符號。
-// 不控滾轉（SSS 也沒有）。
+// 「+δy」的意思＝要產生 +Y 力矩的舵量。實體舵機正反向由 ActuatorMgr 每通道符號處理，
+// 冷測（SSS §5 冷測 2；selftest ST-ATT-PITCH-SIGN／YAW-SIGN）驗證，不改這裡的符號。
+// 不控滾轉（ω_x 不進控制律；SSS 也沒有）。
 // ======================================================================
 #ifndef COMPONENTS_MCU_CONTROLLER_CONTROLLERCORE_HPP
 #define COMPONENTS_MCU_CONTROLLER_CONTROLLERCORE_HPP
@@ -56,7 +56,7 @@ struct FinOut {
   float fin_rad[4] = {0, 0, 0, 0};
   bool lockNeutral = true;
   HoldReason reason = HoldReason::NO_MODE;
-  float err_rad[2] = {0, 0};  //!< e_x, e_y（遙測）
+  float err_rad[2] = {0, 0};  //!< e_y（俯仰）, e_z（偏航）（遙測）
 };
 
 class ControllerCore {
@@ -77,8 +77,8 @@ class ControllerCore {
   //! 每拍一次。
   void step(double now_s, FinOut& out);
 
-  //! 純 PD（測試用，公開）：給姿態與角速度，回 δx、δy（已限幅）與誤差。
-  void pd(const float q[4], const float w[3], float& dx, float& dy, float err[2]) const;
+  //! 純 PD（測試用，公開）：給姿態與角速度，回 δy、δz（已限幅）與誤差。
+  void pd(const float q[4], const float w[3], float& dy, float& dz, float err[2]) const;
 
  private:
   ControllerParams m_p;

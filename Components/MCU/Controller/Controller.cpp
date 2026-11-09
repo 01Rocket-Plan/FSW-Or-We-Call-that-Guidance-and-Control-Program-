@@ -80,8 +80,8 @@ void Controller::schedIn_handler(FwIndexType, U32) {
     m_tlmDiv = 0;
     this->tlmWrite_closedLoop(closed);
     this->tlmWrite_holdReason(reason);
-    this->tlmWrite_errX_rad(o.err_rad[0]);
-    this->tlmWrite_errY_rad(o.err_rad[1]);
+    this->tlmWrite_errPitch_rad(o.err_rad[0]);
+    this->tlmWrite_errYaw_rad(o.err_rad[1]);
     this->tlmWrite_fin1_rad(o.fin_rad[0]);
     this->tlmWrite_fin2_rad(o.fin_rad[1]);
     this->tlmWrite_fin3_rad(o.fin_rad[2]);

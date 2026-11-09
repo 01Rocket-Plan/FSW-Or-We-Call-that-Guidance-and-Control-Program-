@@ -15,12 +15,16 @@ static int g_fail = 0;
     }                                                      \
   } while (0)
 
-//! 繞機體軸 axis（0=X,1=Y）轉 a rad 的四元數（機體→世界）
-static void qAxis(int axis, float a, float q[4]) {
-  q[0] = std::cos(0.5f * a);
-  q[1] = axis == 0 ? std::sin(0.5f * a) : 0.0f;
-  q[2] = axis == 1 ? std::sin(0.5f * a) : 0.0f;
-  q[3] = 0.0f;
+//! 墊上直立（機體 X 指 +U）＝繞世界 N 轉 −90°；再繞「機體」axis（1=Y,2=Z）轉 a rad
+static void qPadThen(int axis, float a, float q[4]) {
+  const float h = std::sqrt(0.5f);
+  const float p[4] = {h, 0.0f, -h, 0.0f};  // R(p)·x̂ = (0,0,1)
+  const float d[4] = {std::cos(0.5f * a), 0.0f, axis == 1 ? std::sin(0.5f * a) : 0.0f,
+                      axis == 2 ? std::sin(0.5f * a) : 0.0f};
+  q[0] = p[0] * d[0] - p[1] * d[1] - p[2] * d[2] - p[3] * d[3];
+  q[1] = p[0] * d[1] + p[1] * d[0] + p[2] * d[3] - p[3] * d[2];
+  q[2] = p[0] * d[2] - p[1] * d[3] + p[2] * d[0] + p[3] * d[1];
+  q[3] = p[0] * d[3] + p[1] * d[2] - p[2] * d[1] + p[3] * d[0];
 }
 
 static StateIn st(double t, const float q[4], const float w[3], bool valid = true) {
@@ -37,42 +41,50 @@ static void testSignAndMix() {
   ControllerCore c;
   float q[4];
   const float w0[3] = {0, 0, 0};
-  qAxis(0, 0.1f, q);  // 箭繞 +X 歪了 0.1 rad → 要往 −X 轉回
-  c.setMode(true);
-  c.pushState(st(1.0, q, w0));
   FinOut o;
+  c.setMode(true);
+
+  qPadThen(1, 0.0f, q);  // 直立
+  c.pushState(st(1.0, q, w0));
   c.step(1.0, o);
   CHECK(!o.lockNeutral && o.reason == HoldReason::NONE, "閉環");
-  CHECK(o.fin_rad[0] < 0, "+X 歪 → δx < 0（要 −X 力矩）");
-  CHECK(std::fabs(o.fin_rad[0] + 1.2f * std::sin(0.1f)) < 1e-4f, "δx = −kp·sin(0.1)");
-  CHECK(std::fabs(o.fin_rad[1]) < 1e-6f, "δy = 0");
-  CHECK(o.fin_rad[2] == -o.fin_rad[0] && o.fin_rad[3] == -o.fin_rad[1], "混控 (δx,δy,−δx,−δy)");
+  for (float f : o.fin_rad) CHECK(std::fabs(f) < 1e-6f, "直立 → 四片 0");
 
-  qAxis(1, 0.1f, q);  // 繞 +Y 歪
+  qPadThen(1, 0.1f, q);  // 繞機體 +Y（俯仰）歪 0.1 rad → 要 −Y 力矩
   c.pushState(st(1.001, q, w0));
   c.step(1.001, o);
-  CHECK(o.fin_rad[1] < 0 && std::fabs(o.fin_rad[0]) < 1e-6f, "+Y 歪 → δy < 0");
+  CHECK(o.fin_rad[0] < 0, "+Y 歪 → δy < 0");
+  CHECK(std::fabs(o.fin_rad[0] + 1.2f * std::sin(0.1f)) < 1e-4f, "δy = −kp·sin(0.1)");
+  CHECK(std::fabs(o.fin_rad[1]) < 1e-6f, "δz = 0");
+  CHECK(o.fin_rad[2] == -o.fin_rad[0] && o.fin_rad[3] == -o.fin_rad[1], "混控 (δy,δz,−δy,−δz)");
+
+  qPadThen(2, 0.1f, q);  // 繞機體 +Z（偏航）歪 → 要 −Z 力矩
+  c.pushState(st(1.002, q, w0));
+  c.step(1.002, o);
+  CHECK(o.fin_rad[1] < 0 && std::fabs(o.fin_rad[0]) < 1e-6f, "+Z 歪 → δz < 0");
+  CHECK(std::fabs(o.fin_rad[1] + 1.2f * std::sin(0.1f)) < 1e-4f, "δz = −kp·sin(0.1)");
 }
 
 static void testDamping() {
   std::printf("ST-CTL-DAMP\n");
   ControllerCore c;
-  const float q[4] = {1, 0, 0, 0};
-  const float w[3] = {0.4f, -0.2f, 5.0f};  // 滾轉 5 rad/s 不應影響
+  float q[4];
+  qPadThen(1, 0.0f, q);
+  const float w[3] = {5.0f, 0.4f, -0.2f};  // 滾轉 ωx 5 rad/s 不應影響
   c.setMode(true);
   c.pushState(st(1.0, q, w));
   FinOut o;
   c.step(1.0, o);
-  CHECK(std::fabs(o.fin_rad[0] - (-0.25f * 0.4f)) < 1e-6f, "δx = −kd·ωx");
-  CHECK(std::fabs(o.fin_rad[1] - (0.25f * 0.2f)) < 1e-6f, "δy = −kd·ωy");
+  CHECK(std::fabs(o.fin_rad[0] - (-0.25f * 0.4f)) < 1e-6f, "δy = −kd·ωy");
+  CHECK(std::fabs(o.fin_rad[1] - (0.25f * 0.2f)) < 1e-6f, "δz = −kd·ωz");
 }
 
 static void testSaturation() {
   std::printf("ST-CTL-SAT\n");
   ControllerCore c;
   float q[4];
-  qAxis(0, 1.0f, q);
-  const float w[3] = {3.0f, 0, 0};
+  qPadThen(1, 1.0f, q);
+  const float w[3] = {0, 3.0f, 0};
   c.setMode(true);
   c.pushState(st(1.0, q, w));
   FinOut o;

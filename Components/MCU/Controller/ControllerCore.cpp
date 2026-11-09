@@ -15,16 +15,16 @@ namespace {
 inline float sat(float x, float lim) { return x > lim ? lim : (x < -lim ? -lim : x); }
 }  // namespace
 
-void ControllerCore::pd(const float q[4], const float w[3], float& dx, float& dy, float err[2]) const {
+void ControllerCore::pd(const float q[4], const float w[3], float& dy, float& dz, float err[2]) const {
   const float qw = q[0], qx = q[1], qy = q[2], qz = q[3];
   // u_b = Rᵀ·(0,0,1) = R 的第 3 列：(R20, R21, R22)
-  const float ux = 2.0f * (qx * qz - qw * qy);
   const float uy = 2.0f * (qy * qz + qw * qx);
-  // e = ẑ × u_b = (−u_y, u_x, 0)
-  err[0] = -uy;
-  err[1] = ux;
-  dx = sat(m_p.kp * err[0] - m_p.kd * w[0], m_p.finMax_rad);
-  dy = sat(m_p.kp * err[1] - m_p.kd * w[1], m_p.finMax_rad);
+  const float uz = 1.0f - 2.0f * (qx * qx + qy * qy);
+  // e = x̂ × u_b = (0, −u_z, u_y)
+  err[0] = -uz;  // 俯仰（繞 Y）
+  err[1] = uy;   // 偏航（繞 Z）
+  dy = sat(m_p.kp * err[0] - m_p.kd * w[1], m_p.finMax_rad);
+  dz = sat(m_p.kp * err[1] - m_p.kd * w[2], m_p.finMax_rad);
 }
 
 void ControllerCore::step(double now_s, FinOut& out) {
@@ -59,12 +59,12 @@ void ControllerCore::step(double now_s, FinOut& out) {
     return;
   }
 
-  float dx = 0, dy = 0;
-  pd(m_state.q_wxyz, m_state.rate_body_rads, dx, dy, out.err_rad);
-  out.fin_rad[0] = dx;
-  out.fin_rad[1] = dy;
-  out.fin_rad[2] = -dx;
-  out.fin_rad[3] = -dy;
+  float dy = 0, dz = 0;
+  pd(m_state.q_wxyz, m_state.rate_body_rads, dy, dz, out.err_rad);
+  out.fin_rad[0] = dy;
+  out.fin_rad[1] = dz;
+  out.fin_rad[2] = -dy;
+  out.fin_rad[3] = -dz;
   out.lockNeutral = false;
   out.reason = HoldReason::NONE;
 }

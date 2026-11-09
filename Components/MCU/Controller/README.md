@@ -17,18 +17,18 @@ rg1kHz ─────Sched──────►┘
 
 ## 控制律
 
-沿用 SSS `FlightParams` 的增益與限幅（`kp_fin 1.2`、`kd_fin 0.25`、`±30°`），換成 repo 座標：
+沿用 SSS `FlightParams` 的增益與限幅（`kp_fin 1.2`、`kd_fin 0.25`、`±30°`）。座標是 conventions §2 的業界標準（2026-11-10）：機體 **X 指鼻錐（滾轉）、Y 右（俯仰）、Z = X×Y（偏航）**——跟 SSS 同一套。
 
 ```
-u_b = R(q)ᵀ·(0,0,1)          世界 +U 在機體的分量（直立 = (0,0,1)）
-e   = ẑ × u_b = (−u_y, u_x)   把鼻（機體 Z）轉回垂直需要的轉軸；小角 ≈ 傾角
-δx  = sat(kp·e_x − kd·ω_x)
-δy  = sat(kp·e_y − kd·ω_y)
-fin = (δx, δy, −δx, −δy)      同 SSS 混控：TAIL_1/3 一對管 X，TAIL_2/4 一對管 Y
+u_b = R(q)ᵀ·(0,0,1)            世界 +U 在機體的分量（直立 = (1,0,0)）
+e   = x̂ × u_b = (0, −u_z, u_y)   把鼻（機體 X）轉回垂直需要的轉軸；e_y ≈ −俯仰角、e_z ≈ +偏航角
+δy  = sat(kp·e_y − kd·ω_y)      俯仰
+δz  = sat(kp·e_z − kd·ω_z)      偏航
+fin = (δy, δz, −δy, −δz)        = SSS rigid_body.py：TAIL_1/3 管 My、TAIL_2/4 管 Mz
 ```
 
-- `+δx` 的意思＝**要產生 +X 力矩的舵量**。實體舵機正反向在 ActuatorMgr 每通道設定，冷測驗證（SSS §5 冷測 2）；**不改這裡的符號**。
-- 不控滾轉：`ω_z` 不進控制律（SSS 也沒有）。
+- `+δy` 的意思＝**要產生 +Y 力矩的舵量**。實體舵機正反向在 ActuatorMgr 每通道設定，冷測驗證（SSS §5 冷測 2；selftest `ST-ATT-PITCH-SIGN`／`ST-ATT-YAW-SIGN`）；**不改這裡的符號**。
+- 不控滾轉：`ω_x` 不進控制律（SSS 也沒有）。
 
 ## 舵權（誰准閉環）
 
@@ -57,7 +57,7 @@ fin = (δx, δy, −δx, −δy)      同 SSS 混控：TAIL_1/3 一對管 X，TA
 | `demo50mFixed` | false | SSS `demo_50m_fixed` |
 
 ## 遙測／事件
-- 遙測（10 Hz）：`closedLoop`、`holdReason`、`errX_rad`、`errY_rad`、`fin1..4_rad`、`satCount`
+- 遙測（10 Hz）：`closedLoop`、`holdReason`、`errPitch_rad`、`errYaw_rad`、`fin1..4_rad`、`satCount`
 - 事件：`ClosedLoopOn`、`ClosedLoopOff(reason)`
 
 ## 檔案
@@ -71,15 +71,15 @@ fin = (δx, δy, −δx, −δy)      同 SSS 混控：TAIL_1/3 一對管 X，TA
 ## 自測
 ```
 $ ./run_host_tests.sh
-ST-CTL-SIGN-MIX  +X 歪 0.1 rad → δx = −kp·sin(0.1)；混控 (δx,δy,−δx,−δy)
-ST-CTL-DAMP      δ = −kd·ω；滾轉 5 rad/s 不影響
+ST-CTL-SIGN-MIX  直立四片 0；俯仰／偏航各歪 0.1 rad → δ = −kp·sin(0.1)；混控 (δy,δz,−δy,−δz)
+ST-CTL-DAMP      δy = −kd·ωy、δz = −kd·ωz；滾轉 ωx 5 rad/s 不影響
 ST-CTL-SAT       限幅 ±30°
 ST-CTL-AUTH      六道擋門各自生效
 ControllerCore: PASS
 ```
 
-## 跟 SSS 的差異（刻意的）
-SSS `gnc/app.py` 的偏航阻尼用 `gz`，但照 SSS 自己的 `body_to_imu`，晶片 `gz` 是**滾轉軸**（沿鼻），所以那一項其實在用滾轉角速度阻尼偏航。這裡用正確的橫向軸 `ω_x`／`ω_y`。SSS 那份是佔位版（註解寫「估態以後放這裡」），這裡沒照抄。
+## 跟 SSS 一致（2026-11-10 對齊）
+SSS 舊版 `gnc/app.py` 的偏航軸有兩個 bug：阻尼用晶片 `gz`（＝滾轉），且剛性項符號反（正回授）。已在 SSS 修掉（新增 selftest `ST-ATT-YAW-HOLD`：修前偏航 8° → 8.84°，修後收斂）。現在 SSS 與本元件是**同一條控制律、同一套機體軸**。
 
 ## 待決
 - 增益沒經 HIL 調；SSS COVER5 是用同一組數字跑的。

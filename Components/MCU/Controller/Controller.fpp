@@ -42,8 +42,10 @@ module Mcu {
     # ------------------------------------------------------------ 遙測（10 Hz）
     telemetry closedLoop: bool
     telemetry holdReason: CtlHoldReason
-    telemetry errX_rad: F32
-    telemetry errY_rad: F32
+    @ 俯仰誤差（繞機體 Y）
+    telemetry errPitch_rad: F32
+    @ 偏航誤差（繞機體 Z）
+    telemetry errYaw_rad: F32
     telemetry fin1_rad: F32
     telemetry fin2_rad: F32
     telemetry fin3_rad: F32
