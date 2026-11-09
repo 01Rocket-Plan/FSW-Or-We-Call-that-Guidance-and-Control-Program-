@@ -64,7 +64,7 @@ static void testPadAlign() {
   s.pad(1.0, f, w);
   CHECK(s.est.diag().aligned, "1.3 s 後應已對準");
   CHECK(s.out.imuValid, "對準後 imuValid");
-  CHECK(s.out.tilt_rad < 1e-3f, "直立 tilt≈0");
+  CHECK(s.out.tilt_rad < 1e-5f, "直立 tilt≈0（atan2，數值穩定）");
   CHECK(std::fabs(s.out.alt_m) < 0.05f, "墊上 alt≈0");
   CHECK(std::fabs(s.out.vel_enu_mps[2]) < 0.01f, "墊上 vU≈0");
   CHECK(std::fabs(s.out.accAxial_mps2) < 0.05f, "墊上 a_u≈0");

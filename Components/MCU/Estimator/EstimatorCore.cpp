@@ -293,7 +293,8 @@ void EstimatorCore::step(double now_s, StateOutC& out) {
   for (int i = 0; i < 3; ++i) out.rate_body_rads[i] = wUnb[i];
   float R[3][3];
   quatToR(m_q, R);
-  out.tilt_rad = std::acos(clampf(R[2][0], -1.0f, 1.0f));  // 機體 X（鼻）離世界 +U
+  // 機體 X（鼻）在世界＝R 第 1 行 (R00,R10,R20)；atan2 比 acos(R20) 在直立附近數值穩定
+  out.tilt_rad = std::atan2(std::sqrt(R[0][0] * R[0][0] + R[1][0] * R[1][0]), R[2][0]);
   out.vel_enu_mps[0] = m_vE;
   out.vel_enu_mps[1] = m_vN;
   out.vel_enu_mps[2] = m_v;
