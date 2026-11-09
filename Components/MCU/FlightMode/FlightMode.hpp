@@ -16,7 +16,11 @@ class FlightMode final : public FlightModeComponentBase {
   explicit FlightMode(const char* compName);
   ~FlightMode() override;
 
+  //! 拓樸設定階段呼叫（DsMcu → DS、UsMcu → US）。prmDb 裡有 role 時以 prmDb 為準。
+  void setDeploymentRole(FmRole role);
+
  private:
+  void applyRole(FmRole role);
   void schedIn_handler(FwIndexType portNum, U32 context) override;
   void stateIn_handler(FwIndexType portNum, const RocketTypes::StateOut& s) override;
   void uvIn_handler(FwIndexType portNum, const RocketTypes::UvState& st) override;
@@ -28,6 +32,7 @@ class FlightMode final : public FlightModeComponentBase {
   void emitOutputs(const FmOutputs& o);
 
   FlightModeCore m_core;
+  FmRole m_deployRole;
   FmInputs m_in;
   FmGroundCmd m_cmd;
   RocketTypes::FlightModeId m_lastMode;

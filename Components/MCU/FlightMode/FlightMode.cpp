@@ -20,6 +20,7 @@ RocketTypes::FlightModeId toFpp(FmMode m) {
 
 FlightMode::FlightMode(const char* compName)
     : FlightModeComponentBase(compName),
+      m_deployRole(FmRole::DS),
       m_lastMode(RocketTypes::FlightModeId::PAD_IDLE),
       m_sepSeq(0),
       m_tlmDiv(0),
@@ -32,11 +33,23 @@ F64 FlightMode::nowSeconds() {
   return static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;
 }
 
+void FlightMode::applyRole(FmRole role) {
+  if (role == m_core.role()) return;
+  m_core.setRole(role);
+  m_lastMode = toFpp(role == FmRole::US ? m_core.state().us : m_core.state().ds);  // 不發假的 ModeChanged
+}
+
+void FlightMode::setDeploymentRole(FmRole role) {
+  m_deployRole = role;
+  applyRole(role);
+}
+
 void FlightMode::loadParams() {
   Fw::ParamValid v;
   const FmRoleId r = this->paramGet_role(v);
-  const FmRole role = (r == FmRoleId::US) ? FmRole::US : FmRole::DS;
-  if (role != m_core.role()) m_core.setRole(role);
+  // prmDb 有存 role（VALID）→ 用 prmDb；否則用拓樸指定的部署角色
+  const FmRole role = (v == Fw::ParamValid::VALID) ? ((r == FmRoleId::US) ? FmRole::US : FmRole::DS) : m_deployRole;
+  applyRole(role);
   // [FM-P] 門檻參數 → FmParams（Edward 加 param 後在這裡搬）
 }
 
