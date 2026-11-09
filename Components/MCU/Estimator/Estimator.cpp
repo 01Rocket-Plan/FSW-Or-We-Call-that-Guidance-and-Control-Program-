@@ -82,13 +82,15 @@ void Estimator::schedIn_handler(FwIndexType, U32) {
   m_core.step(this->nowSeconds(), o);
   const EstimatorDiag& d = m_core.diag();
 
-  if (d.aligned && !m_lastAligned) this->log_ACTIVITY_HI_Aligned(o.tilt_rad);
-  m_lastAligned = d.aligned;
-  if (d.aligned) {
+  if (d.aligned && !m_lastAligned) {
+    this->log_ACTIVITY_HI_Aligned(o.tilt_rad);
+    m_lastFresh = o.imuValid;  // 對準那一拍只建立基準，不發 Stale／Recovered
+  } else if (d.aligned) {
     if (m_lastFresh && !o.imuValid) this->log_WARNING_HI_ImuStale();
     if (!m_lastFresh && o.imuValid) this->log_ACTIVITY_HI_ImuRecovered();
     m_lastFresh = o.imuValid;
   }
+  m_lastAligned = d.aligned;
   if (m_lastOnPad && !d.onPad) this->log_ACTIVITY_HI_LeftPad();
   m_lastOnPad = d.onPad;
 
