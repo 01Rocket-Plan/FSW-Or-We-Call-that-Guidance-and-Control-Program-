@@ -16,6 +16,10 @@ flightMode ─ModePort─►┘      ▲
 rg1kHz ─────Sched────────────┘
 ```
 
+## 座標（conventions §2，2026-11-10 業界標準）
+世界 ENU；機體 **X 指鼻錐（滾轉）、Y 右（俯仰）、Z = X×Y（偏航）**；墊上比力 `(+g, 0, 0)`。
+輸入的 `ImuSample` 必須已經是機體系（ImuDriver 用 prmDb 的 DCM 轉）。
+
 ## 怎麼算的（白話）
 
 | 東西 | 方法 | 什麼時候 |
@@ -35,7 +39,7 @@ rg1kHz ─────Sched────────────┘
 |---|---|---|
 | `q_wxyz` | 機體→世界（ENU），Hamilton，w 先 | 對準前是單位四元數 |
 | `rate_body_rads` | 機體角速度（已扣零偏） | |
-| `tilt_rad` | 鼻（機體 Z）離世界 +U 的角 | D12 中止用 |
+| `tilt_rad` | 鼻（機體 X）離世界 +U 的角 | D12 中止用 |
 | `vel_enu_mps` | E/N 純積分；U 是 KF | |
 | `velValid` | `imuValid` 且氣壓 ≤ `baroMaxAge_s` | |
 | `alt_m` | **相對發射台**（墊上氣壓基準） | 不是海拔 |

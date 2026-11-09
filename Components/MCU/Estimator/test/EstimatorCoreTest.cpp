@@ -57,7 +57,7 @@ static void testPadAlign() {
   std::printf("ST-EST-PAD-ALIGN\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f[3] = {0, 0, G};
+  const float f[3] = {G, 0, 0};
   const float w[3] = {0.002f, -0.001f, 0.0005f};  // 小零偏
   s.pad(0.3, f, w);
   CHECK(!s.out.imuValid, "未滿對準時間不得 imuValid");
@@ -77,7 +77,7 @@ static void testTiltAlign() {
   Sim s;
   s.est.setOnPad(true);
   const float a = 10.0f * 3.14159265f / 180.0f;  // 導軌傾 10°
-  const float f[3] = {G * std::sin(a), 0, G * std::cos(a)};
+  const float f[3] = {G * std::cos(a), 0, G * std::sin(a)};
   const float w[3] = {0, 0, 0};
   s.pad(1.0, f, w);
   CHECK(std::fabs(s.out.tilt_rad - a) < 1e-3f, "傾 10° 對準");
@@ -88,12 +88,12 @@ static void testPadLeveling() {
   std::printf("ST-EST-PAD-LEVEL\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f0[3] = {0, 0, G};
+  const float f0[3] = {G, 0, 0};
   const float w0[3] = {0, 0, 0};
   s.pad(1.0, f0, w0);
   // 對準後導軌被扳到 5°（陀螺沒看到轉動）：只能靠加速度修正收斂；符號反了會發散
   const float a = 5.0f * 3.14159265f / 180.0f;
-  const float f[3] = {0, G * std::sin(a), G * std::cos(a)};
+  const float f[3] = {G * std::cos(a), G * std::sin(a), 0};
   s.pad(10.0, f, w0);
   CHECK(std::fabs(s.out.tilt_rad - a) < 2e-3f, "墊上水平修正收斂到 5°");
 }
@@ -102,31 +102,32 @@ static void testGyroIntegration() {
   std::printf("ST-EST-GYRO\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f0[3] = {0, 0, G};
+  const float f0[3] = {G, 0, 0};
   const float w0[3] = {0, 0, 0};
   s.pad(1.0, f0, w0);
   s.est.setOnPad(false);  // 離台：純陀螺
-  const float w[3] = {0.1f, 0, 0};  // 繞機體 X 0.1 rad/s
+  const float w[3] = {0, 0.1f, 0};  // 繞機體 Y（俯仰）0.1 rad/s
   const float f[3] = {0, 0, 0};     // 自由飛（不影響姿態）
   for (int k = 0; k < 1000; ++k) s.tick(f, w);
-  CHECK(std::fabs(s.out.tilt_rad - 0.1f) < 2e-3f, "1 s × 0.1 rad/s → tilt 0.1 rad");
-  // 機體 +X 轉：鼻（機體 Z）往世界 −Y 倒（右手）
-  float R[3][3];
-  EstimatorCore::quatToR(s.out.q_wxyz, R);
-  CHECK(R[1][2] < 0, "鼻往 −N 倒（右手定則）");
+  CHECK(std::fabs(s.out.tilt_rad - 0.1f) < 2e-3f, "1 s × 0.1 rad/s 俯仰 → tilt 0.1 rad");
+  // 滾轉（繞機體 X＝鼻）不改傾角
+  const float wr[3] = {0.5f, 0, 0};
+  const float before = s.out.tilt_rad;
+  for (int k = 0; k < 1000; ++k) s.tick(f, wr);
+  CHECK(std::fabs(s.out.tilt_rad - before) < 1e-3f, "滾轉 0.5 rad/s × 1 s 不改傾角");
 }
 
 static void testVerticalKf() {
   std::printf("ST-EST-VERT-KF\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f0[3] = {0, 0, G};
+  const float f0[3] = {G, 0, 0};
   const float w0[3] = {0, 0, 0};
   s.pad(1.0, f0, w0, 50.0f);
   s.est.setOnPad(false);
   // 1 s 等加速 a_u = 20 m/s²；氣壓照真值給
   const float aU = 20.0f;
-  const float f[3] = {0, 0, G + aU};
+  const float f[3] = {G + aU, 0, 0};
   for (int k = 1; k <= 1000; ++k) {
     const double tt = k * DT;
     const float h = static_cast<float>(0.5 * aU * tt * tt);
@@ -142,7 +143,7 @@ static void testImuStale() {
   std::printf("ST-EST-IMU-STALE\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f0[3] = {0, 0, G};
+  const float f0[3] = {G, 0, 0};
   const float w0[3] = {0, 0, 0};
   s.pad(1.0, f0, w0);
   CHECK(s.out.imuValid, "前提：新鮮");
@@ -159,11 +160,11 @@ static void testBaroOutlier() {
   std::printf("ST-EST-BARO-GATE\n");
   Sim s;
   s.est.setOnPad(true);
-  const float f0[3] = {0, 0, G};
+  const float f0[3] = {G, 0, 0};
   const float w0[3] = {0, 0, 0};
   s.pad(1.0, f0, w0, 50.0f);
   s.est.setOnPad(false);
-  const float fFree[3] = {0, 0, G};  // 懸停：a_u = 0
+  const float fFree[3] = {G, 0, 0};  // 懸停：a_u = 0
   s.tick(fFree, w0, true, 50.0f + 100.0f);  // 跳 100 m
   CHECK(s.est.diag().baroRejectCount == 1, "離群被丟");
   CHECK(std::fabs(s.out.alt_m) < 0.05f, "高度沒被拉走");

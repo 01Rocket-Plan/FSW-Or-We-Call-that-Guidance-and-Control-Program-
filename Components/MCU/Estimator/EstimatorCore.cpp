@@ -92,7 +92,7 @@ void EstimatorCore::quatFromUp(const float a_body[3], float q[4]) {
   }
   for (float& c : a) c /= n;
   const float d = a[2];  // â·(0,0,1)
-  if (d < -0.9999f) {    // 倒立：繞機體 X 轉 180°
+  if (d < -0.9999f) {    // â 正好朝下：繞世界 E 轉 180°
     q[0] = 0;
     q[1] = 1;
     q[2] = q[3] = 0;
@@ -293,7 +293,7 @@ void EstimatorCore::step(double now_s, StateOutC& out) {
   for (int i = 0; i < 3; ++i) out.rate_body_rads[i] = wUnb[i];
   float R[3][3];
   quatToR(m_q, R);
-  out.tilt_rad = std::acos(clampf(R[2][2], -1.0f, 1.0f));  // 機體 Z（鼻）離世界 +U
+  out.tilt_rad = std::acos(clampf(R[2][0], -1.0f, 1.0f));  // 機體 X（鼻）離世界 +U
   out.vel_enu_mps[0] = m_vE;
   out.vel_enu_mps[1] = m_vN;
   out.vel_enu_mps[2] = m_v;
