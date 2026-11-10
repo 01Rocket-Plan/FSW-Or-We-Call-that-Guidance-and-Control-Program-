@@ -4,5 +4,5 @@ set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/UsMpu6050Sim.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/mpu6050_core.c"
 )
-set(MOD_DEPS RocketTypes)
+set(MOD_DEPS RocketTypes Components_EnvSensing_Bus)
 register_fprime_module()
