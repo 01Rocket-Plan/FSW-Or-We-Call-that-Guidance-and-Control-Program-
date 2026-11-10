@@ -41,10 +41,10 @@ module Components {
     sync input port mpu6050In: RocketTypes.Mpu6050Data
     sync input port humTempIn: RocketTypes.HumTempData
 
-    @ US_CAM 2KB image chunks (Ov3640 imageOut → sdLogger)
-    sync input port usImageIn: Ov3640ImageOut
+    @ US_CAM 2KB image chunks (Ov7670 imageOut → sdLogger)；埠型別在 Components/Camera/CamTypes
+    sync input port usImageIn: CamImageOut
     @ DS_CAM 2KB image chunks (Esp32Cam imageOut → sdLogger)
-    sync input port dsImageIn: Esp32CamImageOut
+    sync input port dsImageIn: CamImageOut
 
     @ F´ time service only (LOGGING timestamps)
     time get port timeCaller
@@ -211,8 +211,8 @@ module Components {
     sync input port mpu6050In: RocketTypes.Mpu6050Data
     sync input port humTempIn: RocketTypes.HumTempData
 
-    sync input port usImageIn: Ov3640ImageOut
-    sync input port dsImageIn: Esp32CamImageOut
+    sync input port usImageIn: CamImageOut
+    sync input port dsImageIn: CamImageOut
 
     time get port timeCaller
     telemetry port tlmOut

@@ -1,9 +1,15 @@
-// Esp32CamImageStreamer：2KB Fw.Buffer 風格分塊（對齊 Ov3640ImageOut 方案）
+// Esp32CamImageStreamer：2KB Fw.Buffer 風格分塊（對齊 CamImageOut 方案）
 // 共用 CamChunkFlag；驅動內只保留一個 chunk scratch，不持有整張 JPEG。
 #ifndef COMPONENTS_CAMERA_DSCAM_ESP32CAMIMAGESTREAMER_HPP
 #define COMPONENTS_CAMERA_DSCAM_ESP32CAMIMAGESTREAMER_HPP
 
-#include "Components/Camera/Ov3640Driver/CamTypes.hpp"
+// 型別來自 FPP 自動碼（../CamTypes/CamTypes.fpp，issue #36）
+#include "Components/Camera/CamTypes/CamChunkFlagEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamFaultEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamModelEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamRoleEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStateEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStatusSerializableAc.hpp"
 #include <cstdint>
 #include <cstring>
 

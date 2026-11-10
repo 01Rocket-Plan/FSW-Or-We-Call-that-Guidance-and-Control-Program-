@@ -1,0 +1,12 @@
+register_fprime_module(
+    AUTOCODER_INPUTS
+        "${CMAKE_CURRENT_LIST_DIR}/instances.fpp"
+        "${CMAKE_CURRENT_LIST_DIR}/system.fpp"
+        "${CMAKE_CURRENT_LIST_DIR}/topology.fpp"
+    SOURCES
+        "${CMAKE_CURRENT_LIST_DIR}/UsCamTopology.cpp"
+    DEPENDS
+        Fw_Logger
+        Components_Camera_Ov7670Driver
+        Components_Recorder_SdLogger
+)

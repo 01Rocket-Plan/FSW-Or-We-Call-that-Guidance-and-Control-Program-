@@ -73,8 +73,8 @@ if "usImageIn" not in fpp or "dsImageIn" not in fpp:
     errors.append("missing usImageIn/dsImageIn ports")
 if "IMAGE_QUEUE_DEPTH" not in fpp:
     errors.append("missing IMAGE_QUEUE_DEPTH param")
-if "Ov3640ImageOut" not in fpp or "Esp32CamImageOut" not in fpp:
-    errors.append("missing camera image port types on SdLogger")
+if fpp.count("CamImageOut") < 4:  # SdLogger＋SdLoggerSim 各 us／ds 兩個
+    errors.append("missing camera image port type CamImageOut on SdLogger")
 
 for abs_id, name in (
     (0x2006, "ImageChunkDrop"),

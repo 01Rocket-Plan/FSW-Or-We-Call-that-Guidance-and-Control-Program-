@@ -1,5 +1,5 @@
 // Esp32CamFrame：DS ESP32-CAM 幀元資料（不含像素）
-// 共用 CamState／CamFault／CamStatus 請用 Ov3640Driver/CamTypes.hpp，勿在此重複定義。
+// 共用 CamState／CamFault／CamStatus 一律用 FPP 自動碼（Components/Camera/CamTypes），勿在此重複定義。
 #ifndef COMPONENTS_CAMERA_DSCAM_ESP32CAMFRAME_HPP
 #define COMPONENTS_CAMERA_DSCAM_ESP32CAMFRAME_HPP
 

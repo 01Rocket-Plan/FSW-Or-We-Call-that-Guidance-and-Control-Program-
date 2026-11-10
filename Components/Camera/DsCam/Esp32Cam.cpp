@@ -2,10 +2,6 @@
 
 namespace Components {
 
-namespace {
-CamStatus toFppStatus(const CamStatus& s) { return s; }
-}  // namespace
-
 uint32_t Esp32CamI2cLink::send(const uint8_t* buf, uint32_t len) {
   if (buf == nullptr || len == 0 || m_write == nullptr) {
     return 0;
@@ -89,7 +85,7 @@ void Esp32Cam::parameterUpdated(FwPrmIdType) { loadParams(); }
 void Esp32Cam::parametersLoaded() { loadParams(); }
 
 void Esp32Cam::writeTlm() {
-  this->tlmWrite_Status(toFppStatus(m_core.status()));
+  this->tlmWrite_Status((m_core.status()));
 }
 
 void Esp32Cam::respond(FwOpcodeType opCode, U32 cmdSeq, Esp32CamCmdResult r) {

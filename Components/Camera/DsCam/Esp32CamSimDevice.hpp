@@ -4,7 +4,13 @@
 #ifndef COMPONENTS_CAMERA_DSCAM_ESP32CAMSIMDEVICE_HPP
 #define COMPONENTS_CAMERA_DSCAM_ESP32CAMSIMDEVICE_HPP
 
-#include "Components/Camera/Ov3640Driver/CamTypes.hpp"
+// 型別來自 FPP 自動碼（../CamTypes/CamTypes.fpp，issue #36）
+#include "Components/Camera/CamTypes/CamChunkFlagEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamFaultEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamModelEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamRoleEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStateEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStatusSerializableAc.hpp"
 #include "Components/Camera/DsCam/Esp32CamFrame.hpp"
 #include "Components/Camera/DsCam/ICamLink.hpp"
 #include "Components/Camera/DsCam/IGroundPreviewLink.hpp"
