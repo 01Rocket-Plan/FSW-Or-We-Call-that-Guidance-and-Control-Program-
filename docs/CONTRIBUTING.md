@@ -12,3 +12,4 @@
 9. 部署分五份：`DsMcu`／`UsMcu`／`DsCam`／`UsCam`／`PadMcu`；US MCU 不含控制律；相機不併入 MCU 主幹；`PadMcu` 是發射架板，不上箭。
 10. 自測保持輕量（`fpp-check`／`fprime-util check` 即可），勿過度著墨單元測試篇幅。
 11. **本機改完再推，一功能一 PR（Edward，2026-11-01）：** 不要在 GitHub 網頁介面直接改檔，也不要頻繁推送零碎小改動（會生出大量重複 PR、浪費平台儲存）。請在自己的機體上改完並自測後，再一次上傳最新版本、每個功能只開一個 PR；後續修正請推到同一條分支／同一個 PR。
+12. **禁止拿 stub 當最終交差結果（Edward，2026-11-10，取代第 5、10 條的「`fpp-check` 即可」）：** 最終 PR 前必須用真 F´（`lib/fprime` v4.4.1）跑 `tools/verify/fprime_verify.sh` 通過，並把結果貼在 PR 內文。`fpp_stubs/`、手寫假自動碼標頭、只編 Core 的 host 測試都只算開發中自測。見 `docs/REAL_FPRIME_VERIFICATION.md`。
