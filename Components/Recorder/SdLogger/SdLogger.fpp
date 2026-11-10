@@ -3,10 +3,10 @@
 @ Channel/event local opcodes below are relative to that base; absolute = base + local.
 @ Logging rules (合約 §9 LOGGING): channel seq continuous, timestamps monotonic,
 @ queue full → drop newest + event, never block. Time only from F´ time service (no sleep).
-@ Media card (Edward／首席): Micro SDHC UHS-I 16GB. Card reader module model: TBD.
+@ Media card (Edward 定案): Micro SDHC UHS-I 16GB. 讀卡轉接板型號不影響軟體（SPI／SDMMC、3.3 V 即可）。
 module Components {
 
-  @ Removable media card model (not the SPI/SD reader board — that remains TBD)
+  @ Removable media card model（媒體卡；轉接板不需要型號）
   enum SdCardModel {
     MICRO_SDHC_UHS_I_16GB
   }
