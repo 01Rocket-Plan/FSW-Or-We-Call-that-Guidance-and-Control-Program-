@@ -22,6 +22,12 @@
 > ⚠ 資料量：OV7670 沒有壓縮。QVGA RGB565 @10 fps ≈ 1.5 MB/s；VGA（480p）@13 fps ≈ 8 MB/s，ESP32 的 SD
 > 寫入跟 RAM 都撐不住。所以預設 QVGA。要 480p 就得降幀率、改 YUV 灰階，或換回有 JPEG 的感測器。
 
+## 備援：OV3640（有 JPEG）
+Edward 2026-11-11：OV7670 留著當主案；另備一份有 JPEG 的 **OV3640** 當備援（相機遙測在紀錄組是 P4 最低優先，
+「理論上能傳」即可，不特別為它改 SdLogger）。備援**不合進 main**（同 ICM-20648 的做法），放在分支
+`camera/EdwardWang-Claude/ov3640-alt`（＝改 OV7670 之前的 OV3640 版本）。
+要啟用時：照本 PR 的做法把它改用 `Components/Camera/CamTypes` 自動碼型別（那個分支還是舊寫法，真 F´ 編不過，見 #36）。
+
 ## 初始化（`Ov7670Core.cpp` `kInitTable`）
 COM7=0x80 軟重置 → 等一拍（10 ms）→ CLKRC、COM7=QVGA|RGB、RGB444 關、COM15=RGB565 全範圍、TSLB、
 COM3（縮放致能）、COM14、SCALING_*。值對照 Linux `drivers/media/i2c/ov7670.c`；冷測時對規格書。
