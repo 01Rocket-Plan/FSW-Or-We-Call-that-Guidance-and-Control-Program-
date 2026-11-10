@@ -94,12 +94,13 @@ N="$(grep -c -E "Built target" build.log || true)"
 echo "== 通過：configure＋build 成功（$N 個 target）。log：$P/build/build.log"
 
 if [[ "$UT" == 1 ]]; then
-  # 另開一個 BUILD_TESTING=ON 的建置目錄，只編「本專案」模組的 UT（不編 F´ 框架自己的上千個測試）
+  # 另開一個 BUILD_TESTING=ON 的建置目錄，只編「本專案」模組的 UT（不編 F´ 框架自己的上千個測試；
+  # Deployments_*_ut_exe 是「部署所有依賴的 UT」總集合，會把框架的也拉進來，所以排除）
   mkdir -p "$P/build-ut" && cd "$P/build-ut"
   if ! cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON > cfg.log 2>&1; then
     echo "!! UT configure 失敗"; grep -E "error|Error" cfg.log | head -20; exit 1
   fi
-  mapfile -t UTS < <(make help | sed -n 's/^\.\.\. \(\(Components\|RocketTypes\|Deployments\)[A-Za-z0-9_]*_ut_exe\)$/\1/p')
+  mapfile -t UTS < <(make help | sed -n 's/^\.\.\. \(\(Components\|RocketTypes\)[A-Za-z0-9_]*_ut_exe\)$/\1/p')
   if [[ ${#UTS[@]} -eq 0 ]]; then
     echo "-- 沒有找到本專案的單元測試（register_fprime_ut）"
   else
