@@ -23,8 +23,10 @@ struct Mg996rLimits {
   static constexpr uint16_t kPulseMaxUs = 2000;  // fire default
   static constexpr uint16_t kNeutralUs = 1500;
   static constexpr uint16_t kPwmHz = 50;
-  // Datasheet-typical; assumption, NOT measured on vehicle.
-  static constexpr float kTravelDeg = 120.0f;
+  // 行程 360°（Edward 2026-11-10 #38／#42 B3：買的 SG90、MG996R 都是 360° 版）。
+  // 脈寬窗仍沿用 1000–2000 µs，等規格書／冷測確認；量到再改這裡和 ActuatorMgr usPerRad。
+  // ⚠ 多數「360° 舵機」是連續旋轉（脈寬控轉速、不能定位）；若是那種，尾翼／雲台／分離都不能用。
+  static constexpr float kTravelDeg = 360.0f;
 };
 
 class Mg996rCore {

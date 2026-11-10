@@ -34,11 +34,14 @@ class SepServoDriver final : public SepServoDriverComponentBase {
   bool tryFireChannel(U8 ch);
   bool modelRoleOk() const;
   void ensurePwmConfigured();
+  void logDrop(U32 seq, U8 reason);
 
   RocketTypes::DrvState::T m_state;
   RocketTypes::UvState m_uv;
   U32 m_lastSeq;
   bool m_haveSeq;
+  bool m_dropLogged = false;  // 同原因連續丟棄只記第一筆事件（#38）
+  U8 m_lastDropReason = 0;
   U16 m_out_us[4];
   U8 m_activeMask;   // currently commanding fire pulse
   U8 m_lockedMask;   // channels held at lock (unreleased or fault hold)

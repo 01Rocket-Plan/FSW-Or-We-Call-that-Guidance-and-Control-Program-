@@ -3,6 +3,8 @@ module Components {
 
   @ SG90 tail (DS) / gimbal (US instance) PWM driver. Base ID 0x3000; gimbal instance 0x3200.
   @ Connect to rg1kHz; internal ZOH at pwm_hz (default SG90_PWM_HZ). Clamp to pulse_min/max.
+  @ 下傳政策（#38，Edward 2026-11-10）：指令照 1 kHz 收；事件只在狀態「剛改變」那一拍記
+  @ （LockNeutral、PulseClamped、CmdDropped、UvSeen），遙測在改變那一拍寫一次，其餘 1 Hz。
   @ No sleep; time only from F´ time service. Valid (model,role,channel_count):
   @   (SG90, TAIL, 4) or (SG90, GIMBAL, 2) — else SELFTEST → FAULT + ModelRoleMismatch.
   passive component ServoDriver {
@@ -35,6 +37,8 @@ module Components {
     telemetry lastPulse3_us: U16
     telemetry cmdAge_s: F32
     telemetry uvState: RocketTypes.UvState
+    @ 目前是否鎖中位（ActuatorMgr 每拍送 lockNeutral；這裡只在改變時立刻更新）
+    telemetry lockNeutral: bool
     telemetry clampCount: U32
     telemetry dropCount: U32
     @ Formal identity (mirrors params; written every tlm cycle and on READY)

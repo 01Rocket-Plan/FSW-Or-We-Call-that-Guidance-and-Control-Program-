@@ -11,10 +11,10 @@ Board pins remain in `Components/Servo/Pwm/ServoPwmPins.hpp` (MCU group v0.1 dra
 | Instance | Component | Board | Base ID | Rate group | `model` | `role` | `channel_count` |
 |---|---|---|---|---|---|---|---|
 | `servoDriver` | `Components.ServoDriver` | DsMcu | `0x3000` | rg1kHz | `SG90` | `TAIL` | `4` |
-| `sepServoDriver` | `Components.SepServoDriver` | DsMcu | `0x3100` | rg1kHz | `MG996R` | `SEP` | (fixed 4) |
+| `sepServoDriver` | `Components.SepServoDriver` | DsMcu | `0x3100` | rg1kHz | `MG996R` | `SEP` | (fixed 3) |
 | `gimbalServoDriver` | `Components.ServoDriver` | UsMcu | `0x3200` | rg1kHz | `SG90` | `GIMBAL` | `2` |
 | `servoDriverSim` | `Components.ServoDriverSim` | DsMcu Sim | `0x3080` | rg1kHz | `SG90` | `TAIL` | `4` |
-| `sepServoDriverSim` | `Components.SepServoDriverSim` | DsMcu Sim | `0x3180` | rg1kHz | `MG996R` | `SEP` | (fixed 4) |
+| `sepServoDriverSim` | `Components.SepServoDriverSim` | DsMcu Sim | `0x3180` | rg1kHz | `MG996R` | `SEP` | (fixed 3) |
 | `gimbalServoDriverSim` | `Components.ServoDriverSim` | UsMcu Sim | `0x3280` | rg1kHz | `SG90` | `GIMBAL` | `2` |
 
 Sim base IDs = real + `0x80` (conventions).
@@ -44,7 +44,7 @@ Sim base IDs = real + `0x80` (conventions).
 | `sepServoDriver` | `sepReleasedSet` | `nvFlags` | `sepReleasedSet` (`Power.SepReleasedSet`) |
 | F´ services | (same set as above) | `sepServoDriver` | (same) |
 
-`configure(...)`: SEP GPIO `{32,33,13,4}`, LEDC HS ch `{4,5,6,7}`, timer `0`.
+`configure(...)`: SEP GPIO `{32,33,13}`, LEDC HS ch `{4,5,6}`, timer `0`（3×MG996R 環排 120°，SSS §7；2026-11-10 由 4 顆改 3 顆）.
 
 ### UsMcu — `gimbalServoDriver` (GIMBAL)
 
