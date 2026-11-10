@@ -43,15 +43,15 @@ module Components {
     param countdown_s: F64 default 30.0
     @ 點火窗：點火後多久內要確認推力（C15：塔上 2 秒）【待 Edward 定】
     param ignitionWindow_s: F64 default 2.0
-    @ 推力訊號持續多久才算確認【待 Edward 定】
-    param thrustConfirm_s: F64 default 0.1
-    @ 鬆夾持後多久沒離軌 → NO_LIFTOFF【待 Edward 定】
-    param liftoffTimeout_s: F64 default 3.0
+    @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s；100 Hz 連 2 拍）
+    param thrustConfirm_s: F64 default 0.02
+    @ 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 改 1.0 s（74F85 燃燒 0.873 s）
+    param liftoffTimeout_s: F64 default 1.0
     @ 多久沒收到簽名幀 → 地面鏈路紅
     param groundLinkTimeout_s: F64 default 1.0
     @ 多久沒收到箭體狀態 → 臍帶鏈路紅
     param umbilicalTimeout_s: F64 default 0.5
-    @ 架傾角上限（E6：離垂線 5°）
+    @ 架傾角上限（E6：離垂線 5° ＝ 仰角 85°）
     param maxTilt_rad: F64 default 0.0872665
     @ 架側電源下限
     param padVmin_V: F64 default 11.0

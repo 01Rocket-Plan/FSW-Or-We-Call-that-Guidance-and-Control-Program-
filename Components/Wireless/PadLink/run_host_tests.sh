@@ -12,7 +12,7 @@ else CXX=${CXX:-"python3 -m ziglang c++"}; fi
 OUT=${TMPDIR:-/tmp}/padlink_host_test
 echo "== PadLink host (umbilical + pad<->ground + pad controller) =="
 # shellcheck disable=SC2086
-$CXX -std=c++14 -Wall -Wextra -Werror -I"$PL" -I"$PC" -I"$UT" \
+$CXX -std=c++14 -DHOST_TEST_MAIN -I"$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" -Wall -Wextra -Werror -I"$PL" -I"$PC" -I"$UT" \
   "$PL/test/PadLinkHostTest.cpp" "$PL/PadLinkCodec.cpp" "$PL/PadCmdGate.cpp" \
   "$PC/PadControllerCore.cpp" "$UT/UmbilicalLinkCore.cpp" \
   -o "$OUT"

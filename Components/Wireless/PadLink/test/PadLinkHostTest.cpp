@@ -1,9 +1,9 @@
 // PadLinkHostTest：Issue #24 箭↔架（臍帶，雙向）／架↔地面（NRF24）／架上主控 host 自測
 // 不需要 F´。金鑰：只用明顯假的測試驗證器，不是密碼學、不能上飛行。
-#include "PadCmdGate.hpp"
-#include "PadControllerCore.hpp"
-#include "PadLinkCodec.hpp"
-#include "UmbilicalLinkCore.hpp"
+#include "Components/Wireless/PadLink/PadCmdGate.hpp"
+#include "Components/Wireless/PadController/PadControllerCore.hpp"
+#include "Components/Wireless/PadLink/PadLinkCodec.hpp"
+#include "Components/Wireless/UmbilicalLink/UmbilicalLinkCore.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -241,9 +241,13 @@ void testCmdGate() {
   CHECK(chk(PadCmdOp::ARM, 1, kBoot, true) == PadCmdResult::ACCEPTED);
   CHECK(chk(PadCmdOp::ARM, 1, kBoot, true) == PadCmdResult::REPLAY);
   CHECK(chk(PadCmdOp::LAUNCH, 2, kBoot + 1, true) == PadCmdResult::WRONG_BOOT);  // 上次開機的封包
-  CHECK(chk(PadCmdOp::ABORT, 0, 0, false) == PadCmdResult::ACCEPTED);  // 安全方向不驗簽名
-  CHECK(g.lastCounter() == 1u);                                       // ABORT 不推進計數器
-  CHECK(chk(PadCmdOp::HEARTBEAT, 2, kBoot, false) == PadCmdResult::AUTH_FAIL);
+  CHECK(chk(PadCmdOp::ABORT, 0, 0, false) != PadCmdResult::ACCEPTED);  // ABORT 要簽名（#42 C1）
+  CHECK(chk(PadCmdOp::ABORT, 2, kBoot, false) == PadCmdResult::AUTH_FAIL);  // 偽造的 ABORT 擋掉
+  CHECK(chk(PadCmdOp::DISARM, 0, 0, false) == PadCmdResult::ACCEPTED);  // DISARM 仍不驗簽名
+  CHECK(g.lastCounter() == 1u);                                        // 失敗／免驗的不推進計數器
+  CHECK(chk(PadCmdOp::ABORT, 2, kBoot, true) == PadCmdResult::ACCEPTED);  // 簽過名的 ABORT 收
+  CHECK(g.lastCounter() == 2u);
+  CHECK(chk(PadCmdOp::HEARTBEAT, 3, kBoot, false) == PadCmdResult::AUTH_FAIL);
   PadCmdGate none(nullptr, kBoot);  // 沒接驗證器 → deny-by-default
   GroundCmdMsg m;
   m.op = PadCmdOp::ARM;
@@ -278,9 +282,9 @@ void testNominalLaunch() {
   CHECK(r.rocket.lastPadStatus().flags & PTR_IGNITER_ON);
   CHECK(!(r.rocket.lastPadStatus().flags & PTR_CLAMP_RELEASED));
   r.in.thrustOk = true;
-  r.run(0.05);
-  CHECK(r.pad.state() == PadState::IGNITION);  // 還沒持續滿 thrustConfirm_s
-  r.run(0.1);
+  r.run(0.01);
+  CHECK(r.pad.state() == PadState::IGNITION);  // 還沒持續滿 thrustConfirm_s（0.02 s）
+  r.run(0.03);
   CHECK(r.pad.state() == PadState::RELEASED);
   CHECK(!r.out.igniterOn && r.out.clampRelease);
   r.run(0.1);  // 讓下一幀 PadToRocket 送到箭
@@ -433,8 +437,8 @@ void testGroundLossDuringIgnitionContinues() {
 void testAbortDuringIgnitionHoldsClamp() {
   Rig r;
   reachIgnition(r);
-  r.in.thrustOk = true;  // 推力剛起來，還沒滿確認時間
-  r.run(0.03);
+  r.in.thrustOk = true;  // 推力剛起來，還沒滿確認時間（thrustConfirm_s＝0.02 s → 只走 1 拍）
+  r.run(0.01);
   CHECK(r.send(PadCmdOp::ABORT) == PadCmdResult::ACCEPTED);
   CHECK(r.pad.state() == PadState::HOLD_ABORT);
   r.run(1.0);
@@ -542,14 +546,14 @@ void testUmbilicalLinkRxRules() {
   f[n - 1] ^= 0x01u;
   rx.onUmbilicalBytes(f, n, 1.2);
   CHECK(rx.rxFrames() == 1u);
-  // 逾時
-  CHECK(rx.padLinkOk(1.5));
-  CHECK(!rx.padLinkOk(1.6));
+  // 逾時（padLinkTimeout_s＝1.0 s，#42 C3）
+  CHECK(rx.padLinkOk(1.9));
+  CHECK(!rx.padLinkOk(2.1));
 }
 
 }  // namespace
 
-int main() {
+static int PadLinkLegacyMain() {
   testCodecRoundTripAndCrc();
   testEveryMessageFitsNrf24();
   testStreamDeframerResync();
@@ -575,3 +579,11 @@ int main() {
   std::printf("PadLinkHostTest: %d CHECK(s) FAILED\n", g_fail);
   return 1;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return PadLinkLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, PadLinkHostSuite) { ASSERT_EQ(0, PadLinkLegacyMain()); }
+#endif

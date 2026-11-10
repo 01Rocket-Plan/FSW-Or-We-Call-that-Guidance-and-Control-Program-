@@ -1,4 +1,4 @@
-#include "TlmSendCore.hpp"
+#include "Components/Wireless/TlmSend/TlmSendCore.hpp"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -215,7 +215,7 @@ void test_time_nonmonotonic_event() {
 
 }  // namespace
 
-int main() {
+static int TlmSendLegacyMain() {
   test_rate_10hz();
   test_seq_contiguous();
   test_ts_monotonic();
@@ -227,3 +227,11 @@ int main() {
   std::printf("TlmSendHostTest: all 8 tests passed\n");
   return 0;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return TlmSendLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, TlmSendHostSuite) { ASSERT_EQ(0, TlmSendLegacyMain()); }
+#endif

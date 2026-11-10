@@ -15,10 +15,14 @@
   塊時直接 ALLOW。整合時由 HMAC 塊對豁免／驗過的指令設 `authVerified=true`。
 - 其餘列需 `authVerified` 才 ALLOW；否則 `AUTH_REQUIRED` 且不轉發。
 
+## 飛行模式（2026-11-10，issue #37-2）
+`CmdView.mode` 直接用 `RocketTypes.FlightModeId`（FPP 自動碼，18 個值，對齊 SSS）。白名單列的 `modeMask` 只分兩類：
+`ModeClass::PAD`（PAD_IDLE／ARMED／HANGFIRE／US_WAIT）與 `ModeClass::AFTER_LIFTOFF`（其他），由 `modeClassOf()` 映射。
+
 ## 路徑
 `Components/Wireless/UplinkAuth/whitelist/`
 
 ## 測試
 ```bash
-./Components/Wireless/UplinkAuth/whitelist/run_host_tests.sh
+tools/verify/fprime_verify.sh --ut Components/Wireless/UplinkAuth   # 需要 RocketTypes 自動碼，改用真 F´ UT
 ```

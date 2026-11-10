@@ -21,7 +21,7 @@ std::size_t PadCmdGate::buildMacMessage(std::uint8_t bootId, std::uint32_t count
 
 PadCmdResult PadCmdGate::check(const GroundCmdMsg& cmd) {
   if (!requiresAuth(cmd.op)) {
-    // ABORT／DISARM：往安全方向，不驗簽名、不動計數器【待 Edward 定】。
+    // DISARM：往安全方向，不驗簽名、不動計數器【待 Edward 定】。ABORT 要簽名（#42 C1）。
     return PadCmdResult::ACCEPTED;
   }
   if (m_auth == nullptr) return PadCmdResult::NO_VERIFIER;

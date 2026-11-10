@@ -10,8 +10,20 @@ void WhitelistGate::tick() {
   // No internal queue today; kept for non-blocking cadence parity with F´ components.
 }
 
+ModeClass modeClassOf(FlightModeId mode) {
+  switch (mode.e) {
+    case FlightModeId::PAD_IDLE:
+    case FlightModeId::ARMED:
+    case FlightModeId::HANGFIRE:
+    case FlightModeId::US_WAIT:
+      return ModeClass::PAD;
+    default:
+      return ModeClass::AFTER_LIFTOFF;
+  }
+}
+
 bool WhitelistGate::modeAllowed(const WhitelistEntry& e, FlightModeId mode) {
-  const uint8_t bit = static_cast<uint8_t>(1u << static_cast<uint8_t>(mode));
+  const uint8_t bit = static_cast<uint8_t>(1u << static_cast<uint8_t>(modeClassOf(mode)));
   return (e.modeMask & bit) != 0;
 }
 

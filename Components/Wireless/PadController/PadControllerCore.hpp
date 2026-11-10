@@ -27,8 +27,8 @@
 #ifndef WIRELESS_PADCONTROLLERCORE_HPP
 #define WIRELESS_PADCONTROLLERCORE_HPP
 
-#include "PadCmdGate.hpp"
-#include "PadLinkCodec.hpp"
+#include "Components/Wireless/PadLink/PadCmdGate.hpp"
+#include "Components/Wireless/PadLink/PadLinkCodec.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -71,8 +71,11 @@ enum class PadReason : std::uint8_t {
 struct PadParams {
   double countdown_s = 30.0;          // E1：待點火臨界狀態約 30 s
   double ignitionWindow_s = 2.0;      // C15：塔上 2 秒倒數，點火確認後鬆夾持
-  double thrustConfirm_s = 0.10;      // 推力訊號持續多久才算「確認」（防單點雜訊）
-  double liftoffTimeout_s = 3.0;      // 鬆夾持後多久沒離軌 → NO_LIFTOFF
+  // 推力訊號持續多久才算「確認」（防單點雜訊）。2026-11-10 由 0.10 改 0.02（Edward #42 C2）：
+  // 主機 CTI 74F85-15A 燃燒只有 0.873 s，0.1 s 等於把最大推力那段留在架上。100 Hz 下＝連 2 拍。
+  double thrustConfirm_s = 0.02;
+  // 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 由 3.0 改 1.0：74F85 燒 0.873 s，3 s 時發動機早熄了。
+  double liftoffTimeout_s = 1.0;
   double groundLinkTimeout_s = 1.0;   // 多久沒收到簽名幀 → 地面鏈路紅
   double umbilicalTimeout_s = 0.5;    // 多久沒收到箭體狀態 → 臍帶鏈路紅
   double maxTilt_rad = 0.0872665;     // E6：攻角 85° ＝ 離垂線 5°

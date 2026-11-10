@@ -4,18 +4,27 @@
 #ifndef WIRELESS_UPLINKAUTH_WHITELISTGATE_HPP
 #define WIRELESS_UPLINKAUTH_WHITELISTGATE_HPP
 
+#include "RocketTypes/FlightModeIdEnumAc.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
 namespace UplinkAuth {
 namespace Whitelist {
 
-// Placeholder mode ids for host tests / table config (not flight thresholds).
-enum class FlightModeId : uint8_t {
-  MODE_PAD = 0,
-  MODE_BOOST_AFTER = 1,
-  MODE_COUNT = 2
+// 飛行模式：直接用 RocketTypes.FlightModeId（FPP 自動碼，PR #26 對齊 SSS 的 18 個值）。
+// 2026-11-10（issue #37-2）：原本這裡自訂一套 MODE_PAD／MODE_BOOST_AFTER，跟 RocketTypes 同名不同義。
+using RocketTypes::FlightModeId;
+
+// 白名單只看「粗分類」：墊上 vs 離台後。由 modeClassOf() 從 18 個值映射。
+enum class ModeClass : uint8_t {
+  PAD = 0,            // PAD_IDLE、ARMED、HANGFIRE（沒離台）、US_WAIT（上級跟著下級在墊上）
+  AFTER_LIFTOFF = 1,  // 其他全部（LIFTOFF 起）
+  COUNT = 2
 };
+
+//! 18 個飛行模式 → 粗分類。不認得的值一律當 AFTER_LIFTOFF（較嚴：墊上專用指令會被擋）。
+ModeClass modeClassOf(FlightModeId mode);
 
 // DS vs US deployment role (雲台 only accepted on US per link contract).
 enum class VehicleRole : uint8_t {
@@ -42,7 +51,7 @@ enum class DenyReason : uint8_t {
 
 struct CmdView {
   uint16_t opcode = 0;
-  FlightModeId mode = FlightModeId::MODE_PAD;
+  FlightModeId mode = FlightModeId::PAD_IDLE;
   VehicleRole vehicle = VehicleRole::DS;
   const uint8_t* args = nullptr;
   uint16_t argLen = 0;
@@ -67,7 +76,7 @@ class IGateEventSink {
 struct WhitelistEntry {
   uint16_t opcode = 0;
   bool used = false;
-  // Bitmask of allowed FlightModeId values (bit 0 = MODE_PAD, ...).
+  // Bitmask of allowed ModeClass values (bit 0 = PAD, bit 1 = AFTER_LIFTOFF).
   uint8_t modeMask = 0;
   // Bitmask of allowed VehicleRole (bit 0 = DS, bit 1 = US).
   uint8_t vehicleMask = 0;

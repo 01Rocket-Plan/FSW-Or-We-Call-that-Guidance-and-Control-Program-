@@ -1,6 +1,6 @@
 // RfDriverHostTest：§12.1 測試條件
-#include "RfDriverCore.hpp"
-#include "../RfDriverSim/RfDriverSimDevice.hpp"
+#include "Components/Wireless/RfDriver/RfDriverCore.hpp"
+#include "Components/Wireless/RfDriverSim/RfDriverSimDevice.hpp"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -248,7 +248,7 @@ void test_init_deadline() {
 
 }  // namespace
 
-int main() {
+static int RfDriverLegacyMain() {
   test_handshake_and_phase_timeout();
   test_selftest_ok();
   test_selftest_fail();
@@ -261,3 +261,11 @@ int main() {
   std::printf("RfDriverHostTest: all 9 tests passed\n");
   return 0;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return RfDriverLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, RfDriverHostSuite) { ASSERT_EQ(0, RfDriverLegacyMain()); }
+#endif
