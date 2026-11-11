@@ -76,11 +76,11 @@ static void testTiltAlign() {
   std::printf("ST-EST-TILT-ALIGN\n");
   Sim s;
   s.est.setOnPad(true);
-  const float a = 10.0f * 3.14159265f / 180.0f;  // 導軌傾 10°
+  const float a = 5.0f * 3.14159265f / 180.0f;  // 導軌傾 5°（仰角 85°，標稱發射角）
   const float f[3] = {G * std::cos(a), 0, G * std::sin(a)};
   const float w[3] = {0, 0, 0};
   s.pad(1.0, f, w);
-  CHECK(std::fabs(s.out.tilt_rad - a) < 1e-3f, "傾 10° 對準");
+  CHECK(std::fabs(s.out.tilt_rad - a) < 1e-3f, "傾 5°（仰角 85°）對準");
   CHECK(std::fabs(s.out.accAxial_mps2) < 0.05f, "傾斜靜置 a_u≈0");
 }
 
