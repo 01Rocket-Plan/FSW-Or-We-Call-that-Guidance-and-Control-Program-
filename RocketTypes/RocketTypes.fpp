@@ -1,5 +1,5 @@
 # 01RocketPlan 共用型別（依介面合約 v0.1 與已核可勘誤）
-# 慣例：世界系 ENU；機體系 Z 沿長軸指向鼻錐、X／Y 橫向（右手系）；四元數 Hamilton 純量在前 (w,x,y,z)；
+# 慣例：世界系 ENU；機體系業界標準 X 指向鼻錐（滾轉）、Y 右（俯仰）、Z = X×Y（偏航）；四元數 Hamilton 純量在前 (w,x,y,z)；
 #       SI 單位，名稱帶後綴 _m _mps _mps2 _rad _rads _s _V _A。時間只取自 F´ 時間服務。
 module RocketTypes {
 
@@ -121,10 +121,29 @@ module RocketTypes {
   enum UvState { NOMINAL, UV_WARN, UV_SHED, UV_CRITICAL }
 
   @ 飛行模式列舉（僅介面；狀態機邏輯由 Edward 實作）
+  @ 以 SSS sss/fsw/flight_mode.py 為準（2026-11-09 Edward 定案）；數值順序即線上編碼：
+  @   PAD_IDLE=0、ARMED=1 不得移動（UmbilicalLinkCore kModePadIdle／kModeArmed 寫死）。
+  @ 0–9 下級主幹；10–12 下級旁路；13–17 上級（US 部署只送這段）。
+  @ LS_LEGS 移除：腳架 CP-LEGS-* 在 SSS 為 DISABLED（設計未定案），定案後再加在尾端。
   enum FlightModeId {
-    PAD_IDLE, ARMED, LIFTOFF, BOOST_PASSIVE, BOOST_ACTIVE, COAST, SEPARATED,
-    LS_DESCENT, LS_CHUTE, LS_LEGS, LS_LANDED,
-    US_COAST, US_CHUTE, US_LANDED, SEP_FAIL
+    PAD_IDLE = 0
+    ARMED = 1
+    LIFTOFF = 2
+    BOOST_PASSIVE = 3
+    BOOST_ACTIVE = 4
+    COAST = 5
+    SEPARATED = 6
+    LS_DESCENT = 7
+    LS_CHUTE = 8
+    LS_LANDED = 9
+    HANGFIRE = 10
+    SEP_FAIL = 11
+    ABORT = 12
+    US_WAIT = 13
+    US_COAST = 14
+    US_CHUTE = 15
+    US_LANDED = 16
+    US_CHUTE_INHIBIT = 17
   }
 
   port ImuData(s: ImuSample)
@@ -139,4 +158,53 @@ module RocketTypes {
   port SepCmdPort(c: SepCmd)
   port UvStatePort(st: UvState)
   port ModePort(mode: FlightModeId)
+
+  # =====================================================================
+  # 提案 v0.3（MCU 組 EdwardWang+Claude，2026-11-10）：補 FlightMode 缺的介面
+  # 對應 Components/MCU/FlightMode/README.md「缺的介面」FM-IN-2／3／5／7。
+  # 只新增，不改既有型別；既有元件不受影響。
+  # =====================================================================
+
+  @ 哪一級
+  enum Stage { DS = 0, US = 1 }
+
+  @ 開傘指令（FM-IN-7）：flightMode → 開傘驅動。每級只開一次，fire-once 由驅動＋NvFlags 閂鎖。
+  @ 機械計時器備援（逾時 +10 s）不經 MCU，不在這條路上。
+  struct ChuteCmd {
+    t_s: F64
+    seq: U32
+    stage: Stage
+    @ true＝SEP_FAIL 時的下級側傘（SSS SIDE_CHUTE）；硬體同一顆就忽略
+    side: bool
+    valid: bool
+  }
+
+  @ 箭上離散訊號（FM-IN-2／3）：分離面微動開關、著地接觸。
+  @ 「下令分離 ≠ 已經分開」：sepSwitchOpen 才是分開的證據（SSS §7）。
+  struct DiscreteSample {
+    hdr: SampleHeader
+    @ 分離面開關已斷（兩級分開）
+    sepSwitchOpen: bool
+    @ 本級著地
+    groundContact: bool
+  }
+
+  @ DS↔US 級間鏈路（FM-IN-5）：分離前 DS 告訴 US「已下令分離／禁上級傘」。
+  @ 分離後斷線是預期行為；US 只信 alive=true 的資料（SSS _tick_us）。
+  struct StageLinkMsg {
+    t_s: F64
+    seq: U32
+    @ 對端還活著（逾時由接收端判斷）
+    alive: bool
+    @ DS 已下令分離
+    sepCmd: bool
+    @ DS 下令分離的時刻（<0＝沒有）；US 開傘計時的原點
+    tSepCmd_s: F64
+    @ 禁上級傘（假分／SEP_FAIL／ABORT）
+    usInhibit: bool
+  }
+
+  port ChuteCmdPort(c: ChuteCmd)
+  port DiscreteData(s: DiscreteSample)
+  port StageLinkPort(m: StageLinkMsg)
 }
