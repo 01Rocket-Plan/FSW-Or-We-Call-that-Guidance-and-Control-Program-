@@ -45,4 +45,4 @@ tools/verify/fprime_verify.sh --ut Components/Camera/CamTypes Components/Camera/
 已刪除（假的標頭跟假的程式永遠對得上，測不出 #36 這種錯）；F´ 外殼之後改用 F´ 自動產生的 Tester 測。
 
 ## SIL
-`Deployments/UsCam`：`usCam`（`Ov7670DriverSim`，開機自動上電＋擷取，10 fps QVGA）→ `sdLogger`（Sim）。
+`Deployments/UsCam`：`usCam`（`Ov7670DriverSim`，開機自動上電＋擷取，10 fps、每幀 16 KB，非整張 QVGA）→ `sdLogger`（Sim）。
