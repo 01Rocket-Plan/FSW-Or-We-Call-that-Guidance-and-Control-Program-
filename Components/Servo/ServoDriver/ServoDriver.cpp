@@ -218,7 +218,7 @@ void ServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
 
 void ServoDriver::logDrop(U32 seq, U8 reason) {
   ++m_dropCount;
-  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆  // 連續丟棄只記第一筆；收到一筆有效指令後重新計
+  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆；原因改變或收到有效指令後重新記
     m_dropLogged = true;
     m_lastDropReason = reason;
     this->log_WARNING_LO_CmdDropped(seq, reason);
@@ -306,15 +306,21 @@ void ServoDriver::schedIn_handler(FwIndexType, U32) {
       if (m_haveCmd) {
         const F32 age = static_cast<F32>(t - m_lastCmd_s);
         if (age > m_cmdTimeout_s) {
+          const bool lockChanged = !m_lockNeutral;
           m_lockNeutral = true;
+          m_clampActiveMask = 0;  // 回中位＝限幅狀態結束，下次超限要再記（#38）
           for (U8 i = 0; i < m_channelCount; ++i) {
             m_out_us[i] = m_neutral_us;
           }
           this->log_WARNING_HI_CmdTimeout(age);
-          this->log_ACTIVITY_HI_LockNeutral(LOCK_TIMEOUT);
+          if (lockChanged) {  // 已經鎖中位就不重記（與 SimCore 一致）
+            this->log_ACTIVITY_HI_LockNeutral(LOCK_TIMEOUT);
+          }
           m_haveCmd = false;  // one-shot until next cmd
           applyOutputs(false);
-          flushTlmNow();
+          if (lockChanged) {
+            flushTlmNow();
+          }
         }
       }
       if ((m_tick % m_pwmPeriodTicks) == 0) {

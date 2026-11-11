@@ -98,6 +98,15 @@ static void tServoTimeout() {
   r.run(10); CHECK(r.sink.timeout == 1);  // 只發一次
   r.cmd(2, 1300); r.run(1); CHECK(r.sink.pwm[0] == 1300);  // 新命令恢復
 }
+static void tServoTimeoutEdges() {
+  // 超時回中位後：限幅狀態結束，下次超限要再記；已鎖中位時超時不重記 LockNeutral（#38）
+  g_cases++; SRig r; r.boot();
+  r.cmd(1, 900); r.run(1); CHECK(r.sink.clampUsed.size() == 1);
+  r.run(5); CHECK(r.sink.timeout == 1 && r.sink.lockTo == 1);
+  r.cmd(2, 900); r.run(1); CHECK(r.sink.clampUsed.size() == 2);
+  r.cmd(3, 1500, 1500, 1500, 1500, true); r.run(5);
+  CHECK(r.sink.lockCmd == 1 && r.sink.timeout == 2 && r.sink.lockTo == 1);
+}
 static void tServoUv() {
   g_cases++; SRig r; r.boot(); r.cmd(1, 1800); r.run(1);
   r.core.uvIn(UvState::UV_CRITICAL); r.run(1);
@@ -234,7 +243,7 @@ static void tSepModelRoleMismatch() {
 }
 
 int main() {
-  tServoHandshake(); tServoFault(); tServoClamp(); tServoSeq(); tServoLockNeutral(); tServoBootLockedNoEvent(); tServoTimeout(); tServoUv(); tGimbalTwoCh();
+  tServoHandshake(); tServoFault(); tServoClamp(); tServoSeq(); tServoLockNeutral(); tServoBootLockedNoEvent(); tServoTimeout(); tServoTimeoutEdges(); tServoUv(); tGimbalTwoCh();
   tServoModelRoleMismatch();
   tSepHandshake(); tSepFireOnce(); tSepNvPersist(); tSepNvWriteFail(); tSepSeqAndInvalid(); tSepNoTimeoutAndUv(); tSepThreeOnly();
   tSepModelRoleMismatch();

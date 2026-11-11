@@ -205,7 +205,7 @@ void SepServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
 }
 
 void SepServoDriver::logDrop(U32 seq, U8 reason) {
-  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆  // 連續丟棄只記第一筆（ActuatorMgr 1 kHz 送，#38）
+  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆；原因改變或收到有效指令後重新記（#38）
     m_dropLogged = true;
     m_lastDropReason = reason;
     this->log_WARNING_LO_CmdDropped(seq, reason);

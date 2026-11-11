@@ -37,7 +37,7 @@ void ServoSimCore::tick() {
     case DrvState::READY:
       m_ageTicks++;
       if (!m_timedOut && cmdAge_s() > m_p.cmd_timeout_s + 1e-6f) {
-        m_timedOut = true; allNeutral();
+        m_timedOut = true; allNeutral(); m_clampActive = 0;  // 回中位＝限幅結束（#38）
         m_sink.evCmdTimeout(cmdAge_s());
         if (!m_locked) { m_locked = true; m_sink.evLockNeutral(NeutralSource::TIMEOUT); }
       }

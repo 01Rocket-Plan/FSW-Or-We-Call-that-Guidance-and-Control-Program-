@@ -11,7 +11,7 @@ steady state. Constants match `ServoTypes` (FPP identity).
 | `Sg90Core.{hpp,cpp}`       | SG90 pulse clamp / map (1000–2000 µs, 50 Hz, **180° 定位型**) |
 | `Mg996rCore.{hpp,cpp}`     | MG996R pulse clamp / map (1000–2000 µs, 50 Hz, **180° 定位型**) + lock/fire accessors |
 | `Sg90SimDevice.{hpp,cpp}`  | 4-channel SG90 slew simulator |
-| `Mg996rSimDevice.{hpp,cpp}`| 4-channel MG996R slew simulator |
+| `Mg996rSimDevice.{hpp,cpp}`| 4-slot MG996R slew simulator (SEP uses 3) |
 
 ## 行程（2026-11-11 定案）
 

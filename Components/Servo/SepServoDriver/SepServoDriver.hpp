@@ -1,4 +1,4 @@
-// SepServoDriver.hpp — MG996R SEP_1–4; fire-once via Power.NvFlags. Base 0x3100.
+// SepServoDriver.hpp — MG996R SEP_1–3; fire-once via Power.NvFlags. Base 0x3100.
 #ifndef COMPONENTS_SEPSERVODRIVER_HPP
 #define COMPONENTS_SEPSERVODRIVER_HPP
 

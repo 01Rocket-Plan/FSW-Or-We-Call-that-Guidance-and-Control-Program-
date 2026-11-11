@@ -1,4 +1,4 @@
-# SepServoDriver — MG996R SEP_1–4 (formal model/role in ServoTypes; NvFlags via Power)
+# SepServoDriver — MG996R SEP_1–3 (formal model/role in ServoTypes; NvFlags via Power)
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/SepServoDriver.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/SepServoDriver.cpp"
