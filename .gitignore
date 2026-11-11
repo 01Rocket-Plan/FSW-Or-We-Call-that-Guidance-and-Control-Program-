@@ -6,7 +6,7 @@ __pycache__/
 *.bin
 *.elf
 sdkconfig
-# 密鑰一律不入庫
+# 飛行密鑰不入庫（本機 secrets/；見 docs/key-handling.md）
 *.key
 secrets*
 .env
