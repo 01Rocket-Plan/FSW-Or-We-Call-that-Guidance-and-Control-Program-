@@ -65,6 +65,7 @@ enum class PadReason : std::uint8_t {
   IGNITION_LOCKED = 14,
   NOT_ARMED = 15,
   BUSY = 16,
+  LATE_RELEASE = 17,  // 推力確認太晚（超過 releaseDeadline_s）→ 不鬆、繼續夾住
 };
 
 //! 時間比較的容差：吸收浮點累加誤差和排程抖動（100 Hz 一拍 10 ms 的 5%），不改變門檻本身的意義。
@@ -81,6 +82,11 @@ struct PadParams {
   double thrustConfirm_s = 0.02;
   // 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 由 3.0 改 1.0：74F85 燒 0.873 s，3 s 時發動機早熄了。
   double liftoffTimeout_s = 1.0;
+  // 鬆夾持期限：從「第一次看到推力」起算，超過這個時間還沒完成推力確認 → 不鬆了，繼續夾住
+  // （HOLD_ABORT／LATE_RELEASE）。Edward 2026-11-11 PR #52 審查提議（拖到 0.05～0.1 s 才鬆，峰值推力已過、
+  // 飛不到預定高度，還會影響分離／開傘判斷），建議值 0.04～0.08 s。暫定 0.05 s【待 Edward 定】：
+  // 正常 20 ms 確認之外，留 30 ms（3 拍）給推力訊號抖動。小於 thrustConfirm_s 時以 thrustConfirm_s 為準。
+  double releaseDeadline_s = 0.05;
   double groundLinkTimeout_s = 1.0;   // 多久沒收到簽名幀 → 地面鏈路紅
   double umbilicalTimeout_s = 0.5;    // 多久沒收到箭體狀態 → 臍帶鏈路紅
   double maxTilt_rad = 0.0872665;     // E6：離垂線 5°（＝仰角 85°），單位 rad
@@ -171,6 +177,7 @@ class PadControllerCore {
   double m_countdownRemaining_s = 0.0;
   double m_tIgnition_s = 0.0;
   double m_thrustSince_s = -1.0;
+  double m_thrustFirst_s = -1.0;  // IGNITION 中第一次看到推力的時間（不因中斷而重設）
   double m_tRelease_s = 0.0;
 
   PadInputs m_lastIn{};

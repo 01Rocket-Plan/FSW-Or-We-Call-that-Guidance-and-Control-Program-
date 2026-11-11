@@ -522,6 +522,53 @@ void testThrustConfirmExactTiming() {
   CHECK(r.pad.state() == PadState::RELEASED);
 }
 
+// 鬆夾持期限（releaseDeadline_s＝0.05 s，Edward PR #52 審查）：
+// 推力抖動讓確認拖過期限 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）；剛好在期限內 → 照常鬆。
+void testLateReleaseHoldsClamp() {
+  auto drive = [](Rig& r, const bool* pattern, int n) {
+    for (int i = 0; i < n; ++i) {
+      r.in.thrustOk = pattern[i];
+      r.step();
+    }
+  };
+  {
+    // t0 有、+10 有、+20 斷、+30 有、+40 有、+50 有 → 在 +50（＝期限）確認 → 鬆
+    Rig r;
+    reachIgnition(r);
+    const bool p[] = {true, true, false, true, true, true};
+    drive(r, p, 6);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    CHECK(r.out.clampRelease);
+  }
+  {
+    // t0 有、+10 有、+20 斷、+30 斷、+40 有、+50 有、+60 有 → +60 才夠 20 ms，已過期限 → 不鬆
+    Rig r;
+    reachIgnition(r);
+    const bool p[] = {true, true, false, false, true, true, true};
+    drive(r, p, 7);
+    CHECK(r.pad.state() == PadState::HOLD_ABORT);
+    CHECK(r.pad.lastReason() == PadReason::LATE_RELEASE);
+    CHECK(!r.out.clampRelease && !r.out.igniterOn);
+    r.in.thrustOk = true;
+    r.run(1.0);  // 之後推力再穩也不鬆（終態）
+    CHECK(r.pad.state() == PadState::HOLD_ABORT);
+    CHECK(!r.sawClampRelease);
+    r.run(0.1);  // 箭端看不到 THRUST_CONFIRMED／CLAMP_RELEASED
+    CHECK(!(r.rocket.lastPadStatus().flags & (PTR_THRUST_CONFIRMED | PTR_CLAMP_RELEASED)));
+  }
+  {
+    // 期限設得比確認時間短 → 以確認時間為準，正常推力照樣鬆
+    Rig r;
+    PadParams pp;
+    pp.releaseDeadline_s = 0.0;
+    r.pad.configure(pp);
+    reachIgnition(r);
+    r.in.thrustOk = true;
+    r.run(0.03);
+    CHECK(r.pad.state() == PadState::RELEASED);
+  }
+}
+
 void testNoLiftoffAfterRelease() {
   Rig r;
   reachIgnition(r);
@@ -638,6 +685,7 @@ static int PadLinkLegacyMain() {
   testAbortDuringIgnitionHoldsClamp();
   testKeyPulledDuringIgnition();
   testThrustConfirmExactTiming();
+  testLateReleaseHoldsClamp();
   testNoLiftoffAfterRelease();
   testUmbilicalLinkReadyRules();
   testRocketVetoSeenByRocket();

@@ -32,6 +32,7 @@ module Components {
     IGNITION_LOCKED = 14
     NOT_ARMED = 15
     BUSY = 16
+    LATE_RELEASE = 17
   }
 
   @ 地面 → 架指令碼（數值與 PadLink::PadCmdOp 一致）

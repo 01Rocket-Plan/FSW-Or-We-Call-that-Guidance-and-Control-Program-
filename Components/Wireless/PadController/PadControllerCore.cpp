@@ -201,6 +201,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         m_ignitionUsed = true;  // 一次開機只點一次
         m_tIgnition_s = now_s;
         m_thrustSince_s = -1.0;
+        m_thrustFirst_s = -1.0;
         setState(PadState::IGNITION, PadReason::NONE);
       }
       break;
@@ -218,14 +219,24 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         break;
       }
       if (in.thrustOk) {
+        if (m_thrustFirst_s < 0.0) m_thrustFirst_s = now_s;
         if (m_thrustSince_s < 0.0) m_thrustSince_s = now_s;
-        if (now_s - m_thrustSince_s + kTimeEps_s >= m_p.thrustConfirm_s) {
+      } else {
+        m_thrustSince_s = -1.0;
+      }
+      if (m_thrustFirst_s >= 0.0) {
+        // 鬆夾持期限（Edward PR #52 審查）：第一次看到推力後太久還沒確認 → 不鬆、繼續夾住。
+        const double deadline =
+            m_p.releaseDeadline_s > m_p.thrustConfirm_s ? m_p.releaseDeadline_s : m_p.thrustConfirm_s;
+        if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
+          setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
+          break;
+        }
+        if (in.thrustOk && now_s - m_thrustSince_s + kTimeEps_s >= m_p.thrustConfirm_s) {
           m_tRelease_s = now_s;
           setState(PadState::RELEASED, PadReason::NONE);
           break;
         }
-      } else {
-        m_thrustSince_s = -1.0;
       }
       if (now_s - m_tIgnition_s >= m_p.ignitionWindow_s) {
         setState(PadState::HANG_FIRE, PadReason::NO_THRUST);  // 不自動重試

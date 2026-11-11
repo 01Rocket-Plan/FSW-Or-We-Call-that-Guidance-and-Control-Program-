@@ -47,6 +47,8 @@ module Components {
     param thrustConfirm_s: F64 default 0.02
     @ 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 改 1.0 s（74F85 燃燒 0.873 s）
     param liftoffTimeout_s: F64 default 1.0
+    @ 鬆夾持期限：第一次看到推力後超過此時間還沒確認 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）。Edward 2026-11-11 提議 0.04～0.08 s，暫定 0.05 s【待 Edward 定】
+    param releaseDeadline_s: F64 default 0.05
     @ 多久沒收到簽名幀 → 地面鏈路紅
     param groundLinkTimeout_s: F64 default 1.0
     @ 多久沒收到箭體狀態 → 臍帶鏈路紅
