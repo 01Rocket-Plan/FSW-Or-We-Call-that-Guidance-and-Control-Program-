@@ -24,6 +24,18 @@ module Mcu {
     @ → estimator、controller、umbilicalLink、sdLogger、tlmSend、（備用）
     output port modeOut: [6] RocketTypes.ModePort
 
+    @ [FM-IN-2／3] 箭上離散訊號 → 分離面開關、本級著地（#43 DiscreteData）
+    guarded input port discreteIn: RocketTypes.DiscreteData
+
+    @ [FM-IN-5] 級間鏈路收（#43 StageLinkPort；US 部署用）
+    guarded input port stageLinkIn: RocketTypes.StageLinkPort
+
+    @ [FM-IN-5] 級間鏈路送（#43 StageLinkPort；DS 部署用）
+    output port stageLinkOut: RocketTypes.StageLinkPort
+
+    @ [FM-IN-7] → 開傘驅動（#43 ChuteCmdPort；驅動元件 repo 尚無）
+    output port chuteCmdOut: RocketTypes.ChuteCmdPort
+
     @ → actuatorMgr（DS 分離）
     output port sepCmdOut: RocketTypes.SepCmdPort
 

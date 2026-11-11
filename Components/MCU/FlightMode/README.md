@@ -5,7 +5,7 @@
 - 部署：DsMcu（`role = DS`）、UsMcu（`role = US`）
 - Base ID：`0x1400`
 - 速率：rg1kHz，排在 `estimator` 之後、`controller` 之前
-- 依賴：RocketTypes PR #26（`FlightModeId` 對齊 SSS）——**請先合 #26**
+- 依賴：RocketTypes（#26 `FlightModeId`、#43 `DiscreteData`／`StageLinkPort`／`ChuteCmdPort`，皆已在 main）
 
 ## 殼現在會做什麼
 
@@ -14,6 +14,7 @@
 | DS | 永遠 `PAD_IDLE`，每拍廣播給 6 路 `modeOut` |
 | US | 永遠 `US_WAIT` |
 | 分離／開傘／NV | **都不會發生** |
+| 級間鏈路 | DS 每拍送 `stageLinkOut`（`alive=true`，其餘欄位＝core 的 `bus*`，殼裡全 false／-1） |
 | 開機 | 發一次 `ShellOnly` 警告事件，提醒還沒填 |
 
 主機測試 `ST-FM-SHELL-SAFE-*`：餵最壞輸入（全部放行、100 m/s²、傾 3 rad、ARM＋FIRE＋中止）跑 60 s，確認殼不轉移、不分離、不開傘。
@@ -95,10 +96,10 @@ SSS 的 `abort_password` **不要**放進 repo（值也不要寫在任何檔案�
 | `accel_high` | `accel_u_mps2 > 5`（SSS 夾具的定義）——在 tick 裡算 | 你算 |
 | 欠壓 | `UvState` | ✅（`uvState`） |
 | `seated` `loop_ok` `ready` `ground_link` | ❌ FM-IN-1 | 填 false |
-| `sep_switch_open` | ❌ FM-IN-2 | 填 false |
-| `contact_ds` `contact_us` | ❌ FM-IN-3 | 填 false |
+| `sep_switch_open` | `discreteIn` → `DiscreteSample.sepSwitchOpen`（`hdr.valid=false` 不更新） | ✅（埠已接；驅動元件尚無，未接線前保持 false） |
+| `contact_ds` `contact_us` | `discreteIn` → `DiscreteSample.groundContact`（DS 部署寫 `contact_ds`、US 寫 `contact_us`） | ✅（同上） |
 | `sep_ok` | ❌ FM-IN-4 | 填 false |
-| `link_*`（級間） | ❌ FM-IN-5 | 填 false |
+| `link_*`（級間） | `stageLinkIn` → `StageLinkMsg`（`alive`／`sepCmd`／`tSepCmd_s`／`usInhibit`）；逾時由你在 tick 判斷 | ✅（埠已接；級間鏈路元件尚無） |
 | `GroundCmd` | ❌ FM-IN-6 | 全 false |
 
 ## 缺的介面（repo 目前沒有，不是我能決定的）
@@ -106,12 +107,12 @@ SSS 的 `abort_password` **不要**放進 repo（值也不要寫在任何檔案�
 | 編號 | 缺什麼 | 誰的 | 建議 |
 |---|---|---|---|
 | FM-IN-1 | 互鎖四條件 | 無線組（`UmbilicalLink.padStatusOut`，但該模組 CMake 還沒啟用） | 啟用 UmbilicalLink 模組後接 `PadToRocketPort` |
-| FM-IN-2 | 分離面微動開關 | 沒有驅動 | 新 GPIO 驅動＋RocketTypes 埠（要首席核） |
-| FM-IN-3 | 著地接觸 | 沒有驅動 | 同上，或先只用 `t_land_max` |
+| FM-IN-2 | 分離面微動開關 | 型別＋埠已在 main（#43）、`discreteIn` 已接；**GPIO 驅動元件還沒有** | 新離散輸入驅動 → `DiscreteData` |
+| FM-IN-3 | 著地接觸 | 同 FM-IN-2 | 同上，或先只用 `t_land_max` |
 | FM-IN-4 | `sep_ok` | **門檻未定** | 你定數字（gates D14） |
-| FM-IN-5 | DS↔US 級間鏈路 | 沒有元件 | 新元件（要首席核） |
+| FM-IN-5 | DS↔US 級間鏈路 | 型別＋埠已在 main（#43）、`stageLinkIn`／`stageLinkOut` 已接；**實體鏈路元件還沒有** | 新元件（要首席核） |
 | FM-IN-6 | 地面 ARM／中止 指令進 FlightMode | 無線組（UplinkAuth → cmdDisp） | 在 FlightMode.fpp 加 F´ command（你定） |
-| FM-IN-7 | **開傘驅動** | **沒有任何元件** | 新驅動（DS 傘、US 傘）；`chuteDs`／`chuteUs` 外殼已留好 |
+| FM-IN-7 | **開傘驅動** | 型別＋埠已在 main（#43）、`chuteCmdOut` 已接（`chuteDs`→`stage=DS`、`chuteUs`→`stage=US`，`side` 殼一律 false）；**開傘驅動元件還沒有** | 新驅動（DS 傘、US 傘），fire-once 由驅動＋NvFlags 閂鎖 |
 
 ## 衝突（SSS ≠ repo，要你定）
 

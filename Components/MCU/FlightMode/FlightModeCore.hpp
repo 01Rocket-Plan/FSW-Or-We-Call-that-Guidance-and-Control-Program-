@@ -138,7 +138,7 @@ struct FmOutputs {
   FmMode mode = FmMode::PAD_IDLE;   //!< 這拍要廣播的模式（DS 部署＝ds；US 部署＝us）
   bool sepFire = false;             //!< 單拍脈衝 → SepCmd
   uint8_t sepMask = 0;              //!< [FM-19] 要放哪幾顆 MG996R（SSS 沒有，硬體 3 顆）
-  bool chuteDs = false;             //!< 單拍脈衝 → [FM-IN-7] 開傘驅動（缺）
+  bool chuteDs = false;             //!< 單拍脈衝 → [FM-IN-7] chuteCmdOut（驅動元件尚無）
   bool chuteUs = false;
   bool busSepCmd = false;           //!< 級間匯流排（SSS bus_*）
   double busTSepCmd_s = -1;

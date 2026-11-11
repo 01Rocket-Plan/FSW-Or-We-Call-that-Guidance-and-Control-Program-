@@ -24,6 +24,8 @@ class FlightMode final : public FlightModeComponentBase {
   void schedIn_handler(FwIndexType portNum, U32 context) override;
   void stateIn_handler(FwIndexType portNum, const RocketTypes::StateOut& s) override;
   void uvIn_handler(FwIndexType portNum, const RocketTypes::UvState& st) override;
+  void discreteIn_handler(FwIndexType portNum, const RocketTypes::DiscreteSample& s) override;
+  void stageLinkIn_handler(FwIndexType portNum, const RocketTypes::StageLinkMsg& m) override;
   void parameterUpdated(FwPrmIdType id) override;
   void parametersLoaded() override;
 
@@ -37,6 +39,8 @@ class FlightMode final : public FlightModeComponentBase {
   FmGroundCmd m_cmd;
   RocketTypes::FlightModeId m_lastMode;
   U32 m_sepSeq;
+  U32 m_chuteSeq;
+  U32 m_linkSeq;
   U32 m_tlmDiv;
   bool m_warnedShell;
 };

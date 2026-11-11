@@ -23,6 +23,8 @@ FlightMode::FlightMode(const char* compName)
       m_deployRole(FmRole::DS),
       m_lastMode(RocketTypes::FlightModeId::PAD_IDLE),
       m_sepSeq(0),
+      m_chuteSeq(0),
+      m_linkSeq(0),
       m_tlmDiv(0),
       m_warnedShell(false) {}
 
@@ -74,6 +76,25 @@ void FlightMode::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
   m_in.uvState = static_cast<uint8_t>(st.e);
 }
 
+// [FM-IN-2／3] 只搬資料。無效樣本不更新（保持上一筆；開機預設 false）。
+void FlightMode::discreteIn_handler(FwIndexType, const RocketTypes::DiscreteSample& s) {
+  if (!s.get_hdr().get_valid()) return;
+  m_in.sep_switch_open = s.get_sepSwitchOpen();
+  if (m_core.role() == FmRole::US) {
+    m_in.contact_us = s.get_groundContact();
+  } else {
+    m_in.contact_ds = s.get_groundContact();
+  }
+}
+
+// [FM-IN-5] 只搬資料。對端逾時由 Edward 在 tick 裡判斷（看 t_s）。
+void FlightMode::stageLinkIn_handler(FwIndexType, const RocketTypes::StageLinkMsg& m) {
+  m_in.link_alive = m.get_alive();
+  m_in.link_sep_cmd = m.get_sepCmd();
+  m_in.link_t_sep_cmd_s = m.get_tSepCmd_s();
+  m_in.link_us_inhibit = m.get_usInhibit();
+}
+
 void FlightMode::emitOutputs(const FmOutputs& o) {
   const RocketTypes::FlightModeId mode = toFpp(o.mode);
   if (mode != m_lastMode) {
@@ -94,11 +115,21 @@ void FlightMode::emitOutputs(const FmOutputs& o) {
   if (o.chuteDs) {
     this->log_ACTIVITY_HI_ChuteDsCommanded();
     if (this->isConnected_dsChuteCommandedOut_OutputPort(0)) (void)this->dsChuteCommandedOut_out(0);
-    // [FM-IN-7] 開傘驅動埠：repo 尚無（README「缺的介面」）
+    if (this->isConnected_chuteCmdOut_OutputPort(0)) {
+      // side（SEP_FAIL 側傘）由 Edward 決定何時為 true；殼一律 false
+      this->chuteCmdOut_out(0, RocketTypes::ChuteCmd(this->nowSeconds(), ++m_chuteSeq, RocketTypes::Stage::DS, false, true));
+    }
   }
   if (o.chuteUs) {
     this->log_ACTIVITY_HI_ChuteUsCommanded();
-    // [FM-IN-7] 同上
+    if (this->isConnected_chuteCmdOut_OutputPort(0)) {
+      this->chuteCmdOut_out(0, RocketTypes::ChuteCmd(this->nowSeconds(), ++m_chuteSeq, RocketTypes::Stage::US, false, true));
+    }
+  }
+  // [FM-IN-5] 級間匯流排：DS 部署每拍送（alive＝本端活著）
+  if (m_core.role() == FmRole::DS && this->isConnected_stageLinkOut_OutputPort(0)) {
+    this->stageLinkOut_out(0, RocketTypes::StageLinkMsg(this->nowSeconds(), ++m_linkSeq, true, o.busSepCmd,
+                                                         o.busTSepCmd_s, o.busUsInhibit));
   }
 }
 
