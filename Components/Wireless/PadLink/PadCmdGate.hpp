@@ -1,15 +1,17 @@
 // PadCmdGate：地面 → 發射架指令驗證（Issue #24）
 //
 // 規則（對齊 gate C14／C15／H4）：
-//  - ARM、LAUNCH（會往「點火」方向走的指令）、HEARTBEAT 與 ABORT 一律要簽名，deny-by-default。
+//  - 全部指令（ARM、LAUNCH、HEARTBEAT、ABORT、DISARM）一律要簽名，deny-by-default。
 //    ABORT 要簽名（Edward 2026-11-10，#42 C1）：中止是任務終止的標誌，不能讓任何人不經授權就送。
 //    簽名擋不住「自己人按錯」，那要靠地面站的二次確認；簽名擋的是「別人偽造」。
 //    地面鏈路斷線時架子本來就會自己中止（groundLinkTimeout_s → GROUND_LINK_LOST），所以 ABORT
 //    要簽名不會讓「想中止卻中止不了」。
 //    地面鏈路是否「活著」只看簽過名的幀，偽造的心跳不能讓倒數在地面斷線後繼續走。
 //    沒有接上驗證器（IPadCmdAuth == nullptr）→ 一律拒絕，架子永遠停在 SAFE。
-//  - DISARM（ARMED → SAFE，撤銷解保險、還沒開始倒數）不驗簽名【待 Edward 定】：
-//    被偽造最多是「被迫退回 SAFE 重來」，不會讓架子點火。
+//  - DISARM 也要簽名（2026-11-12 無線組審 PR #52）：handleCommand 在 ARMED「和 COUNTDOWN」都接受
+//    DISARM 並退回 SAFE，所以免簽的 DISARM 在倒數中效果等同免簽的 ABORT，會讓 #42 C1 的決定被繞過。
+//    也對齊無線組合約 v0.1b「全部指令預設 HMAC，只有雲台例外」。Edward 若書面決定 DISARM 免簽，
+//    要同時把 DISARM 限定在 ARMED（不能停倒數），再改這裡。
 //  - 防重放：簽名指令的計數器必須嚴格遞增；只放 RAM，每次開機歸 0。
 //    開機時架子產生的 bootId 會在 PadStatus 廣播，地面簽名時必須帶入，
 //    所以上一次開機錄下來的舊封包，在新的 bootId 下驗不過。
@@ -55,10 +57,10 @@ class PadCmdGate {
 
   PadCmdGate(IPadCmdAuth* auth, std::uint8_t bootId) : m_auth(auth), m_bootId(bootId) {}
 
-  //! 是否需要簽名（ARM／LAUNCH／HEARTBEAT／ABORT 需要；只有 DISARM 不需要）。
+  //! 是否需要簽名：全部指令都要（含 ABORT、DISARM；不認得的 op 也要）。
   static bool requiresAuth(PadCmdOp op) {
-    return op == PadCmdOp::ARM || op == PadCmdOp::LAUNCH || op == PadCmdOp::HEARTBEAT ||
-           op == PadCmdOp::ABORT;
+    (void)op;
+    return true;
   }
 
   //! MAC 輸入：domainTag || bootId || counter_be32 || opcode。回傳長度。

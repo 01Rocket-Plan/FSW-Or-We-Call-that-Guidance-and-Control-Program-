@@ -243,11 +243,18 @@ void testCmdGate() {
   CHECK(chk(PadCmdOp::LAUNCH, 2, kBoot + 1, true) == PadCmdResult::WRONG_BOOT);  // 上次開機的封包
   CHECK(chk(PadCmdOp::ABORT, 0, 0, false) != PadCmdResult::ACCEPTED);  // ABORT 要簽名（#42 C1）
   CHECK(chk(PadCmdOp::ABORT, 2, kBoot, false) == PadCmdResult::AUTH_FAIL);  // 偽造的 ABORT 擋掉
-  CHECK(chk(PadCmdOp::DISARM, 0, 0, false) == PadCmdResult::ACCEPTED);  // DISARM 仍不驗簽名
-  CHECK(g.lastCounter() == 1u);                                        // 失敗／免驗的不推進計數器
+  CHECK(chk(PadCmdOp::DISARM, 0, 0, false) != PadCmdResult::ACCEPTED);  // DISARM 也要簽名
+  CHECK(chk(PadCmdOp::DISARM, 2, kBoot, false) == PadCmdResult::AUTH_FAIL);  // 偽造的 DISARM 擋掉
+  CHECK(g.lastCounter() == 1u);                                        // 失敗的不推進計數器
   CHECK(chk(PadCmdOp::ABORT, 2, kBoot, true) == PadCmdResult::ACCEPTED);  // 簽過名的 ABORT 收
   CHECK(g.lastCounter() == 2u);
   CHECK(chk(PadCmdOp::HEARTBEAT, 3, kBoot, false) == PadCmdResult::AUTH_FAIL);
+  CHECK(chk(PadCmdOp::DISARM, 3, kBoot, true) == PadCmdResult::ACCEPTED);  // 簽過名的 DISARM 收
+  CHECK(g.lastCounter() == 3u);
+  CHECK(chk(PadCmdOp::DISARM, 3, kBoot, true) == PadCmdResult::REPLAY);  // 重放的 DISARM 擋掉
+  for (std::uint8_t op = 0; op < 0xFFu; ++op) {  // 不認得的 op 也一律要簽名
+    CHECK(PadCmdGate::requiresAuth(static_cast<PadCmdOp>(op)));
+  }
   PadCmdGate none(nullptr, kBoot);  // 沒接驗證器 → deny-by-default
   GroundCmdMsg m;
   m.op = PadCmdOp::ARM;
@@ -386,6 +393,20 @@ void testRedDuringCountdownNeedsFullRearm() {
   CHECK(r.send(PadCmdOp::LAUNCH) == PadCmdResult::REJECTED);  // 要重走 ARM → LAUNCH
   CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
   CHECK(!r.pad.ignitionUsed());
+}
+
+// 偽造（沒簽名／簽錯）的 DISARM 不能停倒數；簽過名的才行（DISARM 在 COUNTDOWN 也會退回 SAFE）。
+void testForgedDisarmDuringCountdownIgnored() {
+  Rig r;
+  r.warmUp();
+  CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+  CHECK(r.send(PadCmdOp::LAUNCH) == PadCmdResult::ACCEPTED);
+  r.run(1.0);
+  CHECK(r.send(PadCmdOp::DISARM, false) == PadCmdResult::AUTH_FAIL);
+  CHECK(r.pad.state() == PadState::COUNTDOWN);
+  CHECK(r.send(PadCmdOp::DISARM) == PadCmdResult::ACCEPTED);
+  CHECK(r.pad.state() == PadState::SAFE);
+  CHECK(r.pad.lastReason() == PadReason::CMD_DISARM);
 }
 
 void testGroundLossDuringCountdownAborts() {
@@ -563,6 +584,7 @@ static int PadLinkLegacyMain() {
   testNoGroundLinkNoArm();
   testLaunchNeedsArmFirst();
   testRedDuringCountdownNeedsFullRearm();
+  testForgedDisarmDuringCountdownIgnored();
   testGroundLossDuringCountdownAborts();
   testHangFire();
   testGroundLossDuringIgnitionContinues();

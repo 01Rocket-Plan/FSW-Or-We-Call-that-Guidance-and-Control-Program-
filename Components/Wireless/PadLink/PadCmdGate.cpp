@@ -21,7 +21,8 @@ std::size_t PadCmdGate::buildMacMessage(std::uint8_t bootId, std::uint32_t count
 
 PadCmdResult PadCmdGate::check(const GroundCmdMsg& cmd) {
   if (!requiresAuth(cmd.op)) {
-    // DISARM：往安全方向，不驗簽名、不動計數器【待 Edward 定】。ABORT 要簽名（#42 C1）。
+    // 目前所有指令都要簽名（ABORT：#42 C1；DISARM：無線組合約「全部指令預設 HMAC」）。
+    // 保留這條路只為了將來若 Edward 書面決定某個指令免簽；不認得的 op 一律要簽名。
     return PadCmdResult::ACCEPTED;
   }
   if (m_auth == nullptr) return PadCmdResult::NO_VERIFIER;

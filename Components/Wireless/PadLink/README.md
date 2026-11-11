@@ -74,7 +74,7 @@ RELEASED ──1 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回�
 
 ## 指令驗證（`PadCmdGate`）
 
-- ARM、LAUNCH、HEARTBEAT 要簽名，deny-by-default；沒接驗證器 → 架子永遠停在 SAFE。
+- 全部指令（ARM、LAUNCH、HEARTBEAT、ABORT、DISARM）都要簽名，deny-by-default；沒接驗證器 → 架子永遠停在 SAFE。
 - 地面鏈路「活著」只看簽過名的幀，偽造心跳不能讓倒數在地面斷線後繼續走。
 - 防重放：計數器嚴格遞增（RAM）。架子每次開機的 `bootId` 會在 PadStatus 廣播，地面簽名要帶入，所以上次開機錄的舊封包驗不過。
 - MAC 輸入：`"01RP-PAD-v1" || bootId || counter_be32 || opcode`；tag＝HMAC-SHA256 前 16 B。
@@ -82,7 +82,7 @@ RELEASED ──1 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回�
 
 ## 待 Edward 定
 
-1. ~~ABORT／DISARM 要不要簽名？~~ **已定（Edward 2026-11-10，#42 C1）：ABORT 要簽名**（中止是任務終止的標誌，不能讓人偽造）；DISARM（ARMED→SAFE，還沒倒數）暫不簽，待 Edward 定。地面斷線本來就會自動中止，所以 ABORT 要簽名不會「想停停不了」。
+1. ~~ABORT／DISARM 要不要簽名？~~ **已定（Edward 2026-11-10，#42 C1）：ABORT 要簽名**（中止是任務終止的標誌，不能讓人偽造）；**DISARM 也簽**（無線組 2026-11-12 審 PR #52）：程式在 ARMED **和 COUNTDOWN** 都接受 DISARM 並退回 SAFE，免簽的 DISARM 在倒數中等於免簽的 ABORT，會繞過 C1；也對齊無線組合約「全部指令預設 HMAC」。Edward 若要 DISARM 免簽，請書面決定，並同時把 DISARM 限定在 ARMED。地面斷線本來就會自動中止，所以 ABORT 要簽名不會「想停停不了」。
 2. 門檻（SSS 沒有發射架數值，除下列外仍是假設）：倒數 30 s、點火窗 2 s、**推力確認 0.02 s**、**離軌逾時 1 s**（2026-11-10，主機 CTI 74F85-15A 燃燒 0.873 s，#42 C2）、地面鏈路逾時 1 s、臍帶逾時 0.5 s、**箭端收架狀態逾時 1 s**（#42 C3）、架傾角離垂線 5°（＝仰角 85°）、架電源 11 V。
 3. 推力確認感測器型號（荷重元？）；離軌開關、seated 開關、傾角計型號與腳位。
 4. `bootId` 來源：建議 PadMcu 的 NvFlags 開機計數（U8 會繞回，256 次開機才重複一次）。
