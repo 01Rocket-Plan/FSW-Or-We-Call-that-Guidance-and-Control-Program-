@@ -18,8 +18,8 @@ using RocketTypes::FlightModeId;
 
 // 白名單只看「粗分類」：墊上 vs 離台後。由 modeClassOf() 從 18 個值映射。
 enum class ModeClass : uint8_t {
-  PAD = 0,            // PAD_IDLE、ARMED、HANGFIRE（沒離台）、US_WAIT（上級跟著下級在墊上）
-  AFTER_LIFTOFF = 1,  // 其他全部（LIFTOFF 起）
+  PAD = 0,            // PAD_IDLE、ARMED、HANGFIRE（沒離台）
+  AFTER_LIFTOFF = 1,  // 其他全部（LIFTOFF 起；含 US_WAIT，見 modeClassOf）
   COUNT = 2
 };
 

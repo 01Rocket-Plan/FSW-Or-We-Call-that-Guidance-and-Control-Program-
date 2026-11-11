@@ -17,7 +17,8 @@
 
 ## 飛行模式（2026-11-10，issue #37-2）
 `CmdView.mode` 直接用 `RocketTypes.FlightModeId`（FPP 自動碼，18 個值，對齊 SSS）。白名單列的 `modeMask` 只分兩類：
-`ModeClass::PAD`（PAD_IDLE／ARMED／HANGFIRE／US_WAIT）與 `ModeClass::AFTER_LIFTOFF`（其他），由 `modeClassOf()` 映射。
+`ModeClass::PAD`（PAD_IDLE／ARMED／HANGFIRE）與 `ModeClass::AFTER_LIFTOFF`（其他），由 `modeClassOf()` 映射。
+`US_WAIT`（上級分離前等待）涵蓋墊上與 DS 推進／滑翔，上級無法自行分辨，故歸 `AFTER_LIFTOFF`（fail-safe）。
 
 ## 路徑
 `Components/Wireless/UplinkAuth/whitelist/`

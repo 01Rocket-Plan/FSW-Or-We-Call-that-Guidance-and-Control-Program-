@@ -180,19 +180,55 @@ void testGimbalOnDsDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& re
 }  // namespace
 
 static void testModeClassMapping() {
-  // 18 個 RocketTypes.FlightModeId → 粗分類（#37-2）
-  CHECK(modeClassOf(FlightModeId::PAD_IDLE) == ModeClass::PAD);
-  CHECK(modeClassOf(FlightModeId::ARMED) == ModeClass::PAD);
-  CHECK(modeClassOf(FlightModeId::HANGFIRE) == ModeClass::PAD);
-  CHECK(modeClassOf(FlightModeId::US_WAIT) == ModeClass::PAD);
-  CHECK(modeClassOf(FlightModeId::LIFTOFF) == ModeClass::AFTER_LIFTOFF);
-  CHECK(modeClassOf(FlightModeId::BOOST_ACTIVE) == ModeClass::AFTER_LIFTOFF);
-  CHECK(modeClassOf(FlightModeId::ABORT) == ModeClass::AFTER_LIFTOFF);
-  CHECK(modeClassOf(FlightModeId::US_CHUTE_INHIBIT) == ModeClass::AFTER_LIFTOFF);
+  // 18 個 RocketTypes.FlightModeId → 粗分類（#37-2），逐一列出，新增值時這裡會提醒要歸類。
+  struct Row {
+    FlightModeId::T mode;
+    ModeClass cls;
+  };
+  const Row rows[] = {
+      {FlightModeId::PAD_IDLE, ModeClass::PAD},
+      {FlightModeId::ARMED, ModeClass::PAD},
+      {FlightModeId::LIFTOFF, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::BOOST_PASSIVE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::BOOST_ACTIVE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::COAST, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::SEPARATED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_DESCENT, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_CHUTE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_LANDED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::HANGFIRE, ModeClass::PAD},
+      {FlightModeId::SEP_FAIL, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::ABORT, ModeClass::AFTER_LIFTOFF},
+      // US_WAIT＝上級分離前等待（墊上＋DS 推進／滑翔都在這個模式）→ fail-safe 當 AFTER_LIFTOFF
+      {FlightModeId::US_WAIT, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_COAST, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_CHUTE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_LANDED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_CHUTE_INHIBIT, ModeClass::AFTER_LIFTOFF},
+  };
+  CHECK(sizeof(rows) / sizeof(rows[0]) == FlightModeId::NUM_CONSTANTS);
+  for (const Row& r : rows) {
+    CHECK(modeClassOf(FlightModeId(r.mode)) == r.cls);
+  }
+}
+
+// US_WAIT 時（上級可能已在空中）墊上專用指令必須被擋。
+static void testUsWaitBlocksPadOnlyCommands() {
+  WhitelistSimTable table;
+  CmdRecorder cmd;
+  RejectRecorder rej;
+  WhitelistGate g(table, cmd, rej);
+  uint8_t args[2];
+  beInt16(0, args);
+  const GateDecision d = g.handle(makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::US_WAIT,
+                                          VehicleRole::US, true, args, 2));
+  CHECK(d == GateDecision::DENY);
+  CHECK(cmd.n == 0u);
 }
 
 static int WhitelistLegacyMain() {
   testModeClassMapping();
+  testUsWaitBlocksPadOnlyCommands();
   WhitelistSimTable table;
   CmdRecorder cmd;
   RejectRecorder rej;
