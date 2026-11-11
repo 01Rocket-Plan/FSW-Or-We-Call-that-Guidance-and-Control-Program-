@@ -121,10 +121,29 @@ module RocketTypes {
   enum UvState { NOMINAL, UV_WARN, UV_SHED, UV_CRITICAL }
 
   @ 飛行模式列舉（僅介面；狀態機邏輯由 Edward 實作）
+  @ 以 SSS sss/fsw/flight_mode.py 為準（2026-11-09 Edward 定案）；數值順序即線上編碼：
+  @   PAD_IDLE=0、ARMED=1 不得移動（UmbilicalLinkCore kModePadIdle／kModeArmed 寫死）。
+  @ 0–9 下級主幹；10–12 下級旁路；13–17 上級（US 部署只送這段）。
+  @ LS_LEGS 移除：腳架 CP-LEGS-* 在 SSS 為 DISABLED（設計未定案），定案後再加在尾端。
   enum FlightModeId {
-    PAD_IDLE, ARMED, LIFTOFF, BOOST_PASSIVE, BOOST_ACTIVE, COAST, SEPARATED,
-    LS_DESCENT, LS_CHUTE, LS_LEGS, LS_LANDED,
-    US_COAST, US_CHUTE, US_LANDED, SEP_FAIL
+    PAD_IDLE = 0
+    ARMED = 1
+    LIFTOFF = 2
+    BOOST_PASSIVE = 3
+    BOOST_ACTIVE = 4
+    COAST = 5
+    SEPARATED = 6
+    LS_DESCENT = 7
+    LS_CHUTE = 8
+    LS_LANDED = 9
+    HANGFIRE = 10
+    SEP_FAIL = 11
+    ABORT = 12
+    US_WAIT = 13
+    US_COAST = 14
+    US_CHUTE = 15
+    US_LANDED = 16
+    US_CHUTE_INHIBIT = 17
   }
 
   port ImuData(s: ImuSample)
