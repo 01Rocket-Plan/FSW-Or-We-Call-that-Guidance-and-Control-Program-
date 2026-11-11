@@ -67,18 +67,23 @@ enum class PadReason : std::uint8_t {
   BUSY = 16,
 };
 
+//! 時間比較的容差：吸收浮點累加誤差和排程抖動（100 Hz 一拍 10 ms 的 5%），不改變門檻本身的意義。
+constexpr double kTimeEps_s = 0.0005;
+
 //! 門檻全部是假設【待 Edward 定】，飛前以 HIL／100 m 資料修正。
 struct PadParams {
   double countdown_s = 30.0;          // E1：待點火臨界狀態約 30 s
   double ignitionWindow_s = 2.0;      // C15：塔上 2 秒倒數，點火確認後鬆夾持
   // 推力訊號持續多久才算「確認」（防單點雜訊）。2026-11-10 由 0.10 改 0.02（Edward #42 C2）：
-  // 主機 CTI 74F85-15A 燃燒只有 0.873 s，0.1 s 等於把最大推力那段留在架上。100 Hz 下＝連 2 拍。
+  // 主機 CTI 74F85-15A 燃燒只有 0.873 s，0.1 s 等於把最大推力那段留在架上。
+  // 100 Hz 下的實際意義：第一個有推力的樣本在 t0，t0＋10 ms、t0＋20 ms 也都有推力（連 3 個樣本），
+  // 就在 t0＋20 ms 那一拍鬆夾持。比較時加 kTimeEps_s，避免浮點誤差讓它隨機多等一拍（變 30 ms）。
   double thrustConfirm_s = 0.02;
   // 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 由 3.0 改 1.0：74F85 燒 0.873 s，3 s 時發動機早熄了。
   double liftoffTimeout_s = 1.0;
   double groundLinkTimeout_s = 1.0;   // 多久沒收到簽名幀 → 地面鏈路紅
   double umbilicalTimeout_s = 0.5;    // 多久沒收到箭體狀態 → 臍帶鏈路紅
-  double maxTilt_rad = 0.0872665;     // E6：攻角 85° ＝ 離垂線 5°
+  double maxTilt_rad = 0.0872665;     // E6：離垂線 5°（＝仰角 85°），單位 rad
   double padVmin_V = 11.0;            // 架側 12 V 繼電器電源下限
 };
 

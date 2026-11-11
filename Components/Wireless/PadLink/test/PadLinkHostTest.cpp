@@ -477,6 +477,51 @@ void testKeyPulledDuringIgnition() {
   CHECK(!r.everIgniterWithoutKey);
 }
 
+// 推力確認的精確時序：第一個推力樣本 t0 → t0+10 ms 仍 IGNITION → t0+20 ms 那一拍 RELEASED。
+// 換幾個不同的起點（浮點時間值不同），每次都要剛好 3 個樣本，不能隨機多等一拍。
+void testThrustConfirmExactTiming() {
+  for (int offset = 0; offset < 10; ++offset) {
+    Rig r;
+    reachIgnition(r);
+    for (int i = 0; i < offset; ++i) r.step();
+    CHECK(r.pad.state() == PadState::IGNITION);
+    r.in.thrustOk = true;
+    r.step();  // t0
+    CHECK(r.pad.state() == PadState::IGNITION);
+    r.step();  // t0 + 10 ms
+    CHECK(r.pad.state() == PadState::IGNITION);
+    CHECK(!r.out.clampRelease);
+    r.step();  // t0 + 20 ms
+    CHECK(r.pad.state() == PadState::RELEASED);
+    CHECK(r.out.clampRelease && !r.out.igniterOn);
+  }
+  // 排程抖動：實機 100 Hz 的拍子可能早到幾百 µs（例如 9.9 ms），第 3 個樣本仍要算數，不能拖到 30 ms。
+  {
+    Rig j;
+    reachIgnition(j);
+    j.in.thrustOk = true;
+    j.step();         // t0
+    j.step(0.0099);   // t0 + 9.9 ms
+    CHECK(j.pad.state() == PadState::IGNITION);
+    j.step(0.0099);   // t0 + 19.8 ms
+    CHECK(j.pad.state() == PadState::RELEASED);
+  }
+  // 雜訊：推力中斷一拍就重新計時
+  Rig r;
+  reachIgnition(r);
+  r.in.thrustOk = true;
+  r.step();
+  r.step();
+  r.in.thrustOk = false;
+  r.step();
+  r.in.thrustOk = true;
+  r.step();
+  r.step();
+  CHECK(r.pad.state() == PadState::IGNITION);
+  r.step();
+  CHECK(r.pad.state() == PadState::RELEASED);
+}
+
 void testNoLiftoffAfterRelease() {
   Rig r;
   reachIgnition(r);
@@ -484,7 +529,9 @@ void testNoLiftoffAfterRelease() {
   r.run(0.2);
   CHECK(r.pad.state() == PadState::RELEASED);
   r.in.thrustOk = false;
-  r.run(3.1);  // 鬆了但沒離軌、臍帶也還在
+  r.run(0.7);  // 鬆夾持後還不到 liftoffTimeout_s（1.0 s）
+  CHECK(r.pad.state() == PadState::RELEASED);
+  r.run(0.2);  // 超過 1.0 s，鬆了但沒離軌、臍帶也還在
   CHECK(r.pad.state() == PadState::NO_LIFTOFF);
   CHECK(r.out.clampRelease);  // 鬆了就不能再夾回
   CHECK(!r.clampReleasedThenLocked);
@@ -590,6 +637,7 @@ static int PadLinkLegacyMain() {
   testGroundLossDuringIgnitionContinues();
   testAbortDuringIgnitionHoldsClamp();
   testKeyPulledDuringIgnition();
+  testThrustConfirmExactTiming();
   testNoLiftoffAfterRelease();
   testUmbilicalLinkReadyRules();
   testRocketVetoSeenByRocket();

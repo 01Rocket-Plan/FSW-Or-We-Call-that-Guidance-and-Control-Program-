@@ -53,7 +53,7 @@ SAFE ──ARM(簽名, 全綠)──► ARMED ──LAUNCH(簽名)──► COUN
   ▲                         │                        │
   └──任一紅燈／ABORT／DISARM─┴────────────────────────┘
 
-IGNITION ──推力持續 0.02 s──► RELEASED（鬆夾持）──離軌開關 或 臍帶斷──► LIFTED_OFF
+IGNITION ──推力持續 0.02 s（100 Hz 連 3 樣本）──► RELEASED（鬆夾持）──離軌開關 或 臍帶斷──► LIFTED_OFF
    ├──2 s 點火窗內沒推力──► HANG_FIRE   （點火關、夾持保持鎖死、不重試）
    └──鑰匙／架電／臍帶／導軌異常、ABORT──► HOLD_ABORT（點火關、夾持保持鎖死）
 RELEASED ──1 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回、通知人員）

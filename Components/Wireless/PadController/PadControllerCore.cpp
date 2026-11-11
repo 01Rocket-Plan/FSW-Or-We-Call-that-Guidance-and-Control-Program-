@@ -219,7 +219,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       }
       if (in.thrustOk) {
         if (m_thrustSince_s < 0.0) m_thrustSince_s = now_s;
-        if (now_s - m_thrustSince_s >= m_p.thrustConfirm_s) {
+        if (now_s - m_thrustSince_s + kTimeEps_s >= m_p.thrustConfirm_s) {
           m_tRelease_s = now_s;
           setState(PadState::RELEASED, PadReason::NONE);
           break;

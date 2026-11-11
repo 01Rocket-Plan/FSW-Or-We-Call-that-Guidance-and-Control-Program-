@@ -43,7 +43,7 @@ module Components {
     param countdown_s: F64 default 30.0
     @ 點火窗：點火後多久內要確認推力（C15：塔上 2 秒）【待 Edward 定】
     param ignitionWindow_s: F64 default 2.0
-    @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s；100 Hz 連 2 拍）
+    @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s）。100 Hz：t0、+10 ms、+20 ms 連 3 個樣本有推力 → t0+20 ms 鬆夾持
     param thrustConfirm_s: F64 default 0.02
     @ 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 改 1.0 s（74F85 燃燒 0.873 s）
     param liftoffTimeout_s: F64 default 1.0
