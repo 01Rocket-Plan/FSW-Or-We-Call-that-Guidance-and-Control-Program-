@@ -12,7 +12,7 @@ static void runSimToReady(Ov3640DriverSim& drv, int maxTicks = 64) {
   drv.hostCmdPowerOn();
   for (int i = 0; i < maxTicks; ++i) {
     drv.hostSched100Hz();
-    if (drv.m_lastTlm.camState == CamState::READY) return;
+    if (drv.m_lastTlm.get_camState() == CamState::READY) return;
   }
 }
 
@@ -28,10 +28,10 @@ static void testTelemetryCamStatusOnly() {
   Ov3640DriverSim drv("ovSim");
   drv.hostLoadParams();
   runSimToReady(drv);
-  assert(drv.m_lastTlm.camState == CamState::READY);
-  assert(drv.m_lastTlm.fault == CamFault::NONE);
-  assert(drv.m_lastTlm.model == CamModel::OV3640);
-  assert(drv.m_lastTlm.role == CamRole::US_CAM);
+  assert(drv.m_lastTlm.get_camState() == CamState::READY);
+  assert(drv.m_lastTlm.get_fault() == CamFault::NONE);
+  assert(drv.m_lastTlm.get_model() == CamModel::OV3640);
+  assert(drv.m_lastTlm.get_role() == CamRole::US_CAM);
   assert(drv.m_tlmWrites >= 1);
 }
 
@@ -65,9 +65,9 @@ static void testFlightAdapterWithInjectedFrames() {
   for (int i = 0; i < 64; ++i) {
     frames.advance();
     drv.hostSched100Hz();
-    if (drv.m_lastTlm.camState == CamState::READY) break;
+    if (drv.m_lastTlm.get_camState() == CamState::READY) break;
   }
-  assert(drv.m_lastTlm.camState == CamState::READY);
+  assert(drv.m_lastTlm.get_camState() == CamState::READY);
   assert(drv.m_sccbWrites >= 12);
   assert(drv.m_sccbReads >= 2);
   drv.hostCmdCaptureStart();
@@ -86,8 +86,8 @@ static void testTypeRoleMismatchViaParams() {
   drv.hostLoadParams();
   drv.hostCmdPowerOn();
   for (int i = 0; i < 64; ++i) drv.hostSched100Hz();
-  assert(drv.m_lastTlm.camState == CamState::FAULT);
-  assert(drv.m_lastTlm.fault == CamFault::TYPE_ROLE_MISMATCH ||
+  assert(drv.m_lastTlm.get_camState() == CamState::FAULT);
+  assert(drv.m_lastTlm.get_fault() == CamFault::TYPE_ROLE_MISMATCH ||
          drv.m_lastFault == CamFault::TYPE_ROLE_MISMATCH);
 }
 
@@ -105,9 +105,9 @@ static void testChunkStreaming() {
   for (int i = 0; i < 64; ++i) {
     frames.advance();
     drv.hostSched100Hz();
-    if (drv.m_lastTlm.camState == CamState::READY) break;
+    if (drv.m_lastTlm.get_camState() == CamState::READY) break;
   }
-  assert(drv.m_lastTlm.camState == CamState::READY);
+  assert(drv.m_lastTlm.get_camState() == CamState::READY);
   drv.hostCmdCaptureStart();
   const U32 outsBefore = drv.m_imageOuts;
   const U32 endsBefore = drv.m_endChunks;
@@ -122,7 +122,7 @@ static void testChunkStreaming() {
   // Stop capture before 1 Hz tlm refresh (1 Hz would otherwise poll another frame).
   drv.hostCmdCaptureStop();
   drv.hostSched1Hz();
-  assert(drv.m_lastTlm.frameCount == 1);
+  assert(drv.m_lastTlm.get_frameCount() == 1);
 }
 
 // Binding #3: FRAME_MAX_BYTES exceeded → last chunk TRUNCATED, FrameTruncated event, no frameCount++
@@ -140,9 +140,9 @@ static void testFrameMaxBytesTruncation() {
   for (int i = 0; i < 64; ++i) {
     frames.advance();
     drv.hostSched100Hz();
-    if (drv.m_lastTlm.camState == CamState::READY) break;
+    if (drv.m_lastTlm.get_camState() == CamState::READY) break;
   }
-  assert(drv.m_lastTlm.camState == CamState::READY);
+  assert(drv.m_lastTlm.get_camState() == CamState::READY);
   drv.hostCmdCaptureStart();
   const U32 truncBefore = drv.m_truncEvents;
   const U32 outsBefore = drv.m_imageOuts;
@@ -156,7 +156,7 @@ static void testFrameMaxBytesTruncation() {
   assert(drv.m_imageOuts == outsBefore + 2);  // 2048 + 952
   drv.hostCmdCaptureStop();
   drv.hostSched1Hz();
-  assert(drv.m_lastTlm.frameCount == 0);      // truncated frames do not count
+  assert(drv.m_lastTlm.get_frameCount() == 0);      // truncated frames do not count
 }
 
 // Binding #1 via adapter: RecoverAttempt on 1 Hz
@@ -166,14 +166,14 @@ static void testAdapterFaultRecoverEvent() {
   drv.hostLoadParams();
   drv.hostCmdPowerOn();
   for (int i = 0; i < 64; ++i) drv.hostSched100Hz();
-  assert(drv.m_lastTlm.camState == CamState::READY);
+  assert(drv.m_lastTlm.get_camState() == CamState::READY);
   drv.hostCmdSimInject(static_cast<U8>(Ov3640SimFault::BUS_DOWN));
   // drain into FAULT during init of next... actually need fault during capture or re-init
   // Inject bus down then RESET+POWER to hit INIT with bus down
   drv.hostCmdReset();
   drv.hostCmdPowerOn();
   for (int i = 0; i < 32; ++i) drv.hostSched100Hz();
-  assert(drv.m_lastTlm.camState == CamState::FAULT);
+  assert(drv.m_lastTlm.get_camState() == CamState::FAULT);
   const U32 before = drv.m_recoverEvents;
   for (int i = 0; i < 5; ++i) drv.hostSched1Hz();
   assert(drv.m_recoverEvents == before + 1);

@@ -86,11 +86,11 @@ void testNormalPath() {
   assert(f.sink.lastLen == Ov3640SimDevice::kSimFrameBytes);
   assert(f.core.frameCount() == 5u);
   f.sink.pullTlm(f.core);
-  assert(f.sink.tlm.camState == CamState::READY);
-  assert(f.sink.tlm.frameCount == f.core.frameCount());
-  assert(f.sink.tlm.fault == CamFault::NONE);
-  assert(f.sink.tlm.model == CamModel::OV3640);
-  assert(f.sink.tlm.role == CamRole::US_CAM);
+  assert(f.sink.tlm.get_camState() == CamState::READY);
+  assert(f.sink.tlm.get_frameCount() == f.core.frameCount());
+  assert(f.sink.tlm.get_fault() == CamFault::NONE);
+  assert(f.sink.tlm.get_model() == CamModel::OV3640);
+  assert(f.sink.tlm.get_role() == CamRole::US_CAM);
 }
 
 void testCaptureRejectedWhenNotReady() {
@@ -277,9 +277,9 @@ void testTelemetryHasNoImage() {
   assert(f.sink.lastData[0] == 0xA0);
   f.sink.pullTlm(f.core);
   const CamStatus s = f.sink.tlm;
-  assert(s.frameCount == f.core.frameCount());
-  assert(s.model == CamModel::OV3640);
-  assert(s.role == CamRole::US_CAM);
+  assert(s.get_frameCount() == f.core.frameCount());
+  assert(s.get_model() == CamModel::OV3640);
+  assert(s.get_role() == CamRole::US_CAM);
   (void)s;
 }
 

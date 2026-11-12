@@ -49,8 +49,9 @@ struct Ov3640Params {
 
 class Ov3640Core {
  public:
-  static constexpr CamModel kDeclaredModel = CamModel::OV3640;
-  static constexpr CamRole kDeclaredRole = CamRole::US_CAM;
+  // Autocoded CamModel/CamRole constructors are not constexpr; store raw enum T.
+  static constexpr CamModel::T kDeclaredModel = CamModel::OV3640;
+  static constexpr CamRole::T kDeclaredRole = CamRole::US_CAM;
 
   Ov3640Core();
   ~Ov3640Core();
@@ -68,9 +69,9 @@ class Ov3640Core {
   void captureStop();
   bool capturing() const { return m_capturing; }
 
-  CamState state() const { return m_status.camState; }
-  CamFault fault() const { return m_status.fault; }
-  uint32_t frameCount() const { return m_status.frameCount; }
+  CamState state() const { return m_status.get_camState(); }
+  CamFault fault() const { return m_status.get_fault(); }
+  uint32_t frameCount() const { return m_status.get_frameCount(); }
   CamStatus status() const { return m_status; }
   uint16_t lastChipId() const { return m_lastChipId; }
   uint32_t initIndex() const { return m_initIdx; }

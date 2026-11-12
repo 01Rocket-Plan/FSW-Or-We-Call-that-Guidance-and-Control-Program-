@@ -32,7 +32,8 @@ fpp-check \
 echo "fpp-check OK"
 
 echo "== Ov3640SimTest (${CXX[*]}) =="
-"${CXX[@]}" -std=c++17 -Wall -Wextra -Werror -I"$ROOT" -I"$H" \
+# host_ac first: CamTypes.hpp includes autocoded *Ac.hpp (stand-ins live here)
+"${CXX[@]}" -std=c++17 -Wall -Wextra -Werror -I"$H/test/host_ac" -I"$ROOT" -I"$H" \
   "$H/test/Ov3640SimTest.cpp" \
   "$H/Ov3640Core.cpp" \
   "$H/Ov3640SimDevice.cpp" \

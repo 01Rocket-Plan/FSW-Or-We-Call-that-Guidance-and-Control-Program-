@@ -21,8 +21,8 @@ constexpr uint32_t kInitTableSize =
 }  // namespace
 
 Ov3640Core::Ov3640Core() {
-  m_status.model = CamModel::OV3640;
-  m_status.role = CamRole::US_CAM;
+  m_status.set_model(CamModel::OV3640);
+  m_status.set_role(CamRole::US_CAM);
 }
 
 Ov3640Core::~Ov3640Core() = default;
@@ -35,8 +35,8 @@ void Ov3640Core::configure(IOv3640Sccb* sccb, IOv3640FrameSource* frameSrc, IOv3
 
 void Ov3640Core::setParams(const Ov3640Params& p) {
   m_params = p;
-  m_status.model = p.model;
-  m_status.role = p.role;
+  m_status.set_model(p.model);
+  m_status.set_role(p.role);
 }
 
 void Ov3640Core::beginInitHandshake() {
@@ -46,12 +46,12 @@ void Ov3640Core::beginInitHandshake() {
   m_idOk = false;
   m_testFrameOk = false;
   m_capturing = false;
-  m_status.fault = CamFault::NONE;
+  m_status.set_fault(CamFault::NONE);
   enterState(CamState::INIT);
 }
 
 void Ov3640Core::start() {
-  if (m_status.camState == CamState::OFF) {
+  if (m_status.get_camState() == CamState::OFF) {
     beginInitHandshake();
   }
 }
@@ -76,15 +76,15 @@ void Ov3640Core::reset() {
   m_faultTicks = 0;
   m_recoverAttempts = 0;
   m_recoverLatched = false;
-  m_status.fault = CamFault::NONE;
-  m_status.frameCount = 0;
-  m_status.model = m_params.model;
-  m_status.role = m_params.role;
+  m_status.set_fault(CamFault::NONE);
+  m_status.set_frameCount(0);
+  m_status.set_model(m_params.model);
+  m_status.set_role(m_params.role);
   enterState(CamState::OFF);
 }
 
 bool Ov3640Core::captureStart() {
-  if (m_status.camState != CamState::READY) return false;
+  if (m_status.get_camState() != CamState::READY) return false;
   m_capturing = true;
   m_noFrameTicks = 0;
   return true;
@@ -96,14 +96,14 @@ void Ov3640Core::captureStop() {
 }
 
 void Ov3640Core::enterState(CamState s) {
-  const CamState from = m_status.camState;
+  const CamState from = m_status.get_camState();
   if (from == s) return;
-  m_status.camState = s;
+  m_status.set_camState(s);
   if (m_sink) m_sink->onStateChange(from, s);
 }
 
 void Ov3640Core::enterFault(CamFault f, uint32_t detail) {
-  m_status.fault = f;
+  m_status.set_fault(f);
   m_faultTicks = 0;
   m_capturing = false;
   if (m_sink) m_sink->onFault(f, detail);
@@ -124,7 +124,7 @@ void Ov3640Core::recordBus(bool ok) {
 bool Ov3640Core::tick(uint32_t tickHz) {
   if (tickHz != 1u && tickHz != 100u) return false;
 
-  switch (m_status.camState) {
+  switch (m_status.get_camState()) {
     case CamState::OFF:
       return false;
     case CamState::INIT:
@@ -151,11 +151,11 @@ bool Ov3640Core::stepInit() {
     recordBus(ok);
     if (ok) {
       ++m_initIdx;
-    } else if (m_status.camState == CamState::FAULT) {
+    } else if (m_status.get_camState() == CamState::FAULT) {
       return true;
     }
   }
-  if (m_status.camState == CamState::FAULT) return true;
+  if (m_status.get_camState() == CamState::FAULT) return true;
   if (m_initIdx >= kInitTableSize) {
     m_idOk = false;
     m_testFrameOk = false;
@@ -172,8 +172,8 @@ bool Ov3640Core::stepSelftest(uint32_t tickHz) {
                    static_cast<uint32_t>(m_params.role));
     return true;
   }
-  m_status.model = m_params.model;
-  m_status.role = m_params.role;
+  m_status.set_model(m_params.model);
+  m_status.set_role(m_params.role);
 
   if (!m_sccb) {
     enterFault(CamFault::BUS_TIMEOUT, 0);
@@ -184,10 +184,10 @@ bool Ov3640Core::stepSelftest(uint32_t tickHz) {
     uint8_t hi = 0, lo = 0;
     const bool ok1 = m_sccb->readReg(Ov3640Regs::PIDH, &hi);
     recordBus(ok1);
-    if (m_status.camState == CamState::FAULT) return true;
+    if (m_status.get_camState() == CamState::FAULT) return true;
     const bool ok2 = m_sccb->readReg(Ov3640Regs::PIDL, &lo);
     recordBus(ok2);
-    if (m_status.camState == CamState::FAULT) return true;
+    if (m_status.get_camState() == CamState::FAULT) return true;
     if (!ok1 || !ok2) {
       return true;
     }
@@ -237,13 +237,13 @@ bool Ov3640Core::stepReady(uint32_t tickHz) {
   }
   if (got) {
     m_noFrameTicks = 0;
-    const uint32_t frameNumber = m_status.frameCount + 1u;
+    const uint32_t frameNumber = m_status.get_frameCount() + 1u;
     bool accepted = true;
     if (m_sink) {
       accepted = m_sink->onFrame(view.data, view.length, frameNumber);
     }
     if (accepted) {
-      ++m_status.frameCount;
+      m_status.set_frameCount(m_status.get_frameCount() + 1u);
     }
   } else if (tickHz == 100u) {
     ++m_noFrameTicks;
