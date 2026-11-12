@@ -10,7 +10,7 @@ if [ -z "${CXX:-}" ]; then
     CXX="python3 -m ziglang c++"
   fi
 fi
-CFLAGS=(-std=c++14 -Wall -Wextra -Werror -I"$R")
+CFLAGS=(-std=c++14 -Wall -Wextra -Werror -I"$R/Components/Camera/Ov3640Driver/test/host_ac" -I"$R")
 
 echo "== Esp32CamSimTest =="
 $CXX "${CFLAGS[@]}" \

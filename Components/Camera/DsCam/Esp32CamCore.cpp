@@ -59,11 +59,11 @@ void Esp32CamCore::enterFault(CamFault f, uint32_t detail) {
 
 CamStatus Esp32CamCore::status() const {
   CamStatus s{};
-  s.camState = m_state;
-  s.fault = m_fault;
-  s.frameCount = m_frameCount;
-  s.model = m_model;
-  s.role = m_role;
+  s.set_camState(m_state);
+  s.set_fault(m_fault);
+  s.set_frameCount(m_frameCount);
+  s.set_model(m_model);
+  s.set_role(m_role);
   return s;
 }
 

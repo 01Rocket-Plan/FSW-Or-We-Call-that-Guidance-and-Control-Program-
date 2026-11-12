@@ -39,7 +39,7 @@ int main() {
 
   std::printf("W4) CamStatus.camState field (not reserved 'state')\n");
   CamStatus s = core.status();
-  CHECK(s.camState == CamState::INIT);
+  CHECK(s.get_camState() == CamState::INIT);
 
   if (g_fail) {
     std::printf("Esp32CamWrapperLogicTest: FAILED (%d)\n", g_fail);

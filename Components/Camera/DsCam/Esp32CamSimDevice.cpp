@@ -33,11 +33,11 @@ void Esp32CamSimDevice::push(const uint8_t* buf, uint32_t len) {
 }
 
 void Esp32CamSimDevice::pushInfo() {
-  CamModel repModel = (m_fault == Esp32CamSimFault::WRONG_MODEL) ? CamModel::OV3640 : m_model;
+  CamModel repModel = (m_fault == Esp32CamSimFault::WRONG_MODEL) ? CamModel(CamModel::OV3640) : m_model;
   if (m_fault == Esp32CamSimFault::WRONG_MODEL && m_model == CamModel::OV3640) {
     repModel = CamModel::ESP32_CAM;
   }
-  CamRole repRole = (m_fault == Esp32CamSimFault::WRONG_ROLE) ? CamRole::US_CAM : m_role;
+  CamRole repRole = (m_fault == Esp32CamSimFault::WRONG_ROLE) ? CamRole(CamRole::US_CAM) : m_role;
   if (m_fault == Esp32CamSimFault::WRONG_ROLE && m_role == CamRole::US_CAM) {
     repRole = CamRole::DS_CAM;
   }
