@@ -1,5 +1,7 @@
 #include "PadControllerCore.hpp"
 
+#include <cmath>
+
 namespace PadLink {
 
 namespace {
@@ -15,11 +17,37 @@ std::uint16_t clampU16(double v) {
   return static_cast<std::uint16_t>(v + 0.5);
 }
 
+bool timeParamOk(double v) { return std::isfinite(v) && v >= 0.0; }
+
 }  // namespace
 
 PadControllerCore::PadControllerCore(IPadCmdAuth* auth, std::uint8_t bootId,
                                      IPadEvents* events)
-    : m_gate(auth, bootId), m_events(events) {}
+    : m_gate(auth, bootId), m_events(events) {
+  m_paramsOk = paramsValid(m_p);
+}
+
+bool PadControllerCore::paramsValid(const PadParams& p) {
+  const double t[] = {p.countdown_s,         p.ignitionWindow_s,       p.thrustConfirm_s,
+                      p.releaseMargin_s,     p.clampActuatorLatency_s, p.liftoffTimeout_s,
+                      p.releaseDeadline_s,   p.groundLinkTimeout_s,    p.umbilicalTimeout_s,
+                      p.liftoffLoadHold_s};
+  for (double v : t) {
+    if (!timeParamOk(v)) return false;
+  }
+  if (!(p.thrustConfirm_s > 0.0) || !(p.liftoffTimeout_s > 0.0)) return false;
+  if (!std::isfinite(p.clampOpenTimeout_s) || !std::isfinite(p.liftoffLoadMin_N)) return false;
+  // 鬆夾持整段時序（確認＋裕度＋夾持動作）必須在期限內。
+  return p.thrustConfirm_s + p.releaseMargin_s + p.clampActuatorLatency_s <=
+         p.releaseDeadline_s + kTimeEps_s;
+}
+
+bool PadControllerCore::configure(const PadParams& p) {
+  m_p = p;
+  m_paramsOk = paramsValid(p);
+  if (!m_paramsOk && m_events != nullptr) m_events->onBadParams(p);
+  return m_paramsOk;
+}
 
 void PadControllerCore::setState(PadState s, PadReason r) {
   const PadState from = m_state;
@@ -123,6 +151,11 @@ PadCmdResult PadControllerCore::handleCommand(const GroundCmdMsg& cmd, double no
         why = PadReason::BUSY;
         return PadCmdResult::REJECTED;
       }
+      if (!m_paramsOk) {
+        why = PadReason::BAD_PARAMS;
+        m_reason = why;
+        return PadCmdResult::REJECTED;
+      }
       if (!allGreen) {
         why = firstRed(m_il);
         m_reason = why;
@@ -185,13 +218,14 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       break;
 
     case PadState::ARMED:
-      if (!allGreen) setState(PadState::SAFE, firstRed(m_il));
+      if (!m_paramsOk) setState(PadState::SAFE, PadReason::BAD_PARAMS);
+      else if (!allGreen) setState(PadState::SAFE, firstRed(m_il));
       break;
 
     case PadState::COUNTDOWN:
-      if (!allGreen) {
+      if (!allGreen || !m_paramsOk) {
         // 一紅就終止倒數；要重新完整走 ARM → LAUNCH，不會自動恢復。
-        setState(PadState::SAFE, firstRed(m_il));
+        setState(PadState::SAFE, m_paramsOk ? firstRed(m_il) : PadReason::BAD_PARAMS);
         m_countdownRemaining_s = 0.0;
         break;
       }
@@ -202,6 +236,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         m_tIgnition_s = now_s;
         m_thrustSince_s = -1.0;
         m_thrustFirst_s = -1.0;
+        m_tConfirm_s = -1.0;
         setState(PadState::IGNITION, PadReason::NONE);
       }
       break;
@@ -218,6 +253,23 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         setState(PadState::HOLD_ABORT, bad);
         break;
       }
+      // 鬆夾持期限（Edward PR #52 審查）：第一次看到推力後太久還沒鬆 → 不鬆、繼續夾住。
+      const double deadline =
+          m_p.releaseDeadline_s > m_p.thrustConfirm_s ? m_p.releaseDeadline_s : m_p.thrustConfirm_s;
+      if (m_tConfirm_s >= 0.0) {
+        // 推力已確認，等 releaseMargin_s：這段時間推力只要消失一拍就不鬆（鬆架那一拍也要有推力）。
+        if (!in.thrustOk) {
+          setState(PadState::HOLD_ABORT, PadReason::THRUST_LOST);
+        } else if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
+          setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
+        } else if (now_s - m_tConfirm_s + kTimeEps_s >= m_p.releaseMargin_s) {
+          m_tRelease_s = now_s;
+          m_clampOpenSeen = false;
+          m_loadLowSince_s = -1.0;
+          setState(PadState::RELEASED, PadReason::NONE);
+        }
+        break;
+      }
       if (in.thrustOk) {
         if (m_thrustFirst_s < 0.0) m_thrustFirst_s = now_s;
         if (m_thrustSince_s < 0.0) m_thrustSince_s = now_s;
@@ -225,16 +277,18 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         m_thrustSince_s = -1.0;
       }
       if (m_thrustFirst_s >= 0.0) {
-        // 鬆夾持期限（Edward PR #52 審查）：第一次看到推力後太久還沒確認 → 不鬆、繼續夾住。
-        const double deadline =
-            m_p.releaseDeadline_s > m_p.thrustConfirm_s ? m_p.releaseDeadline_s : m_p.thrustConfirm_s;
         if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
           setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
           break;
         }
         if (in.thrustOk && now_s - m_thrustSince_s + kTimeEps_s >= m_p.thrustConfirm_s) {
-          m_tRelease_s = now_s;
-          setState(PadState::RELEASED, PadReason::NONE);
+          m_tConfirm_s = now_s;
+          if (m_p.releaseMargin_s <= kTimeEps_s) {  // 裕度 0：確認那拍就鬆（舊行為）
+            m_tRelease_s = now_s;
+            m_clampOpenSeen = false;
+            m_loadLowSince_s = -1.0;
+            setState(PadState::RELEASED, PadReason::NONE);
+          }
           break;
         }
       }
@@ -244,14 +298,34 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       break;
     }
 
-    case PadState::RELEASED:
-      // 離軌＝掛耳離開導軌（離軌開關），或臍帶已經被拉斷。起飛後臍帶斷是預期行為。
-      if (in.offRail || !m_rocketFresh) {
+    case PadState::RELEASED: {
+      // 離軌判定三層（Edward PR #52 審查）：
+      //   主判定 offRail 單獨成立就算（夾持開到位開關壞掉也照算）；
+      //   備援 荷重元低於 liftoffLoadMin_N 持續 liftoffLoadHold_s；
+      //   輔助 臍帶逾時單獨不算（可能只是被震斷），要和荷重元低同時成立才算。
+      //   備援／輔助都要先讀到夾持開到位（沒裝開關時不等）：夾持沒開，荷重元掉下來不代表箭走了。
+      const bool clampCheck = m_p.clampOpenTimeout_s > 0.0;
+      if (in.clampOpen) m_clampOpenSeen = true;
+      const bool loadLow = in.load_N < m_p.liftoffLoadMin_N;  // NaN → false（不算離軌）
+      if (loadLow) {
+        if (m_loadLowSince_s < 0.0) m_loadLowSince_s = now_s;
+      } else {
+        m_loadLowSince_s = -1.0;
+      }
+      const bool loadHeld =
+          loadLow && now_s - m_loadLowSince_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
+      const bool backupAllowed = !clampCheck || m_clampOpenSeen;
+      if (in.offRail || (backupAllowed && (loadHeld || (loadLow && !m_rocketFresh)))) {
         setState(PadState::LIFTED_OFF, PadReason::NONE);
+      } else if (clampCheck && !m_clampOpenSeen &&
+                 now_s - m_tRelease_s + kTimeEps_s >= m_p.clampOpenTimeout_s) {
+        // 夾持卡住：點火早已關、鬆夾持輸出維持 true（不會再夾回），通知人員不要靠近。
+        setState(PadState::NO_LIFTOFF, PadReason::CLAMP_STUCK);
       } else if (now_s - m_tRelease_s >= m_p.liftoffTimeout_s) {
         setState(PadState::NO_LIFTOFF, PadReason::NO_LIFTOFF);
       }
       break;
+    }
 
     case PadState::LIFTED_OFF:
     case PadState::HANG_FIRE:

@@ -33,6 +33,9 @@ module Components {
     NOT_ARMED = 15
     BUSY = 16
     LATE_RELEASE = 17
+    THRUST_LOST = 18
+    CLAMP_STUCK = 19
+    BAD_PARAMS = 20
   }
 
   @ 地面 → 架指令碼（數值與 PadLink::PadCmdOp 一致）
@@ -66,6 +69,10 @@ module Components {
     thrustOk: bool
     tilt_rad: F32
     padV_V: F32
+    @ 夾持開到位限位開關（假設硬體）
+    clampOpen: bool
+    @ 架下荷重元：箭體對架的力（含夾持拉力），N（假設硬體）
+    load_N: F32
   }
 
   @ 架上致動命令：點火繼電器（軟體這一道，實體鑰匙在硬體串聯）與夾持

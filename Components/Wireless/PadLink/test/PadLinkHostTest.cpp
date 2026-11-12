@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 using namespace PadLink;
@@ -83,17 +84,21 @@ PadInputs greenInputs() {
   in.railJam = false;
   in.tilt_rad = 0.01;
   in.padV_V = 12.4;
+  in.load_N = 20.0;  // 箭靜置在架上（假設約 2 kg）
   return in;
 }
 
 struct EvRec : IPadEvents {
   PadReason lastCmdReason = PadReason::NONE;
   int stateChanges = 0;
+  int badParams = 0;
   void onStateChange(PadState, PadState, PadReason) override { ++stateChanges; }
   void onCommand(PadCmdOp, PadCmdResult, PadReason why) override { lastCmdReason = why; }
+  void onBadParams(const PadParams&) override { ++badParams; }
 };
 
-//! 一套「架＋箭＋地面」模擬：100 Hz 跑架，10 Hz 送臍帶，5 Hz 送地面心跳。
+//! 一套「架＋箭＋地面」模擬：1 kHz 跑架（1 ms 一拍），10 Hz 送臍帶，5 Hz 送地面心跳。
+//! autoClamp：模擬夾持機構，鬆夾持命令發出後 clampLatencyTicks 拍讀到開到位。
 struct Rig {
   FakeAuth auth;
   EvRec ev;
@@ -110,6 +115,9 @@ struct Rig {
   bool everIgniterWithoutKey = false;
   bool clampReleasedThenLocked = false;
   bool sawClampRelease = false;
+  bool autoClamp = true;
+  int clampLatencyTicks = 20;  // 假設 clampActuatorLatency_s＝0.02 s
+  int releasedTicks = 0;
 
   Rig() {
     uart.pad = &pad;
@@ -120,15 +128,18 @@ struct Rig {
     const auto f = cmdFrame(op, ++ctr, kBoot, goodTag);
     return pad.onGroundPacket(f.data(), f.size(), t);
   }
-  void step(double dt = 0.01) {
+  void step(double dt = 0.001) {
     t += dt;
+    ++steps;
     uart.now = t;
     rocket.setBit(bit, t);
     rocket.tick(t);
-    if (groundAlive && static_cast<long>(t * 100.0 + 0.5) % 20 == 0) send(PadCmdOp::HEARTBEAT);
+    if (groundAlive && steps % 200 == 0) send(PadCmdOp::HEARTBEAT);
+    if (autoClamp && releasedTicks >= clampLatencyTicks) in.clampOpen = true;
     out = pad.tick(in, t);
-    // 架 → 箭（臍帶）：10 Hz 回送架狀態
-    if (++steps % 10 == 0 && uart.connected) {
+    if (out.clampRelease) ++releasedTicks;
+    // 架 → 箭（臍帶）：10 Hz（每 100 拍）回送架狀態
+    if (steps % 100 == 0 && uart.connected) {
       std::uint8_t f[kMaxFrameBytes];
       const std::size_t n = pad.buildUmbilicalFrame(f, sizeof(f));
       rocket.onUmbilicalBytes(f, n, t);
@@ -138,7 +149,7 @@ struct Rig {
     if (out.clampRelease) sawClampRelease = true;
   }
   void run(double sec) {
-    const int n = static_cast<int>(sec * 100.0 + 0.5);
+    const int n = static_cast<int>(sec * 1000.0 + 0.5);
     for (int i = 0; i < n; ++i) step();
   }
   void warmUp() { run(1.0); }
@@ -458,7 +469,7 @@ void testGroundLossDuringIgnitionContinues() {
 void testAbortDuringIgnitionHoldsClamp() {
   Rig r;
   reachIgnition(r);
-  r.in.thrustOk = true;  // 推力剛起來，還沒滿確認時間（thrustConfirm_s＝0.02 s → 只走 1 拍）
+  r.in.thrustOk = true;  // 推力剛起來，還沒滿確認時間（thrustConfirm_s＝0.02 s → 只走 10 拍）
   r.run(0.01);
   CHECK(r.send(PadCmdOp::ABORT) == PadCmdResult::ACCEPTED);
   CHECK(r.pad.state() == PadState::HOLD_ABORT);
@@ -477,75 +488,137 @@ void testKeyPulledDuringIgnition() {
   CHECK(!r.everIgniterWithoutKey);
 }
 
-// 推力確認的精確時序：第一個推力樣本 t0 → t0+10 ms 仍 IGNITION → t0+20 ms 那一拍 RELEASED。
-// 換幾個不同的起點（浮點時間值不同），每次都要剛好 3 個樣本，不能隨機多等一拍。
+// 推力確認的精確時序（1 kHz）：第一個推力樣本 t0 → t0+20 ms（第 21 個樣本）確認 →
+// 再等 releaseMargin_s（1e-3 s＝一拍）→ t0+21 ms 那一拍鬆夾持。
+// 換幾個不同的起點（浮點時間值不同），每次都要剛好在同一拍，不能隨機多等一拍。
 void testThrustConfirmExactTiming() {
   for (int offset = 0; offset < 10; ++offset) {
     Rig r;
     reachIgnition(r);
-    for (int i = 0; i < offset; ++i) r.step();
+    for (int i = 0; i < offset * 7; ++i) r.step();
     CHECK(r.pad.state() == PadState::IGNITION);
     r.in.thrustOk = true;
-    r.step();  // t0
-    CHECK(r.pad.state() == PadState::IGNITION);
-    r.step();  // t0 + 10 ms
-    CHECK(r.pad.state() == PadState::IGNITION);
-    CHECK(!r.out.clampRelease);
-    r.step();  // t0 + 20 ms
+    for (int i = 0; i <= 20; ++i) {  // t0 … t0+20 ms：確認了但還不鬆
+      r.step();
+      CHECK(r.pad.state() == PadState::IGNITION);
+      CHECK(!r.out.clampRelease && r.out.igniterOn);
+    }
+    r.step();  // t0 + 21 ms
     CHECK(r.pad.state() == PadState::RELEASED);
     CHECK(r.out.clampRelease && !r.out.igniterOn);
   }
-  // 排程抖動：實機 100 Hz 的拍子可能早到幾百 µs（例如 9.9 ms），第 3 個樣本仍要算數，不能拖到 30 ms。
+  // 排程抖動：實機 1 kHz 的拍子可能早到幾十 µs（例如 30 µs），第 21 個樣本仍要算數、鬆架那拍也不能多等。
   {
     Rig j;
     reachIgnition(j);
     j.in.thrustOk = true;
-    j.step();         // t0
-    j.step(0.0099);   // t0 + 9.9 ms
-    CHECK(j.pad.state() == PadState::IGNITION);
-    j.step(0.0099);   // t0 + 19.8 ms
+    j.step();                                     // t0
+    for (int i = 0; i < 19; ++i) j.step(0.001);   // t0 + 19 ms
+    j.step(0.00097);                              // t0 + 19.97 ms：第 21 個樣本，早到 30 µs → 確認
+    CHECK(j.pad.state() == PadState::IGNITION && !j.out.clampRelease);
+    j.step(0.00097);                              // 裕度 0.97 ms ≥ 1 ms − kTimeEps_s → 鬆
     CHECK(j.pad.state() == PadState::RELEASED);
   }
   // 雜訊：推力中斷一拍就重新計時
   Rig r;
   reachIgnition(r);
   r.in.thrustOk = true;
-  r.step();
-  r.step();
+  for (int i = 0; i < 10; ++i) r.step();
   r.in.thrustOk = false;
   r.step();
   r.in.thrustOk = true;
-  r.step();
-  r.step();
+  for (int i = 0; i < 21; ++i) r.step();  // 新 t0 … +20 ms
   CHECK(r.pad.state() == PadState::IGNITION);
   r.step();
   CHECK(r.pad.state() == PadState::RELEASED);
 }
 
+// releaseMargin_s：鬆夾持剛好落在「確認＋裕度」那一拍；裕度 0 就是確認那拍鬆。
+void testReleaseAtConfirmPlusMargin() {
+  const struct {
+    double margin;
+    int releaseTick;  // 從 t0（第 0 拍）算第幾拍鬆
+  } cases[] = {{0.001, 21}, {0.005, 25}, {0.0, 20}};
+  for (const auto& c : cases) {
+    Rig r;
+    PadParams pp;
+    pp.releaseMargin_s = c.margin;
+    CHECK(r.pad.configure(pp));
+    reachIgnition(r);
+    r.in.thrustOk = true;
+    for (int i = 0; i < c.releaseTick; ++i) {
+      r.step();
+      CHECK(r.pad.state() == PadState::IGNITION && !r.out.clampRelease);
+    }
+    r.step();
+    CHECK(r.pad.state() == PadState::RELEASED && r.out.clampRelease);
+  }
+}
+
+// 等 releaseMargin_s 的這段時間推力消失 → HOLD_ABORT／THRUST_LOST、絕不鬆夾持。
+void testThrustLostDuringMargin() {
+  for (int lostAt = 21; lostAt <= 24; ++lostAt) {  // 裕度 5 ms：確認在第 20 拍，第 21～24 拍任一拍掉
+    Rig r;
+    PadParams pp;
+    pp.releaseMargin_s = 0.005;
+    CHECK(r.pad.configure(pp));
+    reachIgnition(r);
+    r.in.thrustOk = true;
+    for (int i = 0; i < lostAt; ++i) r.step();
+    CHECK(r.pad.state() == PadState::IGNITION);
+    r.in.thrustOk = false;
+    r.step();
+    CHECK(r.pad.state() == PadState::HOLD_ABORT);
+    CHECK(r.pad.lastReason() == PadReason::THRUST_LOST);
+    CHECK(!r.out.clampRelease && !r.out.igniterOn);
+    r.in.thrustOk = true;
+    r.run(0.5);
+    CHECK(r.pad.state() == PadState::HOLD_ABORT && !r.sawClampRelease);
+  }
+  // 預設裕度一拍：剛好在鬆架那一拍（t0+21 ms）推力消失 → 也不鬆
+  Rig r;
+  reachIgnition(r);
+  r.in.thrustOk = true;
+  for (int i = 0; i <= 20; ++i) r.step();
+  r.in.thrustOk = false;
+  r.step();
+  CHECK(r.pad.state() == PadState::HOLD_ABORT);
+  CHECK(r.pad.lastReason() == PadReason::THRUST_LOST);
+  CHECK(!r.sawClampRelease);
+}
+
 // 鬆夾持期限（releaseDeadline_s＝0.05 s，Edward PR #52 審查）：
-// 推力抖動讓確認拖過期限 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）；剛好在期限內 → 照常鬆。
+// 推力抖動讓確認＋裕度拖過期限 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）；在期限內 → 照常鬆。
 void testLateReleaseHoldsClamp() {
-  auto drive = [](Rig& r, const bool* pattern, int n) {
-    for (int i = 0; i < n; ++i) {
-      r.in.thrustOk = pattern[i];
+  // 推力：t0…+9 ms 有、斷 gap 拍、之後一直有。
+  auto drive = [](Rig& r, int gap, int total) {
+    for (int i = 0; i < total; ++i) {
+      r.in.thrustOk = !(i >= 10 && i < 10 + gap);
       r.step();
     }
   };
   {
-    // t0 有、+10 有、+20 斷、+30 有、+40 有、+50 有 → 在 +50（＝期限）確認 → 鬆
+    // 斷 10 ms：+20 重新起算 → +40 確認 → +41 鬆（≤ 50 ms）
     Rig r;
     reachIgnition(r);
-    const bool p[] = {true, true, false, true, true, true};
-    drive(r, p, 6);
+    drive(r, 10, 42);
     CHECK(r.pad.state() == PadState::RELEASED);
     CHECK(r.out.clampRelease);
   }
   {
-    // t0 有、+10 有、+20 斷、+30 斷、+40 有、+50 有、+60 有 → +60 才夠 20 ms，已過期限 → 不鬆
+    // 斷 20 ms：+30 起算 → +50 確認（剛好期限）→ +51 該鬆時已過期限 → 不鬆
     Rig r;
     reachIgnition(r);
-    const bool p[] = {true, true, false, false, true, true, true};
-    drive(r, p, 7);
+    drive(r, 20, 52);
+    CHECK(r.pad.state() == PadState::HOLD_ABORT);
+    CHECK(r.pad.lastReason() == PadReason::LATE_RELEASE);
+    CHECK(!r.sawClampRelease);
+  }
+  {
+    // 斷 21 ms：+51 才夠 20 ms，確認前就過期限 → 不鬆
+    Rig r;
+    reachIgnition(r);
+    drive(r, 21, 53);
     CHECK(r.pad.state() == PadState::HOLD_ABORT);
     CHECK(r.pad.lastReason() == PadReason::LATE_RELEASE);
     CHECK(!r.out.clampRelease && !r.out.igniterOn);
@@ -556,16 +629,174 @@ void testLateReleaseHoldsClamp() {
     r.run(0.1);  // 箭端看不到 THRUST_CONFIRMED／CLAMP_RELEASED
     CHECK(!(r.rocket.lastPadStatus().flags & (PTR_THRUST_CONFIRMED | PTR_CLAMP_RELEASED)));
   }
+}
+
+// 參數檢查：thrustConfirm_s＋releaseMargin_s＋clampActuatorLatency_s 超過 releaseDeadline_s（或 NaN／負值）
+// → configure() 回 false、通知事件、ARM 以 BAD_PARAMS 拒絕；改回合理值就能 ARM。
+void testBadParamsRefuseArm() {
+  CHECK(PadControllerCore::paramsValid(PadParams{}));
+  PadParams edge;
+  edge.clampActuatorLatency_s = 0.029;  // 0.02＋0.001＋0.029＝0.05：剛好等於期限 → 可以
+  CHECK(PadControllerCore::paramsValid(edge));
+  PadParams bads[5];
+  bads[0].clampActuatorLatency_s = 0.04;  // 0.061 > 0.05
+  bads[1].releaseDeadline_s = 0.0;        // 期限比確認時間短
+  bads[2].releaseMargin_s = -0.001;
+  bads[3].thrustConfirm_s = std::numeric_limits<double>::quiet_NaN();
+  bads[4].releaseMargin_s = 0.03;         // 0.02＋0.03＋0.02 > 0.05
+  for (const PadParams& b : bads) {
+    Rig r;
+    CHECK(!r.pad.configure(b));
+    CHECK(!r.pad.paramsOk());
+    CHECK(r.ev.badParams == 1);
+    r.warmUp();
+    CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::REJECTED);
+    CHECK(r.ev.lastCmdReason == PadReason::BAD_PARAMS);
+    CHECK(r.pad.state() == PadState::SAFE);
+    CHECK(r.pad.configure(PadParams{}));
+    CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+  }
+  // ARMED 中被改成不合理 → 退回 SAFE／BAD_PARAMS
+  Rig r;
+  r.warmUp();
+  CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+  CHECK(!r.pad.configure(bads[0]));
+  r.step();
+  CHECK(r.pad.state() == PadState::SAFE);
+  CHECK(r.pad.lastReason() == PadReason::BAD_PARAMS);
+}
+
+void releaseNow(Rig& r) {
+  reachIgnition(r);
+  r.in.thrustOk = true;
+  r.run(0.022);
+  CHECK(r.pad.state() == PadState::RELEASED);
+}
+
+// 離軌主判定：離軌開關單獨成立就算（夾持開到位沒讀到、荷重元還在、臍帶還在都一樣）。
+void testOffRailAloneLiftsOff() {
+  Rig r;
+  r.autoClamp = false;
+  releaseNow(r);
+  r.run(0.005);
+  r.in.offRail = true;
+  r.step();
+  CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  CHECK(r.pad.lastReason() == PadReason::NONE);
+}
+
+// 臍帶斷單獨不算離軌（可能只是被震斷）：荷重元還在 → 一直 RELEASED，到 liftoffTimeout_s → NO_LIFTOFF。
+void testUmbilicalLossAloneNotLiftoff() {
+  Rig r;
+  releaseNow(r);
+  r.uart.connected = false;
+  r.run(0.8);  // 早已超過 umbilicalTimeout_s
+  CHECK(!r.pad.rocketLinkOk());
+  CHECK(r.pad.state() == PadState::RELEASED);
+  r.run(0.25);  // 超過 liftoffTimeout_s
+  CHECK(r.pad.state() == PadState::NO_LIFTOFF);
+  CHECK(r.pad.lastReason() == PadReason::NO_LIFTOFF);
+  CHECK(r.out.clampRelease && !r.out.igniterOn && !r.clampReleasedThenLocked);
+}
+
+// 荷重元備援：低於 liftoffLoadMin_N 持續 liftoffLoadHold_s（0.05 s）→ LIFTED_OFF；
+// 臍帶斷＋荷重元低同時成立 → 不必等持續時間。
+void testLoadCellLiftoff() {
   {
-    // 期限設得比確認時間短 → 以確認時間為準，正常推力照樣鬆
+    Rig r;
+    releaseNow(r);
+    r.run(0.03);  // 夾持已開到位
+    r.in.load_N = 0.1;
+    for (int i = 0; i < 50; ++i) {  // 第 0…49 拍（49 ms）還不算
+      r.step();
+      CHECK(r.pad.state() == PadState::RELEASED);
+    }
+    r.step();  // 50 ms
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    Rig r;
+    releaseNow(r);
+    r.run(0.03);
+    r.uart.connected = false;
+    r.run(0.6);  // 臍帶逾時，但荷重元還在 → 不算
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = 0.0;
+    r.step();
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    // 夾持沒讀到開到位時，荷重元掉下來不算（夾持卡住、箭在拉夾持）→ CLAMP_STUCK
+    Rig r;
+    r.autoClamp = false;
+    releaseNow(r);
+    r.in.load_N = 0.0;
+    r.run(0.09);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.run(0.02);
+    CHECK(r.pad.state() == PadState::NO_LIFTOFF);
+    CHECK(r.pad.lastReason() == PadReason::CLAMP_STUCK);
+  }
+}
+
+// 荷重元短暫掉下來（< liftoffLoadHold_s）不算離軌，之後恢復 → 照常走到 NO_LIFTOFF。
+void testShortLoadDropNotLiftoff() {
+  Rig r;
+  releaseNow(r);
+  r.run(0.03);
+  r.in.load_N = 0.0;
+  r.run(0.03);
+  r.in.load_N = 20.0;
+  r.step();
+  r.in.load_N = 0.0;
+  r.run(0.04);
+  r.in.load_N = 20.0;
+  r.run(0.1);
+  CHECK(r.pad.state() == PadState::RELEASED);
+  r.run(1.0);
+  CHECK(r.pad.state() == PadState::NO_LIFTOFF);
+  CHECK(r.pad.lastReason() == PadReason::NO_LIFTOFF);
+}
+
+// 夾持開到位回饋：鬆夾持命令後 clampOpenTimeout_s（0.1 s）內沒讀到 → NO_LIFTOFF／CLAMP_STUCK；
+// 點火關、鬆夾持輸出維持 true（不會再夾回）。clampOpenTimeout_s ≤ 0＝不檢查。
+void testClampStuck() {
+  {
+    Rig r;
+    r.autoClamp = false;
+    releaseNow(r);
+    r.run(0.098);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.run(0.002);
+    CHECK(r.pad.state() == PadState::NO_LIFTOFF);
+    CHECK(r.pad.lastReason() == PadReason::CLAMP_STUCK);
+    CHECK(r.out.clampRelease && !r.out.igniterOn);
+    r.run(1.0);
+    CHECK(r.pad.state() == PadState::NO_LIFTOFF && !r.clampReleasedThenLocked);
+    r.run(0.1);
+    CHECK(r.rocket.lastPadStatus().lastReason == static_cast<std::uint8_t>(PadReason::CLAMP_STUCK));
+  }
+  {
+    // 開到位在期限前讀到 → 不報卡住
+    Rig r;
+    r.clampLatencyTicks = 80;
+    releaseNow(r);
+    r.run(0.5);
+    CHECK(r.pad.state() == PadState::RELEASED);
+  }
+  {
+    // 沒裝開到位開關（clampOpenTimeout_s＝0）→ 不檢查，荷重元備援也不必等開到位
     Rig r;
     PadParams pp;
-    pp.releaseDeadline_s = 0.0;
-    r.pad.configure(pp);
-    reachIgnition(r);
-    r.in.thrustOk = true;
-    r.run(0.03);
+    pp.clampOpenTimeout_s = 0.0;
+    CHECK(r.pad.configure(pp));
+    r.autoClamp = false;
+    releaseNow(r);
+    r.run(0.5);
     CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = 0.0;
+    r.run(0.06);
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
   }
 }
 
@@ -686,12 +917,20 @@ static int PadLinkLegacyMain() {
   testKeyPulledDuringIgnition();
   testThrustConfirmExactTiming();
   testLateReleaseHoldsClamp();
+  testReleaseAtConfirmPlusMargin();
+  testThrustLostDuringMargin();
+  testBadParamsRefuseArm();
+  testOffRailAloneLiftsOff();
+  testUmbilicalLossAloneNotLiftoff();
+  testLoadCellLiftoff();
+  testShortLoadDropNotLiftoff();
+  testClampStuck();
   testNoLiftoffAfterRelease();
   testUmbilicalLinkReadyRules();
   testRocketVetoSeenByRocket();
   testUmbilicalLinkRxRules();
   if (g_fail == 0) {
-    std::printf("PadLinkHostTest: all 18 tests passed\n");
+    std::printf("PadLinkHostTest: all 29 test groups passed\n");
     return 0;
   }
   std::printf("PadLinkHostTest: %d CHECK(s) FAILED\n", g_fail);
