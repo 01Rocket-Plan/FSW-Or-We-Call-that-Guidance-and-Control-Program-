@@ -1,6 +1,8 @@
 @ Stubs matching Camera Ov3640ImageOut / Esp32CamImageOut (2KB chunks).
-@ Preferred for F´ build: Components/Recorder/SdLogger/CamImagePorts.fpp (same content).
-@ When topology includes real Camera FPP, drop Recorder-local port defs and use Camera's.
+@ For local fpp-check of SdLogger.fpp only; not part of the F´ CMake build.
+@ Do not include together with Camera FPP — the ports are defined in
+@ Components/Camera/Ov3640Driver/Ov3640Driver.fpp and Components/Camera/DsCam/Esp32Cam.fpp.
+
 module Components {
 
   constant SdLogger_IMAGE_CHUNK_MAX = 2048
