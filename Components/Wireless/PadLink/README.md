@@ -53,12 +53,19 @@ SAFE ──ARM(簽名, 全綠)──► ARMED ──LAUNCH(簽名)──► COUN
   ▲                         │                        │
   └──任一紅燈／ABORT／DISARM─┴────────────────────────┘
 
-IGNITION ──推力持續 0.02 s（100 Hz 連 3 樣本）──► RELEASED（鬆夾持）──離軌開關 或 臍帶斷──► LIFTED_OFF
-   ├──2 s 點火窗內沒推力──► HANG_FIRE   （點火關、夾持保持鎖死、不重試）
-   ├──第一次有推力後 0.05 s 內沒完成確認──► HOLD_ABORT／LATE_RELEASE（不鬆了、繼續夾住）
+IGNITION ──推力持續 thrustConfirm_s（1 kHz 連 21 樣本）──► 再等 releaseMargin_s ──► RELEASED（鬆夾持）
+   ├──ignitionWindow_s 點火窗內沒推力──► HANG_FIRE   （點火關、夾持保持鎖死、不重試）
+   ├──等 releaseMargin_s 時推力消失──► HOLD_ABORT／THRUST_LOST（不鬆、繼續夾住）
+   ├──第一次有推力後超過 releaseDeadline_s 還沒鬆──► HOLD_ABORT／LATE_RELEASE（不鬆了、繼續夾住）
    └──鑰匙／架電／臍帶／導軌異常、ABORT──► HOLD_ABORT（點火關、夾持保持鎖死）
-RELEASED ──1 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回、通知人員）
+RELEASED ──離軌判定（三層，見下）──► LIFTED_OFF
+RELEASED ──clampOpenTimeout_s 內沒讀到夾持開到位──► NO_LIFTOFF／CLAMP_STUCK（點火關、鬆夾持輸出維持、通知人員）
+RELEASED ──liftoffTimeout_s 沒離軌──► NO_LIFTOFF／NO_LIFTOFF（夾持已鬆不能再夾回、通知人員）
 ```
+
+`PadController.tick()` 跑在 **1 kHz 速率群組**（一拍 1 ms；推力檢查在這個群組裡）。狀態幀（`radioOut`、`umbilicalOut`）
+仍是 10 Hz，由 F´ 外殼每 100 拍送一次；`PadControllerCore` 本身不假設拍頻，時間都用呼叫端傳入的 `now_s`。
+時間比較容差 `kTimeEps_s`＝5e-5 s（一拍的 5%），吸收浮點誤差和排程抖動。
 
 發射許可＝全部 AND：箭體到位 ∧ 點火迴路連續 ∧ 實體鑰匙 ∧ 架傾角 ≤ 5° ∧ 導軌沒卡 ∧ 架電源 ∧ 地面鏈路 ∧ 臍帶鏈路 ∧ 箭體 READY。
 
@@ -73,29 +80,56 @@ RELEASED ──1 s 沒離軌──► NO_LIFTOFF（夾持已鬆不能再夾回�
 | 實體鑰匙在硬體串聯；軟體再加一道：鑰匙讀回 OFF 時點火輸出一律關 | C15、H4 |
 | 起飛後臍帶斷是預期行為，箭上、架上都不報錯 | SSS「箭體、發射架通訊」 |
 
-## 鬆夾持時序與離軌判定（回應 Edward PR #52 審查，2026-11-12）
+## 鬆夾持時序與離軌判定（照 Edward PR #52 審查決定實作，2026-11-13）
 
-**推力確認和鬆夾持之間有沒有「零秒漏洞」？** 沒有。架上主控 100 Hz 跑，同一拍裡先判定「推力已確認」，
-再算出「鬆夾持」輸出，先後順序是程式保證的，不會同時發生。軟體的時間解析度就是一拍 10 ms，
-1e-12 s 這種裕度在軟體裡沒有意義。實際的時序：
+**推力確認和鬆夾持之間的裕度。** 推力確認之後不在同一拍鬆，而是再等 `releaseMargin_s`；
+這段時間每一拍都要仍有推力（鬆架那一拍也要），只要推力消失一拍就 HOLD_ABORT／THRUST_LOST、不鬆。
+軟體最小單位是一拍（1e-3 s），比一拍小的裕度等同下一拍；`releaseMargin_s`＝0 就是確認那拍鬆。
 
-| 時間 | 事件 |
+| 時間（從第一個推力樣本 T+0 起算） | 事件 | 參數 |
+|---|---|---|
+| T+0 | 第一個有推力的樣本 | — |
+| T+2e-2 s | 第 21 個樣本仍有推力 → 推力確認 | `thrustConfirm_s`＝2e-2 |
+| T+2e-2+1e-3 s | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
+| T+2e-2+1e-3+2e-2 s | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |
+| ≤ T+5e-2 s | 整段的期限；超過還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE） | `releaseDeadline_s`＝5e-2 |
+| 鬆夾持命令後 1e-1 s 內 | 要讀到夾持開到位，否則 NO_LIFTOFF／CLAMP_STUCK | `clampOpenTimeout_s`＝1e-1 |
+| 鬆夾持命令後 1 s 內 | 要判定離軌，否則 NO_LIFTOFF | `liftoffTimeout_s`＝1 |
+
+**參數檢查。** `thrustConfirm_s`＋`releaseMargin_s`＋`clampActuatorLatency_s` 必須 ≤ `releaseDeadline_s`
+（預設 4.1e-2 ≤ 5e-2），時間參數也必須是有限值且不為負。不合理時 `configure()` 回 false、發 `PadBadParams` 事件，
+ARM 以 BAD_PARAMS 拒絕；已在 ARMED／COUNTDOWN 時改成不合理 → 退回 SAFE／BAD_PARAMS。
+
+**架怎麼判定箭離軌了？**（鬆夾持之後，三層）
+1. **主判定：離軌開關 `offRail`**，單獨成立就算 LIFTED_OFF（即使沒讀到夾持開到位，因為開到位開關可能壞掉）。
+   離軌開關之後可能做成獨立部署的驅動；這裡只把它當成輸入（`PadIoSample.offRail`），不開新部署。
+2. **備援：架下荷重元 `load_N`**，低於 `liftoffLoadMin_N`（0.5 N）且持續 `liftoffLoadHold_s`（5e-2 s）就算離軌。
+3. **輔助：臍帶逾時**（`umbilicalTimeout_s`）**單獨不算**（可能只是被震斷）；要和「荷重元低於 `liftoffLoadMin_N`」同時成立才算（此時不必等持續時間）。
+
+2、3 只在讀到夾持開到位之後才算：夾持沒開時，箭在拉夾持，荷重元讀值也可能掉下來，不代表箭走了。
+三層都不成立、超過 `liftoffTimeout_s` → NO_LIFTOFF，通知人員不要靠近。`thrustOk` 仍是獨立的布林輸入（驅動可以從荷重元換算）。
+沒有用「NRF 箭↔地」：NRF24 只在架↔地面，箭上沒有 NRF。
+
+**夾持卡住（CLAMP_STUCK）。** 下令鬆夾持後 `clampOpenTimeout_s` 內沒讀到夾持開到位開關 `clampOpen`，
+而且離軌開關也沒觸發 → NO_LIFTOFF，原因 CLAMP_STUCK（發 `PadClampStuck` 事件）。點火早已關，鬆夾持輸出維持 true（不會再鎖回）。
+選擇用既有的 NO_LIFTOFF 狀態＋新原因，而不是新增狀態：`PadState` 的數值範圍和 `PadToRocket` 幀格式都不用改，舊的接收端照樣解得開。
+CLAMP_STUCK 之後是終態，之後才觸發的離軌開關不會再改成 LIFTED_OFF（寧可多一次「不要靠近」的警告）。
+`clampOpenTimeout_s` ≤ 0 表示這套架沒裝開到位開關：不做這項檢查，荷重元備援也不等開到位。
+
+**點火成功後又熄火**（推力確認後、鬆架前推力消失）：照上面的 THRUST_LOST 處理。不另外開新部署，也不改其他組的部署。
+
+### 假設值與假設硬體（Edward 2026-11-13：缺的程式或硬體自己假設、自己訂合理數值）
+
+| 項目 | 假設 |
 |---|---|
-| t0 | 第一個有推力的樣本 |
-| t0＋10 ms | 第二個樣本仍有推力（還在 IGNITION） |
-| t0＋20 ms | 第三個樣本仍有推力 → 推力確認，這一拍輸出鬆夾持 |
-| t0＋20 ms＋硬體延遲 | 夾持真正打開（繼電器／舵機動作時間，型號定了以後用 HIL 量） |
-| 超過 t0＋50 ms 還沒確認 | 不鬆了，繼續夾住（HOLD_ABORT／LATE_RELEASE，`releaseDeadline_s`） |
-
-t0＋20 ms 到 t0＋50 ms 這段就是你說的「給感測器誤判的寬恕期」。
-
-**架怎麼判定箭離軌了？**（目前的實作）鬆夾持之後，下面兩個條件任一成立就算 LIFTED_OFF：
-1. 離軌開關：掛耳離開導軌末端（型號／腳位待定，#42 C5）。
-2. 臍帶：超過 `umbilicalTimeout_s`（0.5 s）沒收到箭體狀態（起飛時臍帶會被拉斷）。
-
-沒有用「NRF 箭↔地」：NRF24 只在架↔地面，箭上沒有 NRF。荷重元目前只當推力訊號（`thrustOk` 布林），沒有拿來判斷離軌；如果荷重元裝在箭體下方，離軌後讀值會歸零，可以加成第三個條件，要看感測器怎麼裝（#42 C5）。
-⚠ 臍帶 UART 不穩時，第 2 條可能誤判成已離軌。後果是狀態顯示錯（夾持本來就已經鬆了，不會再夾回去，
-不會觸發危險動作），但會蓋掉 NO_LIFTOFF 警告。建議改成以離軌開關為主、臍帶只當開關故障時的備援【待 Edward 定】。
+| 夾持開到位開關 `clampOpen` | 限位開關，開到位＝true；型號、腳位未定 |
+| 架下荷重元 `load_N` | 量箭體對架的力（含夾持拉力），單位 N；箭靜置時約等於重量，離軌後趨近 0 |
+| `liftoffLoadMin_N` | 0.5 N |
+| `liftoffLoadHold_s` | 5e-2 s |
+| `clampActuatorLatency_s` | 2e-2 s（繼電器／舵機動作時間，HIL 實測後修正） |
+| `releaseMargin_s` | 1e-3 s（1 kHz 一拍） |
+| `clampOpenTimeout_s` | 1e-1 s |
+| 離軌開關 `offRail` | 由未來的驅動（可能是獨立部署）提供 |
 
 ## 指令驗證（`PadCmdGate`）
 
@@ -105,11 +139,11 @@ t0＋20 ms 到 t0＋50 ms 這段就是你說的「給感測器誤判的寬恕期
 - MAC 輸入：`"01RP-PAD-v1" || bootId || counter_be32 || opcode`；tag＝HMAC-SHA256 前 16 B。
 - 金鑰不入庫。`IPadCmdAuth` 預計接 PR #13 的 `HmacSha256`（#13 合併後再接）。
 
-## 待 Edward 定
+## 已定事項與待辦
 
 1. ~~ABORT／DISARM 要不要簽名？~~ **已定（Edward 2026-11-10，#42 C1）：ABORT 要簽名**（中止是任務終止的標誌，不能讓人偽造）；**DISARM 也簽**（無線組 2026-11-12 審 PR #52）：程式在 ARMED **和 COUNTDOWN** 都接受 DISARM 並退回 SAFE，免簽的 DISARM 在倒數中等於免簽的 ABORT，會繞過 C1；也對齊無線組合約「全部指令預設 HMAC」。Edward 若要 DISARM 免簽，請書面決定，並同時把 DISARM 限定在 ARMED。地面斷線本來就會自動中止，所以 ABORT 要簽名不會「想停停不了」。
-2. 門檻（SSS 沒有發射架數值，除下列外仍是假設）：倒數 30 s、點火窗 2 s、**推力確認 0.02 s**、**離軌逾時 1 s**（2026-11-10，主機 CTI 74F85-15A 燃燒 0.873 s，#42 C2）、地面鏈路逾時 1 s、臍帶逾時 0.5 s、**箭端收架狀態逾時 1 s**（#42 C3）、架傾角離垂線 5°（＝仰角 85°）、架電源 11 V、**鬆夾持期限 0.05 s**（Edward 2026-11-11 PR #52 審查提議 0.04～0.08 s，暫定 0.05 s）。
-3. 推力確認感測器型號（荷重元？）；離軌開關、seated 開關、傾角計型號與腳位。
+2. 門檻：倒數 30 s、點火窗 2 s、**推力確認 0.02 s**、**離軌逾時 1 s**（2026-11-10，主機 CTI 74F85-15A 燃燒 0.873 s，#42 C2）、地面鏈路逾時 1 s、臍帶逾時 0.5 s、**箭端收架狀態逾時 1 s**（#42 C3）、架傾角離垂線 5°（＝仰角 85°）、架電源 11 V、**鬆夾持期限 0.05 s**；**已定（Edward 2026-11-13）：數值由無線組自訂**，新增的裕度／荷重元／開到位參數見上方「假設值」表。**1 kHz 速率群組已定**。
+3. 硬體型號（假設先行，定了以後修正數值並用 HIL 實測）：推力／離軌用荷重元、夾持開到位開關、離軌開關、seated 開關、傾角計的型號與腳位。
 4. `bootId` 來源：建議 PadMcu 的 NvFlags 開機計數（U8 會繞回，256 次開機才重複一次）。
 5. 地面站端程式（組 GroundCmd、顯示 PadStatus 燈號）：協定已固定在 `PadLinkCodec.hpp`，地面工具可直接 include。
 
@@ -122,7 +156,7 @@ t0＋20 ms 到 t0＋50 ms 這段就是你說的「給感測器誤判的寬恕期
 ## 自測
 
 ```
-bash Components/Wireless/PadLink/run_host_tests.sh   # 18 項
+bash Components/Wireless/PadLink/run_host_tests.sh   # 29 組
 fpp-check Components/Wireless/PadLink/fpp_stubs/Fw_Svc_stubs.fpp RocketTypes/RocketTypes.fpp \
   Components/Wireless/PadLink/PadLink.fpp Components/Wireless/PadController/PadController.fpp \
   Components/Wireless/UmbilicalLink/UmbilicalLink.fpp
