@@ -54,9 +54,10 @@ void ServoDriverSim::schedIn_handler(FwIndexType, U32) {
   // Advance SG90 shaft-angle sim by one PWM period (50 Hz → 0.02 s).
   // Angle available via m_sg90Dev.angleDeg(ch) for future SIL telemetry.
   m_sg90Dev.tick(static_cast<F32>(m_periodTicks) / 1000.0f);  // rg1kHz → PWM period
-  U16 pulses[4] = {m_out_us[0], m_out_us[1], m_out_us[2], m_out_us[3]};
+  // F´ v4：匿名陣列成員是原生 C 陣列，直接用 = {…} 初始化再傳參考
+  RocketTypes::ServoCmd::Type_of_pulse_us pulses = {m_out_us[0], m_out_us[1], m_out_us[2], m_out_us[3]};
   if (this->isConnected_pwmOut_OutputPort(0)) {
-    this->pwmOut_out(0, RocketTypes::ServoCmd(now_s(), m_core.lastSeq(), RocketTypes::ServoCmd::Type_of_pulse_us(pulses), m_lockNeutral));
+    this->pwmOut_out(0, RocketTypes::ServoCmd(now_s(), m_core.lastSeq(), pulses, m_lockNeutral));
   }
   writeTlm();
 }

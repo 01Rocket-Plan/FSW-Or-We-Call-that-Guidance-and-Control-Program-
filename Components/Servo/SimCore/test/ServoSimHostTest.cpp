@@ -59,6 +59,11 @@ static void tServoClamp() {
   r.cmd(1, 900, 2100, 1700, 1000); r.run(1);
   CHECK(r.sink.pwm[0] == 1000 && r.sink.pwm[1] == 2000 && r.sink.pwm[2] == 1700 && r.sink.pwm[3] == 1000);
   CHECK(r.sink.clampUsed.size() == 2 && r.core.clampCount() == 2);
+  // 1 kHz 持續送同一筆超限值：計數照加，事件只在剛開始限幅那一拍（#38）
+  for (uint32_t s = 2; s < 50; s++) r.cmd(s, 900, 2100, 1700, 1000);
+  CHECK(r.sink.clampUsed.size() == 2 && r.core.clampCount() == 2 + 48 * 2);
+  r.cmd(50, 1500, 2100); r.cmd(51, 900, 2100);  // ch0 回到範圍內再超限 → 再記一次
+  CHECK(r.sink.clampUsed.size() == 3);
 }
 static void tServoSeq() {
   g_cases++; SRig r; r.boot();
@@ -72,6 +77,17 @@ static void tServoLockNeutral() {
   r.cmd(1, 1800, 1200); r.run(1); CHECK(r.sink.pwm[0] == 1800);
   r.cmd(2, 1800, 1200, 1800, 1800, true); r.run(1);
   CHECK(r.sink.pwm[0] == 1500 && r.sink.pwm[1] == 1500 && r.sink.lockCmd == 1);
+  // ActuatorMgr 每 1 ms 都送 lockNeutral=true：事件只在進入鎖定那一拍（#38）
+  for (uint32_t s = 3; s < 1003; s++) r.cmd(s, 1800, 1200, 1800, 1800, true);
+  r.run(1); CHECK(r.sink.lockCmd == 1 && r.sink.pwm[0] == 1500);
+  r.cmd(1003, 1700); r.cmd(1004, 1700, 1500, 1500, 1500, true);  // 解鎖再鎖 → 再記一次
+  CHECK(r.sink.lockCmd == 2);
+}
+static void tServoBootLockedNoEvent() {
+  // 開機 READY 本來就是鎖中位；一開始就收到 lockNeutral=true 不算「改變」
+  g_cases++; SRig r; r.boot();
+  for (uint32_t s = 1; s < 100; s++) r.cmd(s, 1500, 1500, 1500, 1500, true);
+  CHECK(r.sink.lockCmd == 0 && r.sink.pwm[0] == 1500);
 }
 static void tServoTimeout() {
   g_cases++; SRig r; r.boot();
@@ -82,10 +98,21 @@ static void tServoTimeout() {
   r.run(10); CHECK(r.sink.timeout == 1);  // 只發一次
   r.cmd(2, 1300); r.run(1); CHECK(r.sink.pwm[0] == 1300);  // 新命令恢復
 }
+static void tServoTimeoutEdges() {
+  // 超時回中位後：限幅狀態結束，下次超限要再記；已鎖中位時超時不重記 LockNeutral（#38）
+  g_cases++; SRig r; r.boot();
+  r.cmd(1, 900); r.run(1); CHECK(r.sink.clampUsed.size() == 1);
+  r.run(5); CHECK(r.sink.timeout == 1 && r.sink.lockTo == 1);
+  r.cmd(2, 900); r.run(1); CHECK(r.sink.clampUsed.size() == 2);
+  r.cmd(3, 1500, 1500, 1500, 1500, true); r.run(5);
+  CHECK(r.sink.lockCmd == 1 && r.sink.timeout == 2 && r.sink.lockTo == 1);
+}
 static void tServoUv() {
   g_cases++; SRig r; r.boot(); r.cmd(1, 1800); r.run(1);
   r.core.uvIn(UvState::UV_CRITICAL); r.run(1);
   CHECK(r.sink.pwm[0] == 1800 && r.sink.uv == 1 && r.core.uvState() == UvState::UV_CRITICAL);
+  for (int i = 0; i < 100; i++) r.core.uvIn(UvState::UV_CRITICAL);  // 同一級重複送 → 不再記
+  CHECK(r.sink.uv == 1);
 }
 static void tGimbalTwoCh() {
   g_cases++; SRig r(2);
@@ -126,16 +153,16 @@ struct PRig {
 };
 
 static void tSepHandshake() {
-  g_cases++; { PRig r; r.boot(); CHECK(r.core.drvState() == DrvState::READY); CHECK(r.sink.pwm[0] == 1000 && r.sink.pwm[3] == 1000); }
+  g_cases++; { PRig r; r.boot(); CHECK(r.core.drvState() == DrvState::READY); CHECK(r.sink.pwm[0] == 1000 && r.sink.pwm[2] == 1000 && r.sink.pwm[3] == 0); }  // 只有 3 顆
   g_cases++; { PRig r; r.hw.failNow = true; r.boot(); CHECK(r.core.drvState() == DrvState::FAULT);
-    CHECK(r.sink.holdMask.size() == 1 && r.sink.holdMask[0] == 0x0F); CHECK(r.sink.pwm[0] == 1000); }
+    CHECK(r.sink.holdMask.size() == 1 && r.sink.holdMask[0] == 0x07); CHECK(r.sink.pwm[0] == 1000); }
   g_cases++; { PRig r; r.nv.failGet = true; r.boot(); CHECK(r.core.drvState() == DrvState::FAULT && r.sink.lastFault == FaultReason::NV_READ_FAIL); }
 }
 static void tSepFireOnce() {
   g_cases++; PRig r; r.boot();
   r.cmd(1, 0x05); r.run(1);  // SEP_1、SEP_3
   CHECK(r.sink.fire.size() == 2 && r.sink.pwm[0] == 2000 && r.sink.pwm[2] == 2000 && r.sink.pwm[1] == 1000);
-  CHECK(r.nv.mask == 0x05 && r.core.firedMask() == 0x05 && r.core.lockedMask() == 0x0A);
+  CHECK(r.nv.mask == 0x05 && r.core.firedMask() == 0x05 && r.core.lockedMask() == 0x02);
   CHECK(r.core.activeMask() == 0x05);
   r.run(25); CHECK(r.sink.pwm[0] == 2000 && r.core.activeMask() == 0);  // fire_hold_s 後仍停在 fire_us
   r.run(100); CHECK(r.sink.pwm[0] == 2000 && r.sink.pwm[2] == 2000);
@@ -165,9 +192,14 @@ static void tSepSeqAndInvalid() {
   CHECK(r.sink.fire.size() == 1 && r.sink.pwm[1] == 1000 && r.sink.pwm[2] == 1000);
 }
 static void tSepNoTimeoutAndUv() {
-  g_cases++; PRig r; r.boot(); r.cmd(1, 0x08); r.run(5);
+  g_cases++; PRig r; r.boot(); r.cmd(1, 0x04); r.run(5);
   r.core.uvIn(UvState::UV_SHED); r.run(200);  // 長時間無命令：SEP 不動
-  CHECK(r.sink.pwm[3] == 2000 && r.sink.pwm[0] == 1000 && r.sink.uv == 1 && r.core.firedMask() == 0x08);
+  CHECK(r.sink.pwm[2] == 2000 && r.sink.pwm[0] == 1000 && r.sink.uv == 1 && r.core.firedMask() == 0x04);
+}
+static void tSepThreeOnly() {
+  // 3×MG996R（SSS §7）：mask bit3（舊 SEP_4）被忽略，不寫 NV、不發 fire
+  g_cases++; PRig r; r.boot(); r.cmd(1, 0x0F); r.run(1);
+  CHECK(r.sink.fire.size() == 3 && r.nv.mask == 0x07 && r.sink.pwm[3] == 0);
 }
 
 static void tServoModelRoleMismatch() {
@@ -211,9 +243,9 @@ static void tSepModelRoleMismatch() {
 }
 
 int main() {
-  tServoHandshake(); tServoFault(); tServoClamp(); tServoSeq(); tServoLockNeutral(); tServoTimeout(); tServoUv(); tGimbalTwoCh();
+  tServoHandshake(); tServoFault(); tServoClamp(); tServoSeq(); tServoLockNeutral(); tServoBootLockedNoEvent(); tServoTimeout(); tServoTimeoutEdges(); tServoUv(); tGimbalTwoCh();
   tServoModelRoleMismatch();
-  tSepHandshake(); tSepFireOnce(); tSepNvPersist(); tSepNvWriteFail(); tSepSeqAndInvalid(); tSepNoTimeoutAndUv();
+  tSepHandshake(); tSepFireOnce(); tSepNvPersist(); tSepNvWriteFail(); tSepSeqAndInvalid(); tSepNoTimeoutAndUv(); tSepThreeOnly();
   tSepModelRoleMismatch();
   std::printf("%s: %d cases, %d failures\n", g_fail ? "FAILED" : "PASSED", g_cases, g_fail);
   return g_fail ? 1 : 0;

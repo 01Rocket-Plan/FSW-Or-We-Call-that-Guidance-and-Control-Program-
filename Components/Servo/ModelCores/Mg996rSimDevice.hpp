@@ -2,7 +2,7 @@
 // Mg996rSimDevice.hpp
 //
 // Device-level MG996R simulator: commanded pulse -> shaft angle with slew.
-// Channels: 4 (SEP_1..4). Lock/fire pulse values still come from the driver;
+// Channels: 4 slots (generic); SepServoDriverSim uses SEP_1..3 only. Lock/fire pulse values still come from the driver;
 // SimDevice only follows the commanded pulse.
 // =============================================================================
 #ifndef COMPONENTS_SERVO_MODELCORES_MG996RSIMDEVICE_HPP_

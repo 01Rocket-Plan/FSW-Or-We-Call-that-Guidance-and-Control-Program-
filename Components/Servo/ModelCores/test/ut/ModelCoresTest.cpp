@@ -87,6 +87,8 @@ void testMapRoundTripSg90() {
   EXPECT_NEAR(core.pulseToAngleDeg(2000), +90.0f, 1.0f);
   EXPECT_TRUE(core.angleToPulseUs(-90.0f) == 1000);
   EXPECT_TRUE(core.angleToPulseUs(+90.0f) == 2000);
+  // ±30°（尾翼飽和）= ±167 µs
+  EXPECT_TRUE(core.angleToPulseUs(+30.0f) == 1667);
 
   // Saturate beyond end-stops
   EXPECT_TRUE(core.angleToPulseUs(-200.0f) == 1000);
@@ -98,11 +100,11 @@ void testMapRoundTripMg996r() {
   EXPECT_NEAR(core.pulseToAngleDeg(1500), 0.0f, 1e-3f);
   EXPECT_NEAR(core.angleToPulseUs(0.0f), 1500.0f, 0.5f);
 
-  // MG996R travel 120 -> +/-60
-  EXPECT_NEAR(core.pulseToAngleDeg(1000), -60.0f, 1.0f);
-  EXPECT_NEAR(core.pulseToAngleDeg(2000), +60.0f, 1.0f);
-  EXPECT_TRUE(core.angleToPulseUs(-60.0f) == 1000);
-  EXPECT_TRUE(core.angleToPulseUs(+60.0f) == 2000);
+  // MG996R travel 180 -> +/-90
+  EXPECT_NEAR(core.pulseToAngleDeg(1000), -90.0f, 1.0f);
+  EXPECT_NEAR(core.pulseToAngleDeg(2000), +90.0f, 1.0f);
+  EXPECT_TRUE(core.angleToPulseUs(-90.0f) == 1000);
+  EXPECT_TRUE(core.angleToPulseUs(+90.0f) == 2000);
   EXPECT_TRUE(core.angleToPulseUs(-200.0f) == 1000);
   EXPECT_TRUE(core.angleToPulseUs(+200.0f) == 2000);
 }
@@ -118,8 +120,8 @@ void testSg90Slew() {
   dev.tick(dt);
   EXPECT_NEAR(dev.angleDeg(0), 30.0f, 2.0f);
 
-  // Enough time to reach end-stop (90 deg): another 0.2 s.
-  for (int i = 0; i < 20; ++i) {
+  // Enough time to reach end-stop (90 deg @ 600 deg/s = 0.15 s): another 0.3 s.
+  for (int i = 0; i < 30; ++i) {
     dev.tick(0.01f);
   }
   EXPECT_NEAR(dev.angleDeg(0), 90.0f, 1e-2f);
@@ -134,21 +136,21 @@ void testMg996rSlew() {
   Mg996rSimDevice dev;
   EXPECT_NEAR(dev.angleDeg(0), 0.0f, 1e-3f);
 
-  // Step neutral -> max end-stop; end-stop for MG996R = +60 deg.
+  // Step neutral -> max end-stop; end-stop for MG996R = +90 deg (180 travel).
   dev.setCommandPulseUs(0, 2000);
   // 0.05 s: 353 deg/s * 0.05 = 17.65 deg expected.
   dev.tick(0.05f);
   EXPECT_NEAR(dev.angleDeg(0), 17.65f, 2.0f);
 
   // Enough time to reach end-stop.
-  for (int i = 0; i < 30; ++i) {
+  for (int i = 0; i < 50; ++i) {  // 90 deg @ 353 deg/s = 0.26 s
     dev.tick(0.01f);
   }
-  EXPECT_NEAR(dev.angleDeg(0), 60.0f, 1e-2f);
+  EXPECT_NEAR(dev.angleDeg(0), 90.0f, 1e-2f);
 
   // Stays there.
   dev.tick(0.1f);
-  EXPECT_NEAR(dev.angleDeg(0), 60.0f, 1e-2f);
+  EXPECT_NEAR(dev.angleDeg(0), 90.0f, 1e-2f);
 }
 
 void testDtZeroNoOp() {

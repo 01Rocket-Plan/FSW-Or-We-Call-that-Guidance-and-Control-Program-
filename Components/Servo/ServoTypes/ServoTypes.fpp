@@ -16,7 +16,8 @@ module Components {
   enum GimbalChannel { PITCH, ROLL }
 
   @ DS interstage separation channels (SepServoDriver role=SEP)
-  enum SepChannel { SEP_1, SEP_2, SEP_3, SEP_4 }
+  @ 3×MG996R 環排 120°（SSS §7；Edward 2026-11-10：120° 比 90° 不容易讓擋板互卡）
+  enum SepChannel { SEP_1, SEP_2, SEP_3 }
 
   @ SG90 pulse / rate constants (µs, Hz). Separate from MG996R even when numeric values match.
   constant SG90_PULSE_MIN_US = 1000
