@@ -17,7 +17,7 @@ class ImuSimDevice {
     inject_ = 0;
     std::memset(accelRaw_, 0, sizeof(accelRaw_));
     std::memset(gyroRaw_, 0, sizeof(gyroRaw_));
-    accelRaw_[2] = 2048;  // ~1 g at ±16 g
+    accelRaw_[2] = 2048;  // ~1 g at ±16 g，晶片 Z（沿鼻）；經預設 DCM 變成機體 +X
   }
 
   void setInject(uint8_t code) { inject_ = code; }
@@ -42,7 +42,7 @@ class ImuSimDevice {
     if (inject_ == 3) return false;
     std::memset(data, 0, len);
     if (bank_ == 0 && reg == 0x00 && len >= 1) {
-      data[0] = (addr == 0x69) ? 0xEA : 0xE0;
+      data[0] = (addr == 0x69) ? 0xEA : 0x00;  // 只有 ICM-20948（0x69）
       if (inject_ == 4) data[0] ^= 0xFF;
       return true;
     }

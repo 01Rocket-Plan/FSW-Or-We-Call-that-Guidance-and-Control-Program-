@@ -12,7 +12,7 @@ fi
 echo "== fpp-check =="
 fpp-check \
   "$ES/fpp_stubs/Fw_Svc_Drv_stubs.fpp" \
-  "$ES/EnvSensingBus.fpp" \
+  "$ES/Bus/EnvSensingBus.fpp" \
   "$ROOT/RocketTypes/RocketTypes.fpp" \
   "$ES/ImuDriver/ImuDriver.fpp" \
   "$ES/UsMpu6050/UsMpu6050.fpp"
