@@ -25,7 +25,7 @@ module Components {
         telemetry rejectedCount: U32
         telemetry transitionCount: U32
 
-        event levelChanged(old: RocketTypes.UvState, new: RocketTypes.UvState) \
+        event levelChanged(fromLevel: RocketTypes.UvState, toLevel: RocketTypes.UvState) \
             severity activity high \
             format "UV level changed {} -> {}"
 
