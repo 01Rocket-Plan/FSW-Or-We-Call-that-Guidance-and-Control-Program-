@@ -1,22 +1,22 @@
-// Ov7670Driver：F´ 元件外殼（SCCB→Drv.I2c；DVP 幀來源可注入；邏輯在 Ov7670Core）
-#ifndef COMPONENTS_CAMERA_OV7670DRIVER_OV7670DRIVER_HPP
-#define COMPONENTS_CAMERA_OV7670DRIVER_OV7670DRIVER_HPP
+// Ov3640Driver：F´ 元件外殼（SCCB→Drv.I2c；DVP 幀來源可注入；邏輯在 Ov3640Core）
+#ifndef COMPONENTS_CAMERA_OV3640DRIVER_OV3640DRIVER_HPP
+#define COMPONENTS_CAMERA_OV3640DRIVER_OV3640DRIVER_HPP
 
 #include "Components/Camera/CamTypes/CamChunkFlagEnumAc.hpp"
-#include "Components/Camera/Ov7670Driver/Ov7670Core.hpp"
-#include "Components/Camera/Ov7670Driver/Ov7670DriverComponentAc.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640Core.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640DriverComponentAc.hpp"
 
 namespace Components {
 
-class Ov7670Driver final : public Ov7670DriverComponentBase,
-                           private IOv7670Sccb,
-                           private IOv7670FrameSource,
-                           private IOv7670Sink {
+class Ov3640Driver final : public Ov3640DriverComponentBase,
+                           private IOv3640Sccb,
+                           private IOv3640FrameSource,
+                           private IOv3640Sink {
  public:
-  explicit Ov7670Driver(const char* compName);
-  ~Ov7670Driver() override = default;
+  explicit Ov3640Driver(const char* compName);
+  ~Ov3640Driver() override = default;
 
-  void configure(IOv7670FrameSource* externalFrames);
+  void configure(IOv3640FrameSource* externalFrames);
 
  private:
   void sched1Hz_handler(FwIndexType portNum, U32 context) override;
@@ -29,8 +29,8 @@ class Ov7670Driver final : public Ov7670DriverComponentBase,
   void parameterUpdated(FwPrmIdType id) override;
   void parametersLoaded() override;
 
-  bool writeReg(uint8_t reg, uint8_t val) override;
-  bool readReg(uint8_t reg, uint8_t* val) override;
+  bool writeReg(uint16_t reg, uint8_t val) override;
+  bool readReg(uint16_t reg, uint8_t* val) override;
   bool pollFrame(CamFrameView& out) override;
 
   bool onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) override;
@@ -42,12 +42,12 @@ class Ov7670Driver final : public Ov7670DriverComponentBase,
   void writeTlm();
   bool streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber);
 
-  Ov7670Core m_core;
-  IOv7670FrameSource* m_extFrames = nullptr;
-  U32 m_sccbAddr = Ov7670Regs::SCCB_ADDR_7BIT;
-  U32 m_frameMaxBytes = Ov7670Regs::FRAME_BYTES;
+  Ov3640Core m_core;
+  IOv3640FrameSource* m_extFrames = nullptr;
+  U32 m_sccbAddr = 0x3C;
+  U32 m_frameMaxBytes = 65536;
   U32 m_tlmDiv = 0;
-  // Only one chunk buffer — never hold a full frame in RAM.
+  // Only one chunk buffer — never hold a full JPEG in RAM.
   static constexpr U32 kChunk = 2048;
   U8 m_imgScratch[kChunk]{};
 };

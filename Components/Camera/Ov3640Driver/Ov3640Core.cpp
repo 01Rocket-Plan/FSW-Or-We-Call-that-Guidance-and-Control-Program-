@@ -1,30 +1,18 @@
-#include "Components/Camera/Ov7670Driver/Ov7670Core.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640Core.hpp"
 
 namespace Components {
 
 namespace {
 
 struct RegPair {
-  uint8_t reg;
+  uint16_t reg;
   uint8_t val;
 };
 
-// 第 0 筆是軟重置（COM7=0x80）；寫完這一拍就結束，下一拍（100 Hz＝10 ms 後，> 規格 1 ms）再寫其餘。
-// 輸出：QVGA 320×240、RGB565。值對照 Linux ov7670.c（ov7670_default_regs／QVGA／RGB565 段）。
 constexpr RegPair kInitTable[] = {
-    {Ov7670Regs::COM7, Ov7670Regs::COM7_RESET},
-    {Ov7670Regs::CLKRC, 0x01},
-    {Ov7670Regs::COM7, Ov7670Regs::COM7_QVGA_RGB},
-    {Ov7670Regs::RGB444, 0x00},
-    {Ov7670Regs::COM15, 0xD0},
-    {Ov7670Regs::TSLB, 0x04},
-    {Ov7670Regs::COM3, 0x04},
-    {Ov7670Regs::COM14, 0x19},
-    {Ov7670Regs::SCALING_XSC, 0x3A},
-    {Ov7670Regs::SCALING_YSC, 0x35},
-    {Ov7670Regs::SCALING_DCWCTR, 0x11},
-    {Ov7670Regs::SCALING_PCLK_DIV, 0xF1},
-    {Ov7670Regs::SCALING_PCLK_DELAY, 0x02},
+    {0x3012, 0x80}, {0x3014, 0x00}, {0x3020, 0x20}, {0x3021, 0x00},
+    {0x3022, 0x00}, {0x3023, 0x00}, {0x3030, 0x00}, {0x3031, 0x00},
+    {0x3032, 0x00}, {0x3033, 0x00}, {0x3034, 0x00}, {0x3035, 0x00},
 };
 
 constexpr uint32_t kInitTableSize =
@@ -32,44 +20,43 @@ constexpr uint32_t kInitTableSize =
 
 }  // namespace
 
-Ov7670Core::Ov7670Core() = default;
+Ov3640Core::Ov3640Core() {
+  m_status.set_model(CamModel::OV3640);
+  m_status.set_role(CamRole::US_CAM);
+}
 
-Ov7670Core::~Ov7670Core() = default;
+Ov3640Core::~Ov3640Core() = default;
 
-void Ov7670Core::configure(IOv7670Sccb* sccb, IOv7670FrameSource* frameSrc, IOv7670Sink* sink) {
+void Ov3640Core::configure(IOv3640Sccb* sccb, IOv3640FrameSource* frameSrc, IOv3640Sink* sink) {
   m_sccb = sccb;
   m_frameSrc = frameSrc;
   m_sink = sink;
 }
 
-void Ov7670Core::setParams(const Ov7670Params& p) {
+void Ov3640Core::setParams(const Ov3640Params& p) {
   m_params = p;
-  m_model = p.model;
-  m_role = p.role;
+  m_status.set_model(p.model);
+  m_status.set_role(p.role);
 }
 
-CamStatus Ov7670Core::status() const {
-  return CamStatus(m_state, m_fault, m_frameCount, m_model, m_role);
-}
-
-void Ov7670Core::beginInitHandshake() {
+void Ov3640Core::beginInitHandshake() {
   m_initIdx = 0;
   m_busMisses = 0;
   m_noFrameTicks = 0;
   m_idOk = false;
   m_testFrameOk = false;
   m_capturing = false;
-  m_fault = CamFault::NONE;
+  m_status.set_fault(CamFault::NONE);
   enterState(CamState::INIT);
 }
 
-void Ov7670Core::start() {
-  if (m_state == CamState::OFF) {
+void Ov3640Core::start() {
+  if (m_status.get_camState() == CamState::OFF) {
     beginInitHandshake();
   }
 }
 
-void Ov7670Core::stop() {
+void Ov3640Core::stop() {
   enterState(CamState::OFF);
   m_busMisses = 0;
   m_noFrameTicks = 0;
@@ -78,7 +65,7 @@ void Ov7670Core::stop() {
   m_capturing = false;
 }
 
-void Ov7670Core::reset() {
+void Ov3640Core::reset() {
   m_initIdx = 0;
   m_busMisses = 0;
   m_noFrameTicks = 0;
@@ -89,41 +76,41 @@ void Ov7670Core::reset() {
   m_faultTicks = 0;
   m_recoverAttempts = 0;
   m_recoverLatched = false;
-  m_fault = CamFault::NONE;
-  m_frameCount = 0;
-  m_model = m_params.model;
-  m_role = m_params.role;
+  m_status.set_fault(CamFault::NONE);
+  m_status.set_frameCount(0);
+  m_status.set_model(m_params.model);
+  m_status.set_role(m_params.role);
   enterState(CamState::OFF);
 }
 
-bool Ov7670Core::captureStart() {
-  if (m_state != CamState::READY) return false;
+bool Ov3640Core::captureStart() {
+  if (m_status.get_camState() != CamState::READY) return false;
   m_capturing = true;
   m_noFrameTicks = 0;
   return true;
 }
 
-void Ov7670Core::captureStop() {
+void Ov3640Core::captureStop() {
   m_capturing = false;
   m_noFrameTicks = 0;
 }
 
-void Ov7670Core::enterState(CamState::T s) {
-  const CamState from = m_state;
+void Ov3640Core::enterState(CamState s) {
+  const CamState from = m_status.get_camState();
   if (from == s) return;
-  m_state = s;
-  if (m_sink) m_sink->onStateChange(from, m_state);
+  m_status.set_camState(s);
+  if (m_sink) m_sink->onStateChange(from, s);
 }
 
-void Ov7670Core::enterFault(CamFault::T f, uint32_t detail) {
-  m_fault = f;
+void Ov3640Core::enterFault(CamFault f, uint32_t detail) {
+  m_status.set_fault(f);
   m_faultTicks = 0;
   m_capturing = false;
   if (m_sink) m_sink->onFault(f, detail);
   enterState(CamState::FAULT);
 }
 
-void Ov7670Core::recordBus(bool ok) {
+void Ov3640Core::recordBus(bool ok) {
   if (ok) {
     m_busMisses = 0;
   } else {
@@ -134,10 +121,10 @@ void Ov7670Core::recordBus(bool ok) {
   }
 }
 
-bool Ov7670Core::tick(uint32_t tickHz) {
+bool Ov3640Core::tick(uint32_t tickHz) {
   if (tickHz != 1u && tickHz != 100u) return false;
 
-  switch (m_state.e) {
+  switch (m_status.get_camState()) {
     case CamState::OFF:
       return false;
     case CamState::INIT:
@@ -152,7 +139,7 @@ bool Ov7670Core::tick(uint32_t tickHz) {
   return false;
 }
 
-bool Ov7670Core::stepInit() {
+bool Ov3640Core::stepInit() {
   if (!m_sccb) {
     enterFault(CamFault::BUS_TIMEOUT, 0);
     return true;
@@ -164,14 +151,11 @@ bool Ov7670Core::stepInit() {
     recordBus(ok);
     if (ok) {
       ++m_initIdx;
-      if (m_initIdx == 1u) {
-        break;  // 軟重置後等下一拍（規格：重置後 1 ms 內不得存取）
-      }
-    } else if (m_state == CamState::FAULT) {
+    } else if (m_status.get_camState() == CamState::FAULT) {
       return true;
     }
   }
-  if (m_state == CamState::FAULT) return true;
+  if (m_status.get_camState() == CamState::FAULT) return true;
   if (m_initIdx >= kInitTableSize) {
     m_idOk = false;
     m_testFrameOk = false;
@@ -181,15 +165,15 @@ bool Ov7670Core::stepInit() {
   return true;
 }
 
-bool Ov7670Core::stepSelftest(uint32_t tickHz) {
+bool Ov3640Core::stepSelftest(uint32_t tickHz) {
   if (m_params.model != kDeclaredModel || m_params.role != kDeclaredRole) {
     enterFault(CamFault::TYPE_ROLE_MISMATCH,
-               (static_cast<uint32_t>(m_params.model.e) << 8) |
-                   static_cast<uint32_t>(m_params.role.e));
+               (static_cast<uint32_t>(m_params.model) << 8) |
+                   static_cast<uint32_t>(m_params.role));
     return true;
   }
-  m_model = m_params.model;
-  m_role = m_params.role;
+  m_status.set_model(m_params.model);
+  m_status.set_role(m_params.role);
 
   if (!m_sccb) {
     enterFault(CamFault::BUS_TIMEOUT, 0);
@@ -198,17 +182,17 @@ bool Ov7670Core::stepSelftest(uint32_t tickHz) {
 
   if (!m_idOk) {
     uint8_t hi = 0, lo = 0;
-    const bool ok1 = m_sccb->readReg(Ov7670Regs::PID, &hi);
+    const bool ok1 = m_sccb->readReg(Ov3640Regs::PIDH, &hi);
     recordBus(ok1);
-    if (m_state == CamState::FAULT) return true;
-    const bool ok2 = m_sccb->readReg(Ov7670Regs::VER, &lo);
+    if (m_status.get_camState() == CamState::FAULT) return true;
+    const bool ok2 = m_sccb->readReg(Ov3640Regs::PIDL, &lo);
     recordBus(ok2);
-    if (m_state == CamState::FAULT) return true;
+    if (m_status.get_camState() == CamState::FAULT) return true;
     if (!ok1 || !ok2) {
       return true;
     }
     m_lastChipId = static_cast<uint16_t>((hi << 8) | lo);
-    if (hi != Ov7670Regs::EXPECTED_PID || lo != Ov7670Regs::EXPECTED_VER) {
+    if (hi != Ov3640Regs::EXPECTED_PIDH || lo != Ov3640Regs::EXPECTED_PIDL) {
       enterFault(CamFault::ID_MISMATCH, m_lastChipId);
       return true;
     }
@@ -242,7 +226,7 @@ bool Ov7670Core::stepSelftest(uint32_t tickHz) {
   return true;
 }
 
-bool Ov7670Core::stepReady(uint32_t tickHz) {
+bool Ov3640Core::stepReady(uint32_t tickHz) {
   if (!m_capturing) {
     return true;
   }
@@ -253,13 +237,13 @@ bool Ov7670Core::stepReady(uint32_t tickHz) {
   }
   if (got) {
     m_noFrameTicks = 0;
-    const uint32_t frameNumber = m_frameCount + 1u;
+    const uint32_t frameNumber = m_status.get_frameCount() + 1u;
     bool accepted = true;
     if (m_sink) {
       accepted = m_sink->onFrame(view.data, view.length, frameNumber);
     }
     if (accepted) {
-      ++m_frameCount;
+      m_status.set_frameCount(m_status.get_frameCount() + 1u);
     }
   } else if (tickHz == 100u) {
     ++m_noFrameTicks;
@@ -271,7 +255,7 @@ bool Ov7670Core::stepReady(uint32_t tickHz) {
   return true;
 }
 
-bool Ov7670Core::stepFault(uint32_t tickHz) {
+bool Ov3640Core::stepFault(uint32_t tickHz) {
   // After R failed retries, latch — only RESET clears.
   if (m_recoverLatched) {
     return false;

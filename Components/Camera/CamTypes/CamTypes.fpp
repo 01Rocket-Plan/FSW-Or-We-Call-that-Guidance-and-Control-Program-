@@ -25,6 +25,8 @@ module Components {
   enum CamModel {
     OV7670 = 0
     ESP32_CAM = 1
+    @ 備援上級相機（只在 ov3640-alt 分支）
+    OV3640 = 2
   }
 
   enum CamRole {

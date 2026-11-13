@@ -1,14 +1,14 @@
-// Ov7670SimDevice：OV7670 SCCB（8-bit 位址）／DVP 模擬（與 Core 共用同一組介面）
-#ifndef COMPONENTS_CAMERA_OV7670DRIVER_OV7670SIMDEVICE_HPP
-#define COMPONENTS_CAMERA_OV7670DRIVER_OV7670SIMDEVICE_HPP
+// Ov3640SimDevice：OV3640 SCCB／DVP 模擬（與 Core 共用同一組介面）
+#ifndef COMPONENTS_CAMERA_OV3640DRIVER_OV3640SIMDEVICE_HPP
+#define COMPONENTS_CAMERA_OV3640DRIVER_OV3640SIMDEVICE_HPP
 
-#include "Components/Camera/Ov7670Driver/Ov7670Core.hpp"
-#include "Components/Camera/Ov7670Driver/Ov7670Regs.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640Core.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640Regs.hpp"
 #include <cstdint>
 
 namespace Components {
 
-enum class Ov7670SimFault : uint8_t {
+enum class Ov3640SimFault : uint8_t {
   NONE = 0,
   NACK_ON_WRITE = 1,
   NACK_ON_READ = 2,
@@ -17,24 +17,24 @@ enum class Ov7670SimFault : uint8_t {
   STUCK_READ = 5
 };
 
-class Ov7670SimDevice : public IOv7670Sccb, public IOv7670FrameSource {
+class Ov3640SimDevice : public IOv3640Sccb, public IOv3640FrameSource {
  public:
   static constexpr uint32_t kSimFrameBytes = 16;
-  // 最大可模擬一整張 QVGA RGB565（153,600 B）；SIL／host 測試用，不是飛行 RAM 配置。
-  static constexpr uint32_t kSimFrameCap = Ov7670Regs::FRAME_BYTES;
+  // Host-test capacity for multi-chunk / truncation paths (not flight RAM).
+  static constexpr uint32_t kSimFrameCap = 8192;
 
-  Ov7670SimDevice();
+  Ov3640SimDevice();
 
   void advance();
-  void setFault(Ov7670SimFault f) { m_fault = f; }
+  void setFault(Ov3640SimFault f) { m_fault = f; }
   void setStuckValue(uint8_t v) { m_stuck = v; }
   void setFrameAvailable(bool avail) { m_frameAvail = avail; }
   void setFrameEveryN(uint32_t n);
   // Host-test only: report length up to kSimFrameCap (multi-chunk / truncation).
   void setReportedFrameLength(uint32_t n);
 
-  bool writeReg(uint8_t reg, uint8_t val) override;
-  bool readReg(uint8_t reg, uint8_t* val) override;
+  bool writeReg(uint16_t reg, uint8_t val) override;
+  bool readReg(uint16_t reg, uint8_t* val) override;
   bool pollFrame(CamFrameView& out) override;
 
   uint32_t writeCount() const { return m_writeCount; }
@@ -44,13 +44,16 @@ class Ov7670SimDevice : public IOv7670Sccb, public IOv7670FrameSource {
   const uint8_t* simFrameData() const { return m_frameBuf; }
 
  private:
-  void regWrite(uint8_t reg, uint8_t val);
+  uint8_t reg8(uint16_t reg) const;
+  void regWrite(uint16_t reg, uint8_t val);
 
-  uint8_t m_regs[256];
+  uint8_t m_regsLo[256];
+  uint8_t m_pidh = Ov3640Regs::EXPECTED_PIDH;
+  uint8_t m_pidl = Ov3640Regs::EXPECTED_PIDL;
   uint8_t m_stuck = 0;
   uint8_t m_frameBuf[kSimFrameCap];
 
-  Ov7670SimFault m_fault = Ov7670SimFault::NONE;
+  Ov3640SimFault m_fault = Ov3640SimFault::NONE;
   bool m_frameAvail = true;
   uint32_t m_frameEveryN = 0;
   uint32_t m_reportedLen = kSimFrameBytes;

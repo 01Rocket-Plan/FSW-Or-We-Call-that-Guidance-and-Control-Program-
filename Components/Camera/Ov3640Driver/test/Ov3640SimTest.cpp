@@ -1,7 +1,7 @@
-// Ov7670SimTest：F´ 單元測試（真 F´ 自動碼型別＋gtest）。涵蓋 Core＋SimDevice 的狀態機路徑。
-// 跑法：tools/verify/fprime_verify.sh --ut Components/Camera/CamTypes Components/Camera/Ov7670Driver
-#include "Components/Camera/Ov7670Driver/Ov7670Core.hpp"
-#include "Components/Camera/Ov7670Driver/Ov7670SimDevice.hpp"
+// Ov3640SimTest：F´ 單元測試（真 F´ 自動碼型別＋gtest）。涵蓋 Core＋SimDevice 的狀態機路徑。
+// 跑法：tools/verify/fprime_verify.sh --ut Components/Camera/CamTypes Components/Camera/Ov3640Driver
+#include "Components/Camera/Ov3640Driver/Ov3640Core.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640SimDevice.hpp"
 
 #include <gtest/gtest.h>
 #include <cstdio>
@@ -11,7 +11,7 @@ using namespace Components;
 
 namespace {
 
-struct RecordingSink : IOv7670Sink {
+struct RecordingSink : IOv3640Sink {
   static constexpr uint32_t kMaxBytes = 64;
 
   uint32_t frameEvents = 0;
@@ -49,24 +49,24 @@ struct RecordingSink : IOv7670Sink {
     lastRecoverLimit = limit;
   }
 
-  void pullTlm(const Ov7670Core& core) { tlm = core.status(); }  // FPP 自動碼 CamStatus
+  void pullTlm(const Ov3640Core& core) { tlm = core.status(); }
 };
 
 struct Fixture {
-  Ov7670SimDevice sim{};
+  Ov3640SimDevice sim{};
   RecordingSink sink{};
-  Ov7670Core core{};
+  Ov3640Core core{};
   Fixture() { core.configure(&sim, &sim, &sink); }
 };
 
-void run(Ov7670Core& core, Ov7670SimDevice& sim, uint32_t tickHz, uint32_t ticks) {
+void run(Ov3640Core& core, Ov3640SimDevice& sim, uint32_t tickHz, uint32_t ticks) {
   for (uint32_t i = 0; i < ticks; ++i) {
     sim.advance();
     core.tick(tickHz);
   }
 }
 
-bool runUntil(Ov7670Core& core, Ov7670SimDevice& sim, uint32_t tickHz, CamState target,
+bool runUntil(Ov3640Core& core, Ov3640SimDevice& sim, uint32_t tickHz, CamState target,
               uint32_t maxTicks) {
   for (uint32_t i = 0; i < maxTicks; ++i) {
     if (core.state() == target) return true;
@@ -84,13 +84,13 @@ void testNormalPath() {
   const uint32_t sinkBefore = f.sink.frameEvents;
   run(f.core, f.sim, 100u, 5u);
   ASSERT_TRUE(f.sink.frameEvents == sinkBefore + 5u);
-  ASSERT_TRUE(f.sink.lastLen == Ov7670SimDevice::kSimFrameBytes);
+  ASSERT_TRUE(f.sink.lastLen == Ov3640SimDevice::kSimFrameBytes);
   ASSERT_TRUE(f.core.frameCount() == 5u);
   f.sink.pullTlm(f.core);
   ASSERT_TRUE(f.sink.tlm.get_camState() == CamState::READY);
   ASSERT_TRUE(f.sink.tlm.get_frameCount() == f.core.frameCount());
   ASSERT_TRUE(f.sink.tlm.get_fault() == CamFault::NONE);
-  ASSERT_TRUE(f.sink.tlm.get_model() == CamModel::OV7670);
+  ASSERT_TRUE(f.sink.tlm.get_model() == CamModel::OV3640);
   ASSERT_TRUE(f.sink.tlm.get_role() == CamRole::US_CAM);
 }
 
@@ -109,7 +109,7 @@ void testCaptureRejectedWhenNotReady() {
 
 void testBadChipId() {
   Fixture f;
-  f.sim.setFault(Ov7670SimFault::BAD_CHIP_ID);
+  f.sim.setFault(Ov3640SimFault::BAD_CHIP_ID);
   f.core.start();
   ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::FAULT, 64u));
   ASSERT_TRUE(f.core.fault() == CamFault::ID_MISMATCH);
@@ -118,7 +118,7 @@ void testBadChipId() {
 
 void testTypeRoleMismatch() {
   Fixture f;
-  Ov7670Params p{};
+  Ov3640Params p{};
   p.model = CamModel::ESP32_CAM;
   p.role = CamRole::US_CAM;
   f.core.setParams(p);
@@ -127,8 +127,8 @@ void testTypeRoleMismatch() {
   ASSERT_TRUE(f.core.fault() == CamFault::TYPE_ROLE_MISMATCH);
 
   Fixture g;
-  Ov7670Params pg{};
-  pg.model = CamModel::OV7670;
+  Ov3640Params pg{};
+  pg.model = CamModel::OV3640;
   pg.role = CamRole::DS_CAM;
   g.core.setParams(pg);
   g.core.start();
@@ -140,7 +140,7 @@ void testBusTimeout() {
   Fixture f;
   f.core.start();
   run(f.core, f.sim, 100u, 1u);
-  f.sim.setFault(Ov7670SimFault::BUS_DOWN);
+  f.sim.setFault(Ov3640SimFault::BUS_DOWN);
   ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::FAULT, 16u));
   ASSERT_TRUE(f.core.fault() == CamFault::BUS_TIMEOUT);
 }
@@ -180,41 +180,39 @@ void testStopResetRehandshake() {
   f.core.start();
   ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
   ASSERT_TRUE(f.core.fault() == CamFault::NONE);
-  ASSERT_TRUE(f.core.lastChipId() == Ov7670Regs::EXPECTED_CHIP_ID);
+  ASSERT_TRUE(f.core.lastChipId() == 0x364C);
 }
 
 void testInitChunking() {
-  // 初始化表 13 筆；第 0 筆是軟重置，寫完那一拍就停（下一拍才寫其餘）
   Fixture f;
-  Ov7670Params p{};
+  Ov3640Params p{};
   p.entriesPerTick = 8;
   f.core.setParams(p);
   f.core.start();
 
   f.sim.advance();
   f.core.tick(100u);
-  ASSERT_TRUE(f.core.initIndex() == 1u);  // 只寫了 COM7=0x80
+  ASSERT_TRUE(f.core.initIndex() == 8u);
 
   f.sim.advance();
   f.core.tick(100u);
-  ASSERT_TRUE(f.core.initIndex() == 9u);
-
-  f.sim.advance();
-  f.core.tick(100u);
-  ASSERT_TRUE(f.core.initIndex() == 13u);
+  ASSERT_TRUE(f.core.initIndex() == 12u);
   ASSERT_TRUE(f.core.state() == CamState::SELFTEST);
 
   f.core.reset();
-  Ov7670Params p2{};
+  Ov3640Params p2{};
   p2.entriesPerTick = 4;
   f.core.setParams(p2);
   f.core.start();
-  const uint32_t expect[] = {1u, 5u, 9u, 13u};
-  for (uint32_t e : expect) {
-    f.sim.advance();
-    f.core.tick(100u);
-    ASSERT_TRUE(f.core.initIndex() == e);
-  }
+  f.sim.advance();
+  f.core.tick(100u);
+  ASSERT_TRUE(f.core.initIndex() == 4u);
+  f.sim.advance();
+  f.core.tick(100u);
+  ASSERT_TRUE(f.core.initIndex() == 8u);
+  f.sim.advance();
+  f.core.tick(100u);
+  ASSERT_TRUE(f.core.initIndex() == 12u);
   ASSERT_TRUE(f.core.state() == CamState::SELFTEST);
 }
 
@@ -222,11 +220,11 @@ void testRecoveryAfterBusFault() {
   Fixture f;
   f.core.start();
   run(f.core, f.sim, 100u, 1u);
-  f.sim.setFault(Ov7670SimFault::BUS_DOWN);
+  f.sim.setFault(Ov3640SimFault::BUS_DOWN);
   ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::FAULT, 16u));
   ASSERT_TRUE(f.core.fault() == CamFault::BUS_TIMEOUT);
 
-  f.sim.setFault(Ov7670SimFault::NONE);
+  f.sim.setFault(Ov3640SimFault::NONE);
   f.core.reset();
   ASSERT_TRUE(f.core.state() == CamState::OFF);
   ASSERT_TRUE(f.core.fault() == CamFault::NONE);
@@ -237,7 +235,7 @@ void testRecoveryAfterBusFault() {
 
 void testParamFrameTimeoutAnd1Hz() {
   Fixture f;
-  Ov7670Params p{};
+  Ov3640Params p{};
   p.frameTimeoutTicks = 5;
   f.core.setParams(p);
   f.core.start();
@@ -253,7 +251,7 @@ void testParamFrameTimeoutAnd1Hz() {
   ASSERT_TRUE(f.core.fault() == CamFault::FRAME_TIMEOUT);
 
   Fixture g;
-  Ov7670Params pg{};
+  Ov3640Params pg{};
   pg.frameTimeoutTicks = 3;
   g.core.setParams(pg);
   g.core.start();
@@ -281,7 +279,7 @@ void testTelemetryHasNoImage() {
   f.sink.pullTlm(f.core);
   const CamStatus s = f.sink.tlm;
   ASSERT_TRUE(s.get_frameCount() == f.core.frameCount());
-  ASSERT_TRUE(s.get_model() == CamModel::OV7670);
+  ASSERT_TRUE(s.get_model() == CamModel::OV3640);
   ASSERT_TRUE(s.get_role() == CamRole::US_CAM);
   (void)s;
 }
@@ -289,13 +287,13 @@ void testTelemetryHasNoImage() {
 // Binding #1: FAULT → 1 Hz every K ticks auto INIT, emit RecoverAttempt, up to R; then latch
 void testFaultRecoverKR() {
   Fixture f;
-  Ov7670Params p{};
+  Ov3640Params p{};
   p.faultRecoverK = 5;
   p.faultRecoverR = 3;
   f.core.setParams(p);
   f.core.start();
   run(f.core, f.sim, 100u, 1u);
-  f.sim.setFault(Ov7670SimFault::BUS_DOWN);
+  f.sim.setFault(Ov3640SimFault::BUS_DOWN);
   ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::FAULT, 16u));
 
   // Keep bus down so each recover fails again
@@ -322,7 +320,7 @@ void testFaultRecoverKR() {
   ASSERT_TRUE(f.core.state() == CamState::FAULT);
 
   // Only RESET clears latch
-  f.sim.setFault(Ov7670SimFault::NONE);
+  f.sim.setFault(Ov3640SimFault::NONE);
   f.core.reset();
   ASSERT_TRUE(!f.core.recoverLatched());
   ASSERT_TRUE(f.core.recoverAttempts() == 0);
@@ -347,16 +345,16 @@ void testRejectedFrameNotCounted() {
 
 }  // namespace
 
-TEST(Ov7670Core, NormalPath) { testNormalPath(); }
-TEST(Ov7670Core, CaptureRejectedWhenNotReady) { testCaptureRejectedWhenNotReady(); }
-TEST(Ov7670Core, BadChipId) { testBadChipId(); }
-TEST(Ov7670Core, TypeRoleMismatch) { testTypeRoleMismatch(); }
-TEST(Ov7670Core, BusTimeout) { testBusTimeout(); }
-TEST(Ov7670Core, FrameTimeout) { testFrameTimeout(); }
-TEST(Ov7670Core, StopResetRehandshake) { testStopResetRehandshake(); }
-TEST(Ov7670Core, InitChunking) { testInitChunking(); }
-TEST(Ov7670Core, RecoveryAfterBusFault) { testRecoveryAfterBusFault(); }
-TEST(Ov7670Core, ParamFrameTimeoutAnd1Hz) { testParamFrameTimeoutAnd1Hz(); }
-TEST(Ov7670Core, TelemetryHasNoImage) { testTelemetryHasNoImage(); }
-TEST(Ov7670Core, FaultRecoverKR) { testFaultRecoverKR(); }
-TEST(Ov7670Core, RejectedFrameNotCounted) { testRejectedFrameNotCounted(); }
+TEST(Ov3640Core, NormalPath) { testNormalPath(); }
+TEST(Ov3640Core, CaptureRejectedWhenNotReady) { testCaptureRejectedWhenNotReady(); }
+TEST(Ov3640Core, BadChipId) { testBadChipId(); }
+TEST(Ov3640Core, TypeRoleMismatch) { testTypeRoleMismatch(); }
+TEST(Ov3640Core, BusTimeout) { testBusTimeout(); }
+TEST(Ov3640Core, FrameTimeout) { testFrameTimeout(); }
+TEST(Ov3640Core, StopResetRehandshake) { testStopResetRehandshake(); }
+TEST(Ov3640Core, InitChunking) { testInitChunking(); }
+TEST(Ov3640Core, RecoveryAfterBusFault) { testRecoveryAfterBusFault(); }
+TEST(Ov3640Core, ParamFrameTimeoutAnd1Hz) { testParamFrameTimeoutAnd1Hz(); }
+TEST(Ov3640Core, TelemetryHasNoImage) { testTelemetryHasNoImage(); }
+TEST(Ov3640Core, FaultRecoverKR) { testFaultRecoverKR(); }
+TEST(Ov3640Core, RejectedFrameNotCounted) { testRejectedFrameNotCounted(); }

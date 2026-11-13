@@ -1,16 +1,16 @@
-#include "Components/Camera/Ov7670Driver/Ov7670DriverSim.hpp"
+#include "Components/Camera/Ov3640Driver/Ov3640DriverSim.hpp"
 #include <cstring>
 
 namespace Components {
 
-Ov7670DriverSim::Ov7670DriverSim(const char* compName)
-    : Ov7670DriverSimComponentBase(compName) {
+Ov3640DriverSim::Ov3640DriverSim(const char* compName)
+    : Ov3640DriverSimComponentBase(compName) {
   m_core.configure(&m_dev, &m_dev, this);
 }
 
-void Ov7670DriverSim::loadParams() {
+void Ov3640DriverSim::loadParams() {
   Fw::ParamValid v;
-  Ov7670Params p = m_core.params();
+  Ov3640Params p = m_core.params();
   p.busTimeoutMisses = this->paramGet_BUS_TIMEOUT_MISSES(v);
   p.frameTimeoutTicks = this->paramGet_FRAME_TIMEOUT_TICKS(v);
   p.entriesPerTick = this->paramGet_ENTRIES_PER_TICK(v);
@@ -19,23 +19,23 @@ void Ov7670DriverSim::loadParams() {
   p.faultRecoverK = this->paramGet_FAULT_RECOVER_K(v);
   p.faultRecoverR = this->paramGet_FAULT_RECOVER_R(v);
   p.frameMaxBytes = this->paramGet_FRAME_MAX_BYTES(v);
-  m_frameMaxBytes = p.frameMaxBytes == 0 ? Ov7670Regs::FRAME_BYTES : p.frameMaxBytes;
+  m_frameMaxBytes = p.frameMaxBytes == 0 ? 65536u : p.frameMaxBytes;
   m_core.setParams(p);
 }
 
-void Ov7670DriverSim::configureSil(bool autoPowerOn, bool autoCapture, U32 frameEveryN, U32 frameBytes) {
+void Ov3640DriverSim::configureSil(bool autoPowerOn, bool autoCapture, U32 frameEveryN, U32 frameBytes) {
   m_autoPowerOn = autoPowerOn;
   m_autoCapture = autoCapture;
   m_dev.setFrameEveryN(frameEveryN);
   m_dev.setReportedFrameLength(frameBytes);
 }
 
-void Ov7670DriverSim::parameterUpdated(FwPrmIdType) { loadParams(); }
-void Ov7670DriverSim::parametersLoaded() { loadParams(); }
+void Ov3640DriverSim::parameterUpdated(FwPrmIdType) { loadParams(); }
+void Ov3640DriverSim::parametersLoaded() { loadParams(); }
 
-void Ov7670DriverSim::writeTlm() { this->tlmWrite_Status(m_core.status()); }
+void Ov3640DriverSim::writeTlm() { this->tlmWrite_Status(m_core.status()); }
 
-void Ov7670DriverSim::sched1Hz_handler(FwIndexType, U32) {
+void Ov3640DriverSim::sched1Hz_handler(FwIndexType, U32) {
   if (m_autoPowerOn && m_core.state() == CamState::OFF) {
     m_autoPowerOn = false;  // 只自動上電一次；之後 STOP／RESET 照指令走
     m_core.start();
@@ -45,7 +45,7 @@ void Ov7670DriverSim::sched1Hz_handler(FwIndexType, U32) {
   writeTlm();
 }
 
-void Ov7670DriverSim::sched100Hz_handler(FwIndexType, U32) {
+void Ov3640DriverSim::sched100Hz_handler(FwIndexType, U32) {
   m_dev.advance();
   m_core.tick(100u);
   if (m_autoCapture && m_core.state() == CamState::READY && !m_core.capturing()) {
@@ -58,25 +58,25 @@ void Ov7670DriverSim::sched100Hz_handler(FwIndexType, U32) {
   }
 }
 
-void Ov7670DriverSim::POWER_ON_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+void Ov3640DriverSim::POWER_ON_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
   m_core.start();
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   writeTlm();
 }
 
-void Ov7670DriverSim::RESET_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+void Ov3640DriverSim::RESET_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
   m_core.reset();
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   writeTlm();
 }
 
-void Ov7670DriverSim::STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+void Ov3640DriverSim::STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
   m_core.stop();
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
   writeTlm();
 }
 
-void Ov7670DriverSim::CAPTURE_START_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+void Ov3640DriverSim::CAPTURE_START_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
   if (!m_core.captureStart()) {
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
     return;
@@ -84,24 +84,24 @@ void Ov7670DriverSim::CAPTURE_START_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) 
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void Ov7670DriverSim::CAPTURE_STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+void Ov3640DriverSim::CAPTURE_STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
   m_core.captureStop();
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void Ov7670DriverSim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 fault) {
-  m_dev.setFault(static_cast<Ov7670SimFault>(fault));
+void Ov3640DriverSim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 fault) {
+  m_dev.setFault(static_cast<Ov3640SimFault>(fault));
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-void Ov7670DriverSim::SIM_SET_FRAME_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 enable) {
+void Ov3640DriverSim::SIM_SET_FRAME_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 enable) {
   m_dev.setFrameAvailable(enable != 0);
   if (enable == 0) m_dev.setFrameEveryN(0xFFFFFFFFu);
   else m_dev.setFrameEveryN(0);
   this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
-bool Ov7670DriverSim::streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+bool Ov3640DriverSim::streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
   if (!this->isConnected_imageOut_OutputPort(0)) return false;
   if (!data || length == 0) return false;
 
@@ -133,21 +133,21 @@ bool Ov7670DriverSim::streamChunks(const uint8_t* data, uint32_t length, uint32_
   return true;
 }
 
-bool Ov7670DriverSim::onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+bool Ov3640DriverSim::onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
   return streamChunks(data, length, frameNumber);
 }
 
-void Ov7670DriverSim::onStateChange(CamState from, CamState to) {
+void Ov3640DriverSim::onStateChange(CamState from, CamState to) {
   this->log_ACTIVITY_HI_StateChanged(from, to);
   writeTlm();
 }
 
-void Ov7670DriverSim::onFault(CamFault code, uint32_t detail) {
+void Ov3640DriverSim::onFault(CamFault code, uint32_t detail) {
   this->log_WARNING_HI_FaultRaised(code, detail);
   writeTlm();
 }
 
-void Ov7670DriverSim::onRecoverAttempt(uint32_t attempt, uint32_t limit) {
+void Ov3640DriverSim::onRecoverAttempt(uint32_t attempt, uint32_t limit) {
   this->log_ACTIVITY_HI_RecoverAttempt(attempt, limit);
   writeTlm();
 }

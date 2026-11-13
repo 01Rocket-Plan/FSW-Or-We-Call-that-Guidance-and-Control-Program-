@@ -41,7 +41,7 @@ module Components {
     sync input port mpu6050In: RocketTypes.Mpu6050Data
     sync input port humTempIn: RocketTypes.HumTempData
 
-    @ US_CAM 2KB image chunks (Ov7670 imageOut → sdLogger)；埠型別在 Components/Camera/CamTypes
+    @ US_CAM 2KB image chunks (US 相機 imageOut → sdLogger)；埠型別在 Components/Camera/CamTypes
     sync input port usImageIn: CamImageOut
     @ DS_CAM 2KB image chunks (Esp32Cam imageOut → sdLogger)
     sync input port dsImageIn: CamImageOut

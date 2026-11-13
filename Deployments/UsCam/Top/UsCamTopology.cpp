@@ -19,6 +19,7 @@ enum TopologyConstants {
   SIL_FRAME_EVERY_N = 10,
   //! SIL 幀大小：16 KB（8 塊）。一整張 QVGA RGB565 是 153,600 B（75 塊），
   //! 超過 SdLogger 影像佇列預設深度 8 → 會掉塊；兩組要一起定（見 Deployments/UsCam/README.md）。
+  //! OV3640 Sim 單幀上限 8 KB（kSimFrameCap），超過會被截到 8 KB（4 塊）。
   SIL_FRAME_BYTES = 16384,
 };
 

@@ -7,6 +7,6 @@ register_fprime_module(
         "${CMAKE_CURRENT_LIST_DIR}/UsCamTopology.cpp"
     DEPENDS
         Fw_Logger
-        Components_Camera_Ov7670Driver
+        Components_Camera_Ov3640Driver
         Components_Recorder_SdLogger
 )
