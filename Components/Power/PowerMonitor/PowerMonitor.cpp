@@ -84,13 +84,13 @@ void PowerMonitor::SET_SIM_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, bool enab
 }
 
 void PowerMonitor::SIM_READ_FAIL_cmdHandler(FwOpcodeType opCode, U32 cmdSeq,
-                                            PowerRailId rail, bool fail) {
+                                            const PowerRailId& rail, bool fail) {
     sim_.setReadFail(static_cast<::PowerRail::RailId>(static_cast<U8>(rail)), fail);
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }
 
 void PowerMonitor::SIM_FROZEN_cmdHandler(FwOpcodeType opCode, U32 cmdSeq,
-                                         PowerRailId rail, bool frozen) {
+                                         const PowerRailId& rail, bool frozen) {
     sim_.setFrozen(static_cast<::PowerRail::RailId>(static_cast<U8>(rail)), frozen);
     this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
 }

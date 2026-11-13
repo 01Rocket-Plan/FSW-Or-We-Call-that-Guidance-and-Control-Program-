@@ -1,24 +1,18 @@
 module Components {
 
-  @ DS IMU：ICM-20948 主 + ICM-20648 備援；1 kHz 非阻塞狀態機
+  @ DS IMU：ICM-20948（單顆）；1 kHz 非阻塞狀態機 OFF→INIT→SELFTEST→READY／FAULT
   @ Base ID 0x4000（docs/conventions.md）；Sim 用 0x4080
+  @ 2026-11-10（Edward，#40／#42 D2）：ICM-20648 是「20948 太貴或缺貨時的替代料」，不是飛行中備援，
+  @ 不進 main；替代版本在分支 EnvSensing/EdwardWang-Claude/icm20648-alt。
+  @ 輸出 ImuSample 已是機體系（X 鼻／Y 右／Z=X×Y），由 dcm** 參數轉換；墊上靜置 ≈ (+9.81, 0, 0)。
+  @ 事件只在狀態剛改變時記（飽和、FAULT／READY），遙測 1 Hz。
   passive component ImuDriver {
 
     sync input port schedIn: Svc.Sched
     time get port timeCaller
 
-    output port primaryWrite: EnvSensingBus.RegWrite
-    output port primaryRead: EnvSensingBus.RegRead
-    output port backupWrite: EnvSensingBus.RegWrite
-    output port backupRead: EnvSensingBus.RegRead
-    output port primarySpiWrite: EnvSensingBus.SpiRegWrite
-    output port primarySpiRead: EnvSensingBus.SpiRegRead
-    output port backupSpiWrite: EnvSensingBus.SpiRegWrite
-    output port backupSpiRead: EnvSensingBus.SpiRegRead
-    output port primaryI2c: Drv.I2c
-    output port backupI2c: Drv.I2c
-    output port primarySpi: Drv.SpiWriteRead
-    output port backupSpi: Drv.SpiWriteRead
+    output port busWrite: EnvSensingBus.RegWrite
+    output port busRead: EnvSensingBus.RegRead
 
     output port imuOut: RocketTypes.ImuData
 
@@ -32,48 +26,19 @@ module Components {
     param set port prmSetOut
 
     telemetry drvState: RocketTypes.DrvState
-    telemetry activeSensor: U8
     telemetry busErrCount: U32
     telemetry stuckCount: U32
-    telemetry failoverCount: U32
+    telemetry faultReason: U8
 
-    event WhoAmIFail(
-      sensor: U8
-      got: U8
-      expect: U8
-    ) severity warning high format "IMU{} WHO_AM_I got 0x{x} expect 0x{x}"
+    event GyroSaturated() severity warning low format "IMU gyro saturated"
 
-    event BusError(
-      sensor: U8
-      count: U32
-    ) severity warning high format "IMU{} bus errors={}"
-
-    event StuckDetected(
-      sensor: U8
-      n: U32
-    ) severity warning high format "IMU{} stuck for {} samples"
-
-    event GyroSaturated(
-      sensor: U8
-    ) severity warning low format "IMU{} gyro saturated"
-
-    event AccelSaturated(
-      sensor: U8
-    ) severity warning low format "IMU{} accel saturated"
-
-    event Failover(
-      fromSensor: U8
-      toSensor: U8
-    ) severity warning high format "IMU failover {} -> {}"
+    event AccelSaturated() severity warning low format "IMU accel saturated"
 
     event EnterFault(
-      sensor: U8
       reason: U8
-    ) severity warning high format "IMU{} enter FAULT reason={}"
+    ) severity warning high format "IMU enter FAULT reason={}"
 
-    event EnterReady(
-      sensor: U8
-    ) severity activity high format "IMU{} READY"
+    event EnterReady() severity activity high format "IMU READY"
 
     param stuckN: U32 default 50
     param busErrThreshold: U32 default 5
@@ -81,28 +46,18 @@ module Components {
     param selftestSamples: U32 default 20
     param gyroSatThresh_rads: F32 default 34.0
     param accelSatThresh_mps2: F32 default 156.0
-    param useSpi: bool default false
-    param primaryI2cAddr: U8 default 0x69
-    param backupI2cAddr: U8 default 0x68
-    @ Body←sensor DCM row-major entries (identity default)
-    param dcmP00: F32 default 1.0
-    param dcmP01: F32 default 0.0
-    param dcmP02: F32 default 0.0
-    param dcmP10: F32 default 0.0
-    param dcmP11: F32 default 1.0
-    param dcmP12: F32 default 0.0
-    param dcmP20: F32 default 0.0
-    param dcmP21: F32 default 0.0
-    param dcmP22: F32 default 1.0
-    param dcmB00: F32 default 1.0
-    param dcmB01: F32 default 0.0
-    param dcmB02: F32 default 0.0
-    param dcmB10: F32 default 0.0
-    param dcmB11: F32 default 1.0
-    param dcmB12: F32 default 0.0
-    param dcmB20: F32 default 0.0
-    param dcmB21: F32 default 0.0
-    param dcmB22: F32 default 1.0
+    param i2cAddr: U8 default 0x69
+    @ 機體←晶片 DCM（row-major）。預設：ICM-20948 晶片 Z 沿鼻 → 機體 = (晶片 Z, 晶片 Y, −晶片 X)
+    @ （跟 SSS plant/state.py 的 imu_to_body 同一張矩陣）。實際安裝方向不同時改這 9 個參數。
+    param dcm00: F32 default 0.0
+    param dcm01: F32 default 0.0
+    param dcm02: F32 default 1.0
+    param dcm10: F32 default 0.0
+    param dcm11: F32 default 1.0
+    param dcm12: F32 default 0.0
+    param dcm20: F32 default -1.0
+    param dcm21: F32 default 0.0
+    param dcm22: F32 default 0.0
   }
 
   @ ImuDriver Sim + fault injection — Base ID 0x4080
@@ -124,26 +79,17 @@ module Components {
     param set port prmSetOut
 
     telemetry drvState: RocketTypes.DrvState
-    telemetry activeSensor: U8
     telemetry injectCode: U8
 
     event SimInject(
       code: U8
     ) severity activity low format "ImuDriverSim inject={}"
 
-    event EnterReady(
-      sensor: U8
-    ) severity activity high format "ImuDriverSim IMU{} READY"
-
-    event Failover(
-      fromSensor: U8
-      toSensor: U8
-    ) severity warning high format "ImuDriverSim failover {} -> {}"
+    event EnterReady() severity activity high format "ImuDriverSim READY"
 
     event EnterFault(
-      sensor: U8
       reason: U8
-    ) severity warning high format "ImuDriverSim IMU{} FAULT reason={}"
+    ) severity warning high format "ImuDriverSim FAULT reason={}"
 
     param stuckN: U32 default 50
     param busErrThreshold: U32 default 5

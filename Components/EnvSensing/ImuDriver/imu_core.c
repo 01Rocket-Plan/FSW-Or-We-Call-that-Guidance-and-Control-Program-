@@ -23,7 +23,6 @@ enum {
   BANK2_ACCEL_SMPLRT_DIV_1 = 0x10,
   BANK2_ACCEL_SMPLRT_DIV_2 = 0x11,
   WHOAMI_ICM20948 = 0xEA,
-  WHOAMI_ICM20648 = 0xE0,
   PWR1_DEVICE_RESET = 0x80,
   PWR1_CLKSEL_AUTO = 0x01,
   GYRO_CFG1_2000DPS_DLPF = 0x07,
@@ -58,7 +57,6 @@ struct ImuCore {
   ImuBusOps bus;
   ImuParams params;
   ImuDrvState state;
-  ImuSensorId active;
   ImuFaultReason faultReason;
   uint8_t initStep;
   uint8_t stPhase;
@@ -68,9 +66,7 @@ struct ImuCore {
   uint32_t busErrCount;
   uint32_t stuckCount;
   uint32_t stuckRun;
-  uint32_t failoverCount;
   uint32_t seq;
-  int primaryFailed;
   float lastAcc[3];
   float lastGyro[3];
   int haveLast;
@@ -92,10 +88,11 @@ ImuParams imu_params_default(void) {
   p.selftestSamples = 20;
   p.gyroSatThresh_rads = 34.0f;
   p.accelSatThresh_mps2 = 156.0f;
-  p.dcmPrimary[0] = p.dcmPrimary[4] = p.dcmPrimary[8] = 1.0f;
-  p.dcmBackup[0] = p.dcmBackup[4] = p.dcmBackup[8] = 1.0f;
-  p.primaryAddr = 0x69;
-  p.backupAddr = 0x68;
+  /* 機體 = (晶片 Z, 晶片 Y, −晶片 X)：墊上靜置比力 ≈ (+g, 0, 0)（issue #40 留言、PR #44） */
+  p.dcm[2] = 1.0f;
+  p.dcm[4] = 1.0f;
+  p.dcm[6] = -1.0f;
+  p.i2cAddr = 0x69;
   return p;
 }
 
@@ -105,7 +102,6 @@ ImuCore* imu_core_create(ImuBusOps bus) {
   c->bus = bus;
   c->params = imu_params_default();
   c->state = IMU_DRV_OFF;
-  c->active = IMU_SENS_PRIMARY;
   return c;
 }
 
@@ -118,7 +114,6 @@ void imu_core_set_params(ImuCore* c, const ImuParams* p) {
 void imu_core_reset(ImuCore* c) {
   if (!c) return;
   c->state = IMU_DRV_OFF;
-  c->active = IMU_SENS_PRIMARY;
   c->initStep = 0;
   c->stPhase = 0;
   c->waitTicks = 0;
@@ -127,7 +122,6 @@ void imu_core_reset(ImuCore* c) {
   c->stuckRun = 0;
   c->faultReason = IMU_FAULT_NONE;
   c->haveLast = 0;
-  c->primaryFailed = 0;
   c->avgN = 0;
   memset(c->avgOffA, 0, sizeof(c->avgOffA));
   memset(c->avgOffG, 0, sizeof(c->avgOffG));
@@ -136,22 +130,14 @@ void imu_core_reset(ImuCore* c) {
 }
 
 ImuDrvState imu_core_state(const ImuCore* c) { return c->state; }
-ImuSensorId imu_core_active(const ImuCore* c) { return c->active; }
 ImuFaultReason imu_core_fault(const ImuCore* c) { return c->faultReason; }
 uint32_t imu_core_seq(const ImuCore* c) { return c->seq; }
 uint32_t imu_core_bus_err(const ImuCore* c) { return c->busErrCount; }
 uint32_t imu_core_stuck(const ImuCore* c) { return c->stuckCount; }
-uint32_t imu_core_failover(const ImuCore* c) { return c->failoverCount; }
 
-static uint8_t addr_of(const ImuCore* c) {
-  return c->active == IMU_SENS_PRIMARY ? c->params.primaryAddr : c->params.backupAddr;
-}
-static uint8_t expect_whoami(const ImuCore* c) {
-  return c->active == IMU_SENS_PRIMARY ? (uint8_t)WHOAMI_ICM20948 : (uint8_t)WHOAMI_ICM20648;
-}
-static const float* dcm_of(const ImuCore* c) {
-  return c->active == IMU_SENS_PRIMARY ? c->params.dcmPrimary : c->params.dcmBackup;
-}
+static uint8_t addr_of(const ImuCore* c) { return c->params.i2cAddr; }
+static uint8_t expect_whoami(const ImuCore* c) { (void)c; return (uint8_t)WHOAMI_ICM20948; }
+static const float* dcm_of(const ImuCore* c) { return c->params.dcm; }
 
 static void matvec3(const float m[9], const float v[3], float o[3]) {
   o[0] = m[0]*v[0] + m[1]*v[1] + m[2]*v[2];
@@ -199,30 +185,9 @@ static void enter_fault(ImuCore* c, ImuFaultReason r) {
   c->faultReason = r;
 }
 
-static void try_failover(ImuCore* c, ImuFaultReason r) {
-  if (c->active == IMU_SENS_PRIMARY && !c->primaryFailed) {
-    c->primaryFailed = 1;
-    c->failoverCount++;
-    c->active = IMU_SENS_BACKUP;
-    c->state = IMU_DRV_INIT;
-    c->initStep = 0;
-    c->stPhase = 0;
-    c->waitTicks = 0;
-    c->selftestCount = 0;
-    c->whoamiFails = 0;
-    c->busErrCount = 0;
-    c->stuckRun = 0;
-    c->haveLast = 0;
-    c->avgN = 0;
-    c->faultReason = IMU_FAULT_NONE;
-    return;
-  }
-  enter_fault(c, r == IMU_FAULT_NONE ? IMU_FAULT_BOTH : r);
-}
-
 static void note_bus_fail(ImuCore* c) {
   c->busErrCount++;
-  if (c->busErrCount >= c->params.busErrThreshold) try_failover(c, IMU_FAULT_BUS);
+  if (c->busErrCount >= c->params.busErrThreshold) enter_fault(c, IMU_FAULT_BUS);
 }
 
 static void emit_invalid(ImuCore* c, ImuSampleOut* out, double t_s) {
@@ -269,7 +234,7 @@ static int step_init(ImuCore* c) {
       if (!read_u8(c, (uint8_t)BANK0_WHO_AM_I, &id)) { note_bus_fail(c); return 0; }
       if (id != expect_whoami(c)) {
         c->whoamiFails++;
-        if (c->whoamiFails >= c->params.whoamiFailThreshold) try_failover(c, IMU_FAULT_WHOAMI);
+        if (c->whoamiFails >= c->params.whoamiFailThreshold) enter_fault(c, IMU_FAULT_WHOAMI);
         return 0;
       }
       c->initStep = 3;
@@ -433,7 +398,7 @@ static int step_selftest(ImuCore* c, ImuSampleOut* out, double t_s) {
         note_bus_fail(c); return 1;
       }
       if (!ok) {
-        try_failover(c, IMU_FAULT_SELFTEST);
+        enter_fault(c, IMU_FAULT_SELFTEST);
         return 1;
       }
       c->stPhase = ST_RESTORE_FS;
@@ -474,7 +439,7 @@ static int step_selftest(ImuCore* c, ImuSampleOut* out, double t_s) {
         c->avgN++;
         if (c->avgN > 2000) {
           c->avgN = 0;
-          try_failover(c, IMU_FAULT_SELFTEST);
+          enter_fault(c, IMU_FAULT_SELFTEST);
         }
       }
       return 1;
@@ -493,7 +458,7 @@ static int step_ready(ImuCore* c, ImuSampleOut* out, double t_s) {
   convert_dcm(c, a, g, acc, gyro);
   check_stuck_sat(c, acc, gyro, &gyroSat, &accelSat, &stuck);
   if (stuck) {
-    try_failover(c, IMU_FAULT_STUCK);
+    enter_fault(c, IMU_FAULT_STUCK);
     emit_invalid(c, out, t_s);
     return 1;
   }

@@ -9,8 +9,12 @@ static RocketTypes::DrvState toFpp(ImuDrvState s) {
 }
 
 ImuDriver::ImuDriver(const char* compName)
-    : ImuDriverComponentBase(compName), m_core(nullptr), m_tlmDiv(0),
-      m_lastState(IMU_DRV_OFF), m_lastActive(IMU_SENS_PRIMARY) {
+    : ImuDriverComponentBase(compName),
+      m_core(nullptr),
+      m_tlmDiv(0),
+      m_lastState(IMU_DRV_OFF),
+      m_gyroSatLatched(false),
+      m_accelSatLatched(false) {
   ImuBusOps ops;
   ops.ctx = this;
   ops.writeReg = &ImuDriver::busWrite;
@@ -30,26 +34,16 @@ void ImuDriver::loadParams() {
   p.selftestSamples = this->paramGet_selftestSamples(v);
   p.gyroSatThresh_rads = this->paramGet_gyroSatThresh_rads(v);
   p.accelSatThresh_mps2 = this->paramGet_accelSatThresh_mps2(v);
-  p.primaryAddr = this->paramGet_primaryI2cAddr(v);
-  p.backupAddr = this->paramGet_backupI2cAddr(v);
-  p.dcmPrimary[0] = this->paramGet_dcmP00(v);
-  p.dcmPrimary[1] = this->paramGet_dcmP01(v);
-  p.dcmPrimary[2] = this->paramGet_dcmP02(v);
-  p.dcmPrimary[3] = this->paramGet_dcmP10(v);
-  p.dcmPrimary[4] = this->paramGet_dcmP11(v);
-  p.dcmPrimary[5] = this->paramGet_dcmP12(v);
-  p.dcmPrimary[6] = this->paramGet_dcmP20(v);
-  p.dcmPrimary[7] = this->paramGet_dcmP21(v);
-  p.dcmPrimary[8] = this->paramGet_dcmP22(v);
-  p.dcmBackup[0] = this->paramGet_dcmB00(v);
-  p.dcmBackup[1] = this->paramGet_dcmB01(v);
-  p.dcmBackup[2] = this->paramGet_dcmB02(v);
-  p.dcmBackup[3] = this->paramGet_dcmB10(v);
-  p.dcmBackup[4] = this->paramGet_dcmB11(v);
-  p.dcmBackup[5] = this->paramGet_dcmB12(v);
-  p.dcmBackup[6] = this->paramGet_dcmB20(v);
-  p.dcmBackup[7] = this->paramGet_dcmB21(v);
-  p.dcmBackup[8] = this->paramGet_dcmB22(v);
+  p.i2cAddr = this->paramGet_i2cAddr(v);
+  p.dcm[0] = this->paramGet_dcm00(v);
+  p.dcm[1] = this->paramGet_dcm01(v);
+  p.dcm[2] = this->paramGet_dcm02(v);
+  p.dcm[3] = this->paramGet_dcm10(v);
+  p.dcm[4] = this->paramGet_dcm11(v);
+  p.dcm[5] = this->paramGet_dcm12(v);
+  p.dcm[6] = this->paramGet_dcm20(v);
+  p.dcm[7] = this->paramGet_dcm21(v);
+  p.dcm[8] = this->paramGet_dcm22(v);
   imu_core_set_params(m_core, &p);
 }
 
@@ -58,25 +52,19 @@ void ImuDriver::parametersLoaded() { loadParams(); }
 
 bool ImuDriver::busWrite(void* ctx, uint8_t addr, uint8_t reg, const uint8_t* data, uint8_t len) {
   auto* self = static_cast<ImuDriver*>(ctx);
+  if (!self->isConnected_busWrite_OutputPort(0)) return false;
   U8 buf[16];
   if (len > sizeof(buf)) return false;
   std::memcpy(buf, data, len);
   Fw::Buffer wb(buf, len);
-  const bool primary = (imu_core_active(self->m_core) == IMU_SENS_PRIMARY);
-  EnvSensingBus::BusStatus st = primary
-      ? self->primaryWrite_out(0, addr, reg, wb)
-      : self->backupWrite_out(0, addr, reg, wb);
-  return st == EnvSensingBus::BusStatus::OK;
+  return self->busWrite_out(0, addr, reg, wb) == EnvSensingBus::BusStatus::OK;
 }
 
 bool ImuDriver::busRead(void* ctx, uint8_t addr, uint8_t reg, uint8_t* data, uint8_t len) {
   auto* self = static_cast<ImuDriver*>(ctx);
+  if (!self->isConnected_busRead_OutputPort(0)) return false;
   Fw::Buffer rb(data, len);
-  const bool primary = (imu_core_active(self->m_core) == IMU_SENS_PRIMARY);
-  EnvSensingBus::BusStatus st = primary
-      ? self->primaryRead_out(0, addr, reg, rb)
-      : self->backupRead_out(0, addr, reg, rb);
-  return st == EnvSensingBus::BusStatus::OK;
+  return self->busRead_out(0, addr, reg, rb) == EnvSensingBus::BusStatus::OK;
 }
 
 void ImuDriver::emitSample(const ImuSampleOut& s) {
@@ -89,10 +77,9 @@ void ImuDriver::emitSample(const ImuSampleOut& s) {
 
 void ImuDriver::writeTlm() {
   this->tlmWrite_drvState(toFpp(imu_core_state(m_core)));
-  this->tlmWrite_activeSensor(static_cast<U8>(imu_core_active(m_core)));
   this->tlmWrite_busErrCount(imu_core_bus_err(m_core));
   this->tlmWrite_stuckCount(imu_core_stuck(m_core));
-  this->tlmWrite_failoverCount(imu_core_failover(m_core));
+  this->tlmWrite_faultReason(static_cast<U8>(imu_core_fault(m_core)));
 }
 
 void ImuDriver::schedIn_handler(FwIndexType, U32) {
@@ -102,18 +89,20 @@ void ImuDriver::schedIn_handler(FwIndexType, U32) {
   imu_core_tick(m_core, t_s, &out);
 
   const ImuDrvState st = imu_core_state(m_core);
-  const ImuSensorId act = imu_core_active(m_core);
   if (st != m_lastState) {
-    if (st == IMU_DRV_READY) this->log_ACTIVITY_HI_EnterReady(static_cast<U8>(act));
-    if (st == IMU_DRV_FAULT) this->log_WARNING_HI_EnterFault(static_cast<U8>(act), static_cast<U8>(imu_core_fault(m_core)));
+    if (st == IMU_DRV_READY) this->log_ACTIVITY_HI_EnterReady();
+    if (st == IMU_DRV_FAULT) this->log_WARNING_HI_EnterFault(static_cast<U8>(imu_core_fault(m_core)));
     m_lastState = st;
+    writeTlm();  // 狀態剛改變那一拍立刻寫，之後 1 Hz
+    m_tlmDiv = 0;
   }
-  if (act != m_lastActive) {
-    this->log_WARNING_HI_Failover(static_cast<U8>(m_lastActive), static_cast<U8>(act));
-    m_lastActive = act;
+  // 飽和事件只在「剛開始飽和」那一拍記（1 kHz 每拍記會洪水，同 #38）
+  if (out.gyroSat && !m_gyroSatLatched) this->log_WARNING_LO_GyroSaturated();
+  if (out.accelSat && !m_accelSatLatched) this->log_WARNING_LO_AccelSaturated();
+  if (out.valid) {
+    m_gyroSatLatched = out.gyroSat;
+    m_accelSatLatched = out.accelSat;
   }
-  if (out.gyroSat) this->log_WARNING_LO_GyroSaturated(static_cast<U8>(act));
-  if (out.accelSat) this->log_WARNING_LO_AccelSaturated(static_cast<U8>(act));
 
   emitSample(out);
   if (++m_tlmDiv >= 1000) {

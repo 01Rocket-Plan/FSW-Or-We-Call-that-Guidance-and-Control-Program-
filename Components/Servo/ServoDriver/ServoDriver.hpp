@@ -31,6 +31,8 @@ class ServoDriver final : public ServoDriverComponentBase {
   U16 clampPulse(U8 ch, U16 raw);
   void emitPwmOut();
   void writeTlm();
+  void flushTlmNow();
+  void logDrop(U32 seq, U8 reason);
   bool pwmSelftestOk() const;
   bool modelRoleOk() const;
   void ensurePwmConfigured();
@@ -42,6 +44,9 @@ class ServoDriver final : public ServoDriverComponentBase {
   F64 m_lastCmd_s;
   bool m_haveCmd;
   bool m_lockNeutral;
+  bool m_dropLogged;      // 同原因連續丟棄只記第一筆事件（#38）
+  U8 m_lastDropReason = 0;
+  U8 m_clampActiveMask;   // 每通道「正在被限幅」；只在剛開始限幅那一拍記事件（#38）
   U16 m_out_us[4];
   U32 m_tick;
   U32 m_pwmPeriodTicks;

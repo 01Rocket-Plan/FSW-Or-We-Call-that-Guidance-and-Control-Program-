@@ -20,12 +20,12 @@
 
 | §9 項目 | 擁有元件 | 建議／既有頻道或欄位名 | 組別 Base | 具體 ID |
 |---------|----------|------------------------|-----------|---------|
-| flightMode | `FlightMode` | `mode`（型別 `RocketTypes.FlightModeId`／`ModePort`） | MCU `0x1400` | 待該組補（殼僅介面） |
-| quaternion attitude | `Estimator` | `StateOut.q_wxyz`（經 `StateData`） | MCU `0x1100` | 待該組補 |
-| tilt from vertical | `Estimator` | `StateOut.tilt_rad` | MCU `0x1100` | 待該組補 |
-| velocity estimate | `Estimator` | `StateOut.vel_enu_mps` + `velValid` | MCU `0x1100` | 待該組補 |
-| control-surface command angle | `Controller` → `ActuatorMgr` | `FinCmd.fin_rad[4]`（rad） | MCU `0x1200`／`0x1300` | 待該組補 |
-| control-surface command µs | `ActuatorMgr` → `ServoDriver` | `ServoCmd.pulse_us[4]`；遙測 `lastPulse0_us`…`lastPulse3_us` | 伺服 `0x3000` | 待該組定（ServoDriver 已有 tlm，opcode 待拓樸） |
+| flightMode | `FlightMode` | `mode`（型別 `RocketTypes.FlightModeId`，**PR #26 新數值**）／`ModePort` | MCU `0x1400` | 見 §G（tlm `0x1400`） |
+| quaternion attitude | `Estimator` | 無獨立四元數遙測頻道；記 `StateOut.q_wxyz` 樣本埠（見 §G 紀錄建議） | MCU `0x1100` | 見 §G（樣本埠，非 tlm ID） |
+| tilt from vertical | `Estimator` | `StateOut.tilt_rad`；遙測 `tilt_rad` | MCU `0x1100` | 見 §G（tlm `0x1102`） |
+| velocity estimate | `Estimator` | `StateOut.vel_enu_mps` + `velValid`；遙測 `velU_mps` | MCU `0x1100` | 見 §G（tlm `0x1104`） |
+| control-surface command angle | `Controller` → `ActuatorMgr` | `FinCmd.fin_rad[4]`（rad）；遙測 `fin1_rad`…`fin4_rad` | MCU `0x1200`／`0x1300` | 見 §G |
+| control-surface command µs | `ActuatorMgr` → `ServoDriver` | `ServoCmd.pulse_us[4]`；ActuatorMgr 遙測 `pulse1_us`…`pulse4_us`（見 §G）；ServoDriver 遙測 `lastPulse0_us`…`lastPulse3_us` | MCU `0x1300`／伺服 `0x3000` | 見 §G（ActuatorMgr）；ServoDriver 待該組定（已有 tlm，opcode 待拓樸） |
 | 各元件 handshake 狀態 | 各驅動 | `drvState`／`HsState`：`RocketTypes.DrvState` | 見各列 | 見下表 |
 | voltage rails | `PowerMonitor` | `PowerRailTlm`（`BATT_MAIN`／`SERVO_5V`／`LOGIC_3V3`；`voltage_V`／`current_A`／`sample_age_s`） | 電源 `0x6000` | 待該組定 |
 | GNSS fix | `GnssDriver` | 埠 `fixOut`→`RocketTypes.GnssFix`；tlm `FixSeq` | GNSS `0x5000` | 待該組定 |
@@ -47,7 +47,7 @@
 | `SepServoDriver` | `drvState` + `model`/`role` | `0x3100` | 待該組定 |
 | `SdLogger` | `HsState`（`RocketTypes.DrvState`；另有 `SdStatus`／`EnterReady`／`EnterFault`） | `0x2000` | **0x2008**（子Bot2） |
 | `PowerMonitor`／`UvStateComp` | 無 `DrvState` handshake tlm | `0x6000`／`0x6200` | 待該組補（§9 要求 handshake；main 未宣告） |
-| `FlightMode`／`Estimator`／`Controller`／`ActuatorMgr`／`Platform` | 骨架 | MCU 段 | 待該組補 |
+| `FlightMode`／`Estimator`／`Controller`／`ActuatorMgr`／`Platform` | 應用元件，無 `DrvState`；健康看 `Estimator.aligned`、`Controller.closedLoop`、`ActuatorMgr.locked`、`Platform.overruns` | MCU 段 | 見 §G |
 | `TlmSend`／`Framer`／`ComQueue`／`UplinkAuth` | 骨架 | 無線 `0x8000+` | 待該組補 |
 | `DsCam`／`UsCam` | 骨架 | 相機 `0x7000+` | 待該組補 |
 
@@ -57,15 +57,15 @@
 
 | §9 項目 | 擁有元件 | 建議／既有事件名 | Base | 具體 ID |
 |---------|----------|------------------|------|---------|
-| every mode transition（含 trigger：sensed vs backup timer） | `FlightMode` | 建議 `ModeTransition(from,to,cause)`；cause 區分感測／備援計時 | `0x1400` | 待該組補（Bot 不得寫轉移邏輯） |
-| rate group slip | `Platform` | 建議 `RateGroupSlip(group,late_s)` | `0x1000` | 待該組補 |
+| every mode transition（含 trigger：sensed vs backup timer） | `FlightMode` | 已有 `ModeChanged(fromMode,toMode)`（見 §G event `0x1400`）；**尚無 `cause` 參數**（感測／備援計時須等 FlightMode 填空再加） | `0x1400` | 見 §G（缺 `cause`） |
+| rate group slip | `Platform` | `LoopOverrun(dt_s)`（1 kHz 迴圈超時） | `0x1000` | 見 §G（event `0x1002`） |
 | gyro saturation | `ImuDriver`／`UsMpu6050` | 既有 `GyroSaturated` | `0x4000`／`0x4200` | 待該組定 |
-| control-surface limit／saturation | `ServoDriver`／`ActuatorMgr` | 既有 `PulseClamped`；限幅／飽和應用層事件 | `0x3000`／`0x1300` | 伺服已有 clamp；應用飽和 待該組補 |
+| control-surface limit／saturation | `ServoDriver`／`ActuatorMgr` | 伺服既有 `PulseClamped`；ActuatorMgr 有遙測 `clampCount`／`rateLimitCount`、Controller 有 `satCount`（見 §G），尚無應用層飽和事件 | `0x3000`／`0x1300`／`0x1200` | 伺服已有 clamp；應用飽和事件仍待該組補 |
 | IMU fail and recovery | `ImuDriver` | 既有 `EnterFault`／`EnterReady`／`Failover` | `0x4000` | 待該組定 |
 | bus error and recovery | `ImuDriver`／`UsMpu6050`／`BaroDriver`／`GnssDriver` | 既有 `BusError`／`Fault`；「recovery」多以 `EnterReady`／`StateChanged` 表達 | 環境／GNSS | 待該組定 |
 | command rejected | `UplinkAuth`／`FlightMode` | 建議 `CmdRejected(cmd,reason)`（白名單／密碼錯） | `0x8300`／`0x1400` | 待該組補 |
-| each SEP commanded separation | `SepServoDriver` | 既有 `SepFire(ch)` | `0x3100` | 待該組定 |
-| parachute deploy commanded | `FlightMode` | 建議 `ChuteDeployCmd(stage,cause)` | `0x1400` | 待該組補 |
+| each SEP commanded separation | `FlightMode`／`ActuatorMgr`／`SepServoDriver` | `FlightMode.SepCommanded(mask)`、`ActuatorMgr.SepForwarded(mask)`（見 §G event `0x1401`／`0x1302`）；硬體開火既有 `SepFire(ch)` | `0x1400`／`0x1300`／`0x3100` | 見 §G；`SepFire` 待該組定 |
+| parachute deploy commanded | `FlightMode` | 已有 `ChuteDsCommanded()`／`ChuteUsCommanded()`（見 §G event `0x1402`／`0x1403`）；尚無 stage／cause 參數 | `0x1400` | 見 §G |
 | undervoltage load shed | `UvStateComp` | 既有 `shedL1Requested`／`shedL2Requested`／`levelChanged` | `0x6200` | 待該組定 |
 | queue-full drop | 各佇列擁有者 | `SdLogger.QueueFullDrop`；`ComQueue` 等 | 見 §C／§D | SdLogger 已定；其餘待該組補 |
 | channel seq discontinuity（LOGGING） | `SdLogger` | `SeqGap(expected,got)` | `0x2000` | **0x2004** |
@@ -136,17 +136,17 @@
 
 Sim 實例：base **`0x2080`**，local 對照相同（abs = 0x2080 + local）。
 
-FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡）；`SdCardRole` DS_LOG／US_LOG。讀卡模組／轉接板型號：**TBD**。SD 狀態用 `SdCardStatus`。
+FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡，Edward 定案：**Micro SDHC UHS-I 16GB**）；`SdCardRole` DS_LOG／US_LOG。讀卡模組／轉接板：**不影響軟體**（任何 SPI 或 SDMMC 介面、3.3 V 的 micro-SD 轉接板都可以），腳位進 MCU 組 ESP32 平台 PR 的全箭腳位表。SD 狀態用 `SdCardStatus`。
 
 ---
 
 ## E. §9 與 main 不一致／缺漏（不臆造）
 
 1. **`GnssDriver` tlm `DataAge`**：語意為秒，名稱無 `_s` 後綴（慣例要求 `_s`）。字典沿用既有名，標 mismatch。
-2. **Handshake**：`PowerMonitor`／`UvStateComp`／MCU 應用殼／無線／相機在 main **無** `DrvState` handshake 遙測；§9 要求 each component — 標「待該組補」。
-3. **Mode transition + cause**、**parachute deploy**、**rate group slip**、**command rejected**：main 僅骨架或禁止 Bot 實作 — 「待該組補」。
+2. **Handshake**：`PowerMonitor`／`UvStateComp`／無線／相機在 main **無** `DrvState` handshake 遙測；§9 要求 each component — 標「待該組補」。MCU 應用元件見 §G。
+3. **Mode transition + cause**：§G 已有 `FlightMode.ModeChanged(fromMode,toMode)`，**缺 `cause` 參數**（感測／備援計時），待 FlightMode 填空後再補。**parachute deploy**：§G 已有 `ChuteDsCommanded`／`ChuteUsCommanded`。**rate group slip**：§G 已有 `Platform.LoopOverrun(dt_s)`（event `0x1002`，嚴重度 warning low）。**command rejected**：仍待無線／FlightMode 補。
 4. **ComQueue／bufferManager HWM**：元件骨架，無頻道名 — 「待該組補」。
-5. **控制面角度 vs µs**：main 已拆成 `FinCmd.fin_rad` 與 `ServoCmd.pulse_us`（符合「角度與 µs」兩者都要記）；應用層 tlm 尚缺（Estimator／Controller／ActuatorMgr 骨架）。
+5. **控制面角度 vs µs**：型別已拆成 `FinCmd.fin_rad` 與 `ServoCmd.pulse_us`。應用層遙測見 §G：`Controller.fin1_rad`…`fin4_rad`；`ActuatorMgr.pulse1_us`…`pulse4_us`（PR #29／#31 的 FPP 現名；曾提議改名 `finNPulse_usec` 以免 `us` 被讀成上級，但該改名尚未進入 FPP）。ServoDriver 的 `lastPulse*_us` 仍待該組定。
 6. **`EnvSample.humidity_pct`／`HumTempSample`**：§9 TELEMETRY 清單未點名，但 main 註明只送 Recorder — 建議 sdLogger 仍記錄樣本埠，不另占 §9 強制 tlm ID。
 7. **事件與遙測共用 local 編號空間**：F´ 實例化時 tlm／event opcode 空間分開；表中 Absolute 以「base+local」文件化，拓樸 `baseId` 指派後以 Ac 產物為準。
 
@@ -156,9 +156,50 @@ FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡）�
 
 | 類別 | 數量 |
 |------|------|
-| §9 TELEMETRY 映射列（主表） | 14 |
-| Handshake 列 | 13 |
+| §9 TELEMETRY 映射列（主表） | 13 |
+| Handshake 列 | 12 |
 | §9 EVENTS 映射列 | 17 |
 | HWM 列（含占位） | 6 |
 | **SdLogger 具體遙測 ID** | **20**（0x2000–0x2013；含 Bot2 0x2008–0x200C 與影像 0x200D–0x2013） |
 | **SdLogger 具體事件 ID** | **10**（local 0x00–0x09；abs 0x2000–0x2009；含影像 0x2006–0x2009） |
+
+---
+
+## G. MCU 組（EdwardWang+Claude，2026-11-10，issue #41）
+
+> 來源：PR #27–#31 的 `.fpp`（#31 與 #27–#30 的對應 `.fpp` 內容相同）。**絕對 ID ＝ base ＋ 宣告順序（local，從 0 起）**；遙測與事件各自一套編號空間。
+> 拓樸指派 base 後以自動碼（`*ComponentAc.hpp`）為準。DsMcu／UsMcu 各自一份 ID 空間，表內數字兩邊相同。
+> 二次檢查（紀錄組 Malcolm Cross，2026-11-12）：`FlightModeId` 對照已合併的 PR #26（main `20f4c16`）；其餘頻道／事件目前**只存在於未合併的 PR #27–#31**。
+
+### `FlightModeId` 數值（對齊 PR #26）
+
+`PAD_IDLE=0`、`ARMED=1`（這兩個不變）、`LIFTOFF=2`、`BOOST_PASSIVE=3`、`BOOST_ACTIVE=4`、`COAST=5`、`SEPARATED=6`、
+`LS_DESCENT=7`、`LS_CHUTE=8`、`LS_LANDED=9`、`HANGFIRE=10`、`SEP_FAIL=11`、`ABORT=12`、`US_WAIT=13`、`US_COAST=14`、
+`US_CHUTE=15`、`US_LANDED=16`、`US_CHUTE_INHIBIT=17`。舊表的 `LS_LEGS` 已移除。**解析舊紀錄檔時要用舊表。**
+
+### Telemetry
+
+| 元件 | Base | local → 頻道 |
+|---|---|---|
+| `Platform` | `0x1000` | 0 `resetReason`、1 `ticks`、2 `overruns`、3 `maxLoopDt_s` |
+| `Estimator` | `0x1100` | 0 `aligned`、1 `onPad`、2 `tilt_rad`、3 `alt_m`、4 `velU_mps`、5 `accAxial_mps2`、6 `baroAge_s`、7 `gyroBiasX_rads`、8 `gyroBiasY_rads`、9 `gyroBiasZ_rads`、10 `baroRejectCount`、11 `imuStaleCount` |
+| `Controller` | `0x1200` | 0 `closedLoop`、1 `holdReason`、2 `errPitch_rad`、3 `errYaw_rad`、4 `fin1_rad`、5 `fin2_rad`、6 `fin3_rad`、7 `fin4_rad`、8 `satCount` |
+| `ActuatorMgr`（**只在 DsMcu**） | `0x1300` | 0 `locked`、1 `lockReason`、2 `pulse1_us`、3 `pulse2_us`、4 `pulse3_us`、5 `pulse4_us`、6 `clampCount`、7 `rateLimitCount`、8 `uvState`、9 `sepPendingMask`、10 `sepDropCount` |
+| `FlightMode` | `0x1400` | 0 `mode`（`RocketTypes.FlightModeId`）、1 `role`（DS／US） |
+
+> `ActuatorMgr` 的 `pulseN_us`＝**下級尾翼第 N 片**的 PWM 脈寬，單位**微秒（µs）**；此處 `us` 是微秒，不是上級（US）。
+> 曾提議改名 `finNPulse_usec` 以免混淆，但 PR #29／#31 的 FPP 仍為 `pulse1_us`…`pulse4_us`，字典與現況對齊。上級沒有 ActuatorMgr（雲台不進控制律）。
+
+### Events
+
+| 元件 | Base | local → 事件（嚴重度） |
+|---|---|---|
+| `Platform` | `0x1000` | 0 `Boot(reason)`（activity hi）、1 `AbnormalReset(reason)`（warning hi）、2 `LoopOverrun(dt_s)`（**warning lo**） |
+| `Estimator` | `0x1100` | 0 `Aligned(tilt_rad)`（activity hi）、1 `ImuStale()`（warning hi）、2 `ImuRecovered()`（activity hi）、3 `LeftPad()`（activity hi） |
+| `Controller` | `0x1200` | 0 `ClosedLoopOn()`（activity hi）、1 `ClosedLoopOff(reason)`（activity hi） |
+| `ActuatorMgr` | `0x1300` | 0 `Locked(reason)`（activity hi）、1 `Unlocked()`（activity hi）、2 `SepForwarded(mask)`（activity hi）、3 `SepDropped(seq)`（warning lo） |
+| `FlightMode` | `0x1400` | 0 `ModeChanged(fromMode,toMode)`（activity hi；**無 cause**）、1 `SepCommanded(mask)`（activity hi）、2 `ChuteDsCommanded()`（activity hi）、3 `ChuteUsCommanded()`（activity hi）、4 `ShellOnly()`（warning hi） |
+
+### 紀錄建議（給 sdLogger）
+- 1 kHz 樣本埠（`stateIn`、`finCmdIn`、`servoCmdIn`）照收；遙測頻道 1 Hz 就夠（事件在狀態改變當拍就有）。
+- `FlightMode.ModeChanged` 是事後分析最重要的一條；`cause`（感測／備援計時）等 FlightMode 填空（FM-xx）時再加參數。

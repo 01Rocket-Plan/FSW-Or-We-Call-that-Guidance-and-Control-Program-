@@ -7,7 +7,9 @@ namespace Components {
 namespace {
 enum DropReason : U8 { DROP_NOT_READY = 1, DROP_SEQ = 2, DROP_INVALID = 3 };
 enum FaultReason : U8 { FAULT_SELFTEST = 1, FAULT_MODEL_ROLE = 3 };
-constexpr U8 kSepBits = 0x0F;
+// 3×MG996R 環排 120°（SSS §7、Edward 2026-11-10 #38／#42 A4）
+constexpr U8 kSepChannels = 3;
+constexpr U8 kSepBits = 0x07;
 }  // namespace
 
 SepServoDriver::SepServoDriver(const char* compName)
@@ -34,14 +36,16 @@ SepServoDriver::SepServoDriver(const char* compName)
   for (U8 i = 0; i < 4; ++i) {
     m_out_us[i] = Mg996rLimits::kPulseMinUs;  // lock_us default
     m_fireStart_s[i] = 0.0;
+  }
+  for (U8 i = 0; i < kSepChannels; ++i) {
     m_chCfg[i].gpio = ServoPwmPins::SEP_GPIO[i];
     m_chCfg[i].hwCh = ServoPwmPins::SEP_LEDC_CH[i];
   }
-  m_gpioN = 4;
+  m_gpioN = kSepChannels;
 }
 
 void SepServoDriver::configure(const U8* gpioPins, U8 nPins) {
-  m_gpioN = (nPins > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : nPins;
+  m_gpioN = (nPins > kSepChannels) ? kSepChannels : nPins;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i].gpio = gpioPins[i];
     m_chCfg[i].hwCh = ServoPwmPins::SEP_LEDC_CH[i];
@@ -53,7 +57,7 @@ void SepServoDriver::configure(const PwmOutChannel* ch, U8 n, U8 ledcTimerId) {
   if (ch == nullptr || n == 0) {
     return;
   }
-  m_gpioN = (n > PwmOut::kMaxChannels) ? PwmOut::kMaxChannels : n;
+  m_gpioN = (n > kSepChannels) ? kSepChannels : n;
   for (U8 i = 0; i < m_gpioN; ++i) {
     m_chCfg[i] = ch[i];
   }
@@ -95,7 +99,7 @@ void SepServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
     // SepFaultHold ONLY on FAULT entry: unreleased stay at lock_us
     const U8 fired = readFiredMask();
     m_lockedMask = static_cast<U8>((~fired) & kSepBits);
-    for (U8 i = 0; i < 4; ++i) {
+    for (U8 i = 0; i < kSepChannels; ++i) {
       if ((m_lockedMask & (1u << i)) != 0) {
         m_out_us[i] = clampUs(m_lock_us);
         m_activeMask = static_cast<U8>(m_activeMask & ~(1u << i));
@@ -107,7 +111,7 @@ void SepServoDriver::enterState(RocketTypes::DrvState::T st, U8 faultReason) {
 }
 
 void SepServoDriver::ensurePwmConfigured() {
-  U8 n = (m_gpioN > 0) ? m_gpioN : static_cast<U8>(4);
+  U8 n = (m_gpioN > 0) ? m_gpioN : kSepChannels;
   if (n > PwmOut::kMaxChannels) {
     n = PwmOut::kMaxChannels;
   }
@@ -177,7 +181,7 @@ void SepServoDriver::emitPwmOut() {
 }
 
 void SepServoDriver::applyPwm() {
-  m_pwm.setPulses_us(m_out_us, 4);
+  m_pwm.setPulses_us(m_out_us, kSepChannels);
   emitPwmOut();
 }
 
@@ -192,29 +196,41 @@ void SepServoDriver::writeTlm() {
 }
 
 void SepServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
+  const bool changed = (st.e != m_uv.e);
   m_uv = st;
-  this->tlmWrite_uvState(st);
-  this->log_ACTIVITY_HI_UvSeen(st);
+  if (changed) {  // 同一級重複送來不記（#38）
+    this->tlmWrite_uvState(st);
+    this->log_ACTIVITY_HI_UvSeen(st);
+  }
+}
+
+void SepServoDriver::logDrop(U32 seq, U8 reason) {
+  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆；原因改變或收到有效指令後重新記（#38）
+    m_dropLogged = true;
+    m_lastDropReason = reason;
+    this->log_WARNING_LO_CmdDropped(seq, reason);
+  }
 }
 
 void SepServoDriver::cmdIn_handler(FwIndexType, const RocketTypes::SepCmd& c) {
   if (m_state != RocketTypes::DrvState::READY) {
-    this->log_WARNING_LO_CmdDropped(c.get_seq(), DROP_NOT_READY);
+    logDrop(c.get_seq(), DROP_NOT_READY);
     return;
   }
   if (!c.get_valid()) {
-    this->log_WARNING_LO_CmdDropped(c.get_seq(), DROP_INVALID);
+    logDrop(c.get_seq(), DROP_INVALID);
     return;
   }
   if (m_haveSeq && c.get_seq() <= m_lastSeq) {
-    this->log_WARNING_LO_CmdDropped(c.get_seq(), DROP_SEQ);
+    logDrop(c.get_seq(), DROP_SEQ);
     return;
   }
+  m_dropLogged = false;
   m_haveSeq = true;
   m_lastSeq = c.get_seq();
 
   const U8 req = static_cast<U8>(c.get_channelMask() & kSepBits);
-  for (U8 i = 0; i < 4; ++i) {
+  for (U8 i = 0; i < kSepChannels; ++i) {
     if ((req & (1u << i)) != 0) {
       (void)tryFireChannel(i);
     }
@@ -232,7 +248,7 @@ void SepServoDriver::schedIn_handler(FwIndexType, U32) {
     case RocketTypes::DrvState::INIT:
       ensurePwmConfigured();
       m_pwmConfigured = m_pwm.init();
-      for (U8 i = 0; i < 4; ++i) {
+      for (U8 i = 0; i < kSepChannels; ++i) {
         m_out_us[i] = clampUs(m_lock_us);
       }
       enterState(RocketTypes::DrvState::SELFTEST);
@@ -255,7 +271,7 @@ void SepServoDriver::schedIn_handler(FwIndexType, U32) {
       break;
     case RocketTypes::DrvState::READY:
       // After fire_hold_s, leave hardware at last fire pulse (no re-fire); do not return to lock
-      for (U8 i = 0; i < 4; ++i) {
+      for (U8 i = 0; i < kSepChannels; ++i) {
         const U8 bit = static_cast<U8>(1u << i);
         if ((m_activeMask & bit) != 0) {
           if ((t - m_fireStart_s[i]) >= static_cast<F64>(m_fireHold_s)) {

@@ -81,9 +81,15 @@ class ServoSimCore {
   bool m_timedOut = false;
   UvState m_uv = UvState::NOMINAL;
   uint32_t m_clamp = 0, m_drop = 0;
+  bool m_locked = true;          // 目前是否鎖中位；事件只在改變時送（#38）
+  uint8_t m_clampActive = 0;     // 每通道「正在限幅」；事件只在剛開始那一拍送（#38）
+  bool m_dropLogged = false;     // 同原因連續丟棄只送第一筆事件（#38）
+  DropReason m_lastDrop{};
 };
 
-// ---------------- 分離 SEP_1..4 ----------------
+// ---------------- 分離 SEP_1..3（3×MG996R，SSS §7） ----------------
+constexpr uint8_t kSepCh = 3;
+constexpr uint8_t kSepBits = 0x07;
 struct SepParams {
   uint16_t lock_us = 1000, fire_us = 2000, pulse_min_us = 1000, pulse_max_us = 2000;
   float fire_hold_s = 0.5f, selftest_deadline_s = 1.0f, tick_hz = 50.0f;
@@ -123,12 +129,12 @@ class SepSimCore {
   DrvState drvState() const { return m_state; }
   uint32_t lastSeq() const { return m_lastSeq; }
   uint8_t firedMask() const { return m_fired; }
-  uint8_t lockedMask() const { return static_cast<uint8_t>(~m_fired & 0x0F); }
+  uint8_t lockedMask() const { return static_cast<uint8_t>(~m_fired & kSepBits); }
   UvState uvState() const { return m_uv; }
   uint16_t lastPulse_us(uint8_t ch) const { return m_pulse[ch]; }
   ServoModel model() const { return m_p.model; }
   ServoRole role() const { return m_p.role; }
-  uint8_t activeMask() const { uint8_t m = 0; for (uint8_t i = 0; i < 4; i++) if (m_holdTicks[i]) m |= static_cast<uint8_t>(1u << i); return m; }
+  uint8_t activeMask() const { uint8_t m = 0; for (uint8_t i = 0; i < kSepCh; i++) if (m_holdTicks[i]) m |= static_cast<uint8_t>(1u << i); return m; }
 
  private:
   uint16_t clampUs(uint16_t v) const;
@@ -142,6 +148,8 @@ class SepSimCore {
   uint32_t m_lastSeq = 0; bool m_haveSeq = false;
   uint32_t m_stateTicks = 0;
   UvState m_uv = UvState::NOMINAL;
+  bool m_dropLogged = false;     // 同原因連續丟棄只送第一筆事件（#38）
+  DropReason m_lastDrop{};
 };
 
 }  // namespace ServoSim

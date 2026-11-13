@@ -117,12 +117,14 @@ static void test_happy(void) {
     CHECK(out.valid, "valid when READY");
     CHECK(out.seq == prev + 1, "seq increments");
     prev = out.seq;
-    CHECK(fabsf(out.acc_mps2[2] - G0) < 0.5f, "Z accel ~1g");
+    /* 晶片 Z 1 g → 預設 DCM（晶片 Z 沿鼻）→ 機體 +X ≈ +g、Z ≈ 0 */
+    CHECK(fabsf(out.acc_mps2[0] - G0) < 0.5f, "body X accel ~+1g (pad)");
+    CHECK(fabsf(out.acc_mps2[2]) < 0.5f, "body Z accel ~0");
   }
   imu_core_destroy(core);
 }
 
-static void test_st_fail_failover(void) {
+static void test_st_fail_fault(void) {
   FakeBus bus = {0}; ImuBusOps ops; ImuCore* core; ImuParams p; ImuSampleOut out;
   double t = 0; int i;
   bus.accelRaw[2] = (int16_t)ACCEL_SENS;
@@ -133,19 +135,15 @@ static void test_st_fail_failover(void) {
   bus.inject = INJ_STFAIL;
   for (i = 0; i < 20000; ++i) {
     t += 0.001; imu_core_tick(core, t, &out);
-    if (imu_core_active(core) == IMU_SENS_BACKUP) break;
+    if (imu_core_state(core) == IMU_DRV_FAULT) break;
   }
-  CHECK(imu_core_active(core) == IMU_SENS_BACKUP, "ST fail → backup");
-  bus.inject = INJ_NORMAL;
-  for (i = 0; i < 20000; ++i) {
-    t += 0.001; imu_core_tick(core, t, &out);
-    if (imu_core_state(core) == IMU_DRV_READY) break;
-  }
-  CHECK(imu_core_state(core) == IMU_DRV_READY, "backup READY after ST fail");
+  CHECK(imu_core_state(core) == IMU_DRV_FAULT, "ST fail → FAULT（單顆，無備援）");
+  CHECK(imu_core_fault(core) == IMU_FAULT_SELFTEST, "fault reason SELFTEST");
+  CHECK(!out.valid, "FAULT 不出有效樣本");
   imu_core_destroy(core);
 }
 
-static void test_whoami_failover(void) {
+static void test_whoami_fault(void) {
   FakeBus bus = {0}; ImuBusOps ops; ImuCore* core; ImuParams p; ImuSampleOut out;
   double t = 0; int i;
   bus.accelRaw[2] = (int16_t)ACCEL_SENS;
@@ -155,13 +153,9 @@ static void test_whoami_failover(void) {
   imu_core_set_params(core, &p); imu_core_reset(core);
   bus.inject = INJ_WHOAMI;
   for (i = 0; i < 200; ++i) { t += 0.001; imu_core_tick(core, t, &out);
-    if (imu_core_active(core) == IMU_SENS_BACKUP) break; }
-  CHECK(imu_core_active(core) == IMU_SENS_BACKUP, "failover to backup");
-  bus.inject = INJ_NORMAL;
-  for (i = 0; i < 20000; ++i) { t += 0.001; imu_core_tick(core, t, &out);
-    if (imu_core_state(core) == IMU_DRV_READY) break; }
-  CHECK(imu_core_state(core) == IMU_DRV_READY, "backup READY");
-  CHECK(imu_core_failover(core) >= 1, "failover counted");
+    if (imu_core_state(core) == IMU_DRV_FAULT) break; }
+  CHECK(imu_core_state(core) == IMU_DRV_FAULT, "WHO_AM_I fail → FAULT");
+  CHECK(imu_core_fault(core) == IMU_FAULT_WHOAMI, "fault reason WHOAMI");
   imu_core_destroy(core);
 }
 
@@ -176,7 +170,7 @@ static void test_stuck(void) {
   drive_ready(core, &bus, &t);
   bus.inject = INJ_STUCK;
   for (i = 0; i < 50; ++i) { t += 0.001; imu_core_tick(core, t, &out); }
-  CHECK(imu_core_stuck(core) >= 1 || imu_core_failover(core) >= 1, "stuck/failover");
+  CHECK(imu_core_stuck(core) >= 1 || imu_core_state(core) == IMU_DRV_FAULT, "stuck → FAULT");
   imu_core_destroy(core);
 }
 
@@ -243,8 +237,8 @@ static void test_mpu_whoami(void) {
 
 int main(void) {
   test_happy();
-  test_st_fail_failover();
-  test_whoami_failover();
+  test_st_fail_fault();
+  test_whoami_fault();
   test_stuck();
   test_gyro_sat();
   test_no_valid_early();
