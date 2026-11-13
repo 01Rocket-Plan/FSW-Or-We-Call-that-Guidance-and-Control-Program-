@@ -86,9 +86,12 @@ RELEASED ──liftoffTimeout_s 沒離軌──► NO_LIFTOFF／NO_LIFTOFF（夾
 這段時間每一拍都要仍有推力（鬆架那一拍也要），只要推力消失一拍就 HOLD_ABORT／THRUST_LOST、不鬆。
 軟體最小單位是一拍（1e-3 s），比一拍小的裕度等同下一拍；`releaseMargin_s`＝0 就是確認那拍鬆。
 
-| 時間（從第一個推力樣本 T+0 起算） | 事件 | 參數 |
+**兩個碼錶。** 點火窗從「點火器通電」起算，只等第一個推力樣本（點火延遲，`ignitionWindow_s`＝2 s，超過才 HANG_FIRE）；
+推力確認和鬆夾持從「第一個推力樣本」T+0 起算（下表），0.02 s 指的是這一段。看到推力之後就不再看點火窗。
+
+| 時間 | 事件 | 參數 |
 |---|---|---|
-| T+0 | 第一個有推力的樣本 | — |
+| 點火器通電後 ≤ 2 s | 出現第一個有推力的樣本＝T+0（沒出現 → HANG_FIRE） | `ignitionWindow_s`＝2 |
 | T+2e-2 s | 第 21 個樣本仍有推力 → 推力確認 | `thrustConfirm_s`＝2e-2 |
 | T+2e-2+1e-3 s | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
 | T+2e-2+1e-3+2e-2 s | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |

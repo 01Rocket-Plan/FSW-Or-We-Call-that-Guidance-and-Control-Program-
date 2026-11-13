@@ -87,10 +87,16 @@ enum class PadReason : std::uint8_t {
 //! 時間比較的容差：吸收浮點累加誤差和排程抖動（1 kHz 一拍 1 ms 的 5%＝0.05 ms），不改變門檻本身的意義。
 constexpr double kTimeEps_s = 0.00005;
 
+//! 「還沒發生」標記：時間戳（開機後秒數）一定 ≥ 0，所以用負數代表「這件事還沒發生、沒有時間」。
+//! 例：m_thrustFirst_s＝kNotYet_s 表示這次點火還沒看到任何推力。判斷一律寫成 < 0.0／>= 0.0。
+constexpr double kNotYet_s = -1.0;
+
 //! 門檻是無線組自訂的假設值（Edward 2026-11-13：「你們自己訂一個合理數值即可」），飛前以 HIL／100 m 資料修正。
 struct PadParams {
   double countdown_s = 30.0;          // E1：待點火臨界狀態約 30 s
-  double ignitionWindow_s = 2.0;      // C15：塔上 2 秒倒數，點火確認後鬆夾持
+  // 點火窗：點火器通電後，多久內要出現「第一個推力樣本」（電點火頭加熱→推進劑起燃的點火延遲；C15 塔上 2 秒）。
+  // 這不是推力確認：推力確認從第一個推力樣本起算 thrustConfirm_s（0.02 s），兩個碼錶起點不同。
+  double ignitionWindow_s = 2.0;
   // 推力訊號持續多久才算「確認」（防單點雜訊）。2026-11-10 由 0.10 改 0.02（Edward #42 C2）：
   // 主機 CTI 74F85-15A 燃燒只有 0.873 s，0.1 s 等於把最大推力那段留在架上。
   // 1 kHz 下的實際意義：第一個有推力的樣本在 t0，t0＋1 ms … t0＋20 ms 都有推力（連 21 個樣本），
@@ -216,12 +222,12 @@ class PadControllerCore {
   double m_tCountdown_s = 0.0;
   double m_countdownRemaining_s = 0.0;
   double m_tIgnition_s = 0.0;
-  double m_thrustSince_s = -1.0;
-  double m_thrustFirst_s = -1.0;  // IGNITION 中第一次看到推力的時間（不因中斷而重設）
-  double m_tConfirm_s = -1.0;      // 推力確認的時間（之後等 releaseMargin_s 才鬆）
+  double m_thrustSince_s = kNotYet_s;  // 這一段連續推力的起點（推力中斷就回到 kNotYet_s）
+  double m_thrustFirst_s = kNotYet_s;  // IGNITION 中第一次看到推力的時間（不因中斷而重設）
+  double m_tConfirm_s = kNotYet_s;      // 推力確認的時間（之後等 releaseMargin_s 才鬆）
   double m_tRelease_s = 0.0;
   bool m_clampOpenSeen = false;    // 鬆夾持後是否讀到過夾持開到位（鎖存）
-  double m_loadLowSince_s = -1.0;  // 荷重元連續低於 liftoffLoadMin_N 的起點
+  double m_loadLowSince_s = kNotYet_s;  // 荷重元連續低於 liftoffLoadMin_N 的起點
 
   PadInputs m_lastIn{};
   PadOutputs m_lastOut{};

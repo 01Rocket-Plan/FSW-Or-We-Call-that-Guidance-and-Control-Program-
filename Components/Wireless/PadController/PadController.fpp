@@ -41,7 +41,7 @@ module Components {
 
     @ 待點火倒數（E1：約 30 s）
     param countdown_s: F64 default 30.0
-    @ 點火窗：點火後多久內要確認推力（C15：塔上 2 秒）
+    @ 點火窗：點火器通電後多久內要出現「第一個推力樣本」（點火延遲；C15：塔上 2 秒）。不是推力確認：推力確認從第一個推力樣本起算 thrustConfirm_s＝0.02 s
     param ignitionWindow_s: F64 default 2.0
     @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s）。1 kHz：t0 … t0+20 ms 連 21 個樣本有推力 → t0+20 ms 確認
     param thrustConfirm_s: F64 default 0.02

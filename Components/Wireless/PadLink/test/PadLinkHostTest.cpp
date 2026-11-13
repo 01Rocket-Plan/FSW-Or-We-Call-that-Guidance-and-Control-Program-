@@ -455,6 +455,21 @@ void testHangFire() {
   CHECK(r.ev.lastCmdReason == PadReason::IGNITION_LOCKED);  // 一次開機只點一次
 }
 
+// 點火窗只等「第一個推力樣本」：推力在窗尾（點火後約 1.99 s）才出現，不能因為 2 s 到了還沒滿 0.02 s 確認就判 HANG_FIRE。
+void testThrustNearIgnitionWindowEnd() {
+  Rig r;
+  reachIgnition(r);
+  CHECK(r.pad.state() == PadState::IGNITION);
+  r.run(1.89);  // reachIgnition() 結束時已點火 0.1 s → 現在約點火後 1.99 s（點火窗 2 s 的最後 10 ms）
+  CHECK(r.pad.state() == PadState::IGNITION);
+  r.in.thrustOk = true;
+  r.run(0.015);  // 已經過了點火窗 2 s，推力確認還沒滿
+  CHECK(r.pad.state() == PadState::IGNITION);
+  r.run(0.01);   // T+0.02 確認、T+0.021 鬆
+  CHECK(r.pad.state() == PadState::RELEASED);
+  CHECK(r.out.clampRelease && !r.out.igniterOn);
+}
+
 void testGroundLossDuringIgnitionContinues() {
   Rig r;
   reachIgnition(r);
@@ -912,6 +927,7 @@ static int PadLinkLegacyMain() {
   testForgedDisarmDuringCountdownIgnored();
   testGroundLossDuringCountdownAborts();
   testHangFire();
+  testThrustNearIgnitionWindowEnd();
   testGroundLossDuringIgnitionContinues();
   testAbortDuringIgnitionHoldsClamp();
   testKeyPulledDuringIgnition();

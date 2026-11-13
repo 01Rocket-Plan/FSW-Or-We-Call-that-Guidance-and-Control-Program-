@@ -234,9 +234,9 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         m_countdownRemaining_s = 0.0;
         m_ignitionUsed = true;  // 一次開機只點一次
         m_tIgnition_s = now_s;
-        m_thrustSince_s = -1.0;
-        m_thrustFirst_s = -1.0;
-        m_tConfirm_s = -1.0;
+        m_thrustSince_s = kNotYet_s;
+        m_thrustFirst_s = kNotYet_s;
+        m_tConfirm_s = kNotYet_s;
         setState(PadState::IGNITION, PadReason::NONE);
       }
       break;
@@ -265,7 +265,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         } else if (now_s - m_tConfirm_s + kTimeEps_s >= m_p.releaseMargin_s) {
           m_tRelease_s = now_s;
           m_clampOpenSeen = false;
-          m_loadLowSince_s = -1.0;
+          m_loadLowSince_s = kNotYet_s;
           setState(PadState::RELEASED, PadReason::NONE);
         }
         break;
@@ -274,7 +274,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         if (m_thrustFirst_s < 0.0) m_thrustFirst_s = now_s;
         if (m_thrustSince_s < 0.0) m_thrustSince_s = now_s;
       } else {
-        m_thrustSince_s = -1.0;
+        m_thrustSince_s = kNotYet_s;
       }
       if (m_thrustFirst_s >= 0.0) {
         if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
@@ -286,13 +286,15 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
           if (m_p.releaseMargin_s <= kTimeEps_s) {  // 裕度 0：確認那拍就鬆（舊行為）
             m_tRelease_s = now_s;
             m_clampOpenSeen = false;
-            m_loadLowSince_s = -1.0;
+            m_loadLowSince_s = kNotYet_s;
             setState(PadState::RELEASED, PadReason::NONE);
           }
           break;
         }
       }
-      if (now_s - m_tIgnition_s >= m_p.ignitionWindow_s) {
+      // 點火窗只管「點火器通電後有沒有出現第一個推力樣本」（點火延遲）。已經看到推力就不再看點火窗，
+      // 改由 thrustConfirm_s／releaseDeadline_s 處理；否則推力在窗尾才出現時，馬達在燒卻會被判 HANG_FIRE。
+      if (m_thrustFirst_s < 0.0 && now_s - m_tIgnition_s >= m_p.ignitionWindow_s) {
         setState(PadState::HANG_FIRE, PadReason::NO_THRUST);  // 不自動重試
       }
       break;
@@ -310,7 +312,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       if (loadLow) {
         if (m_loadLowSince_s < 0.0) m_loadLowSince_s = now_s;
       } else {
-        m_loadLowSince_s = -1.0;
+        m_loadLowSince_s = kNotYet_s;
       }
       const bool loadHeld =
           loadLow && now_s - m_loadLowSince_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
