@@ -1,7 +1,7 @@
 // ======================================================================
 // \title  ImuDriver.hpp
-// \author 環境感測系統組子Bot1
-// \brief  ICM-20948 主 / ICM-20648 備援 — F´ 外殼；邏輯在 imu_core
+// \author 環境感測系統組子Bot1（2026-11-10 EdwardWang+Claude：改單顆、機體系 DCM）
+// \brief  ICM-20948 — F´ 外殼；邏輯在 imu_core
 // Base ID 0x4000（拓樸設定）；Sim 0x4080
 // ======================================================================
 #ifndef COMPONENTS_IMUDRIVER_HPP
@@ -32,7 +32,8 @@ class ImuDriver final : public ImuDriverComponentBase {
   ImuCore* m_core;
   U32 m_tlmDiv;
   ImuDrvState m_lastState;
-  ImuSensorId m_lastActive;
+  bool m_gyroSatLatched;   // 飽和事件只在剛開始飽和那一拍記
+  bool m_accelSatLatched;
 };
 
 }  // namespace Components

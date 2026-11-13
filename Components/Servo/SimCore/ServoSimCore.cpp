@@ -37,8 +37,9 @@ void ServoSimCore::tick() {
     case DrvState::READY:
       m_ageTicks++;
       if (!m_timedOut && cmdAge_s() > m_p.cmd_timeout_s + 1e-6f) {
-        m_timedOut = true; allNeutral();
-        m_sink.evCmdTimeout(cmdAge_s()); m_sink.evLockNeutral(NeutralSource::TIMEOUT);
+        m_timedOut = true; allNeutral(); m_clampActive = 0;  // 回中位＝限幅結束（#38）
+        m_sink.evCmdTimeout(cmdAge_s());
+        if (!m_locked) { m_locked = true; m_sink.evLockNeutral(NeutralSource::TIMEOUT); }
       }
       break;
     case DrvState::FAULT: allNeutral(); break;  // FAULT：保持中立
@@ -47,21 +48,35 @@ void ServoSimCore::tick() {
 }
 
 void ServoSimCore::cmdIn(const ServoCmd& c) {
-  if (m_state != DrvState::READY) { m_drop++; m_sink.evCmdDropped(c.seq, DropReason::NOT_READY); return; }
-  if (m_haveSeq && c.seq == m_lastSeq) { m_drop++; m_sink.evCmdDropped(c.seq, DropReason::SEQ_DUP); return; }
-  if (m_haveSeq && c.seq < m_lastSeq) { m_drop++; m_sink.evCmdDropped(c.seq, DropReason::SEQ_BACKWARD); return; }
+  // 事件只在「剛改變」那一拍送；計數每拍都加（#38，Edward 2026-11-10）
+  auto drop = [&](DropReason r) { m_drop++; if (!m_dropLogged || r != m_lastDrop) { m_dropLogged = true; m_lastDrop = r; m_sink.evCmdDropped(c.seq, r); } };
+  if (m_state != DrvState::READY) { drop(DropReason::NOT_READY); return; }
+  if (m_haveSeq && c.seq == m_lastSeq) { drop(DropReason::SEQ_DUP); return; }
+  if (m_haveSeq && c.seq < m_lastSeq) { drop(DropReason::SEQ_BACKWARD); return; }
+  m_dropLogged = false;
   m_lastSeq = c.seq; m_haveSeq = true; m_ageTicks = 0; m_timedOut = false;
-  if (c.lockNeutral) { allNeutral(); m_sink.evLockNeutral(NeutralSource::CMD); return; }
+  if (c.lockNeutral) {
+    allNeutral(); m_clampActive = 0;
+    if (!m_locked) { m_locked = true; m_sink.evLockNeutral(NeutralSource::CMD); }
+    return;
+  }
+  m_locked = false;
   for (uint8_t i = 0; i < m_p.channel_count; i++) {  // channel_count=2 時 [2]、[3] 忽略
     uint16_t raw = c.pulse_us[i], used = raw;
     if (used < m_p.pulse_min_us) used = m_p.pulse_min_us;
     if (used > m_p.pulse_max_us) used = m_p.pulse_max_us;
-    if (used != raw) { m_clamp++; m_sink.evPulseClamped(i, raw, used); }
+    const uint8_t bit = static_cast<uint8_t>(1u << i);
+    if (used != raw) {
+      m_clamp++;
+      if (!(m_clampActive & bit)) { m_clampActive |= bit; m_sink.evPulseClamped(i, raw, used); }
+    } else {
+      m_clampActive = static_cast<uint8_t>(m_clampActive & ~bit);
+    }
     m_pulse[i] = used;
   }
 }
 
-void ServoSimCore::uvIn(UvState st) { m_uv = st; m_sink.evUvSeen(st); }  // 只記錄，不動舵
+void ServoSimCore::uvIn(UvState st) { const bool ch = (st != m_uv); m_uv = st; if (ch) m_sink.evUvSeen(st); }  // 只記錄，不動舵；同級重複不記
 
 // ======== SepSimCore ========
 uint16_t SepSimCore::clampUs(uint16_t v) const {
@@ -73,7 +88,7 @@ void SepSimCore::enter(DrvState s, FaultReason r) {
   if (s == DrvState::FAULT) { m_sink.evEnterFault(r); m_sink.evSepFaultHold(lockedMask()); }
 }
 
-void SepSimCore::emit() { for (uint8_t i = 0; i < 4; i++) m_sink.pwmOut(i, m_pulse[i]); }
+void SepSimCore::emit() { for (uint8_t i = 0; i < kSepCh; i++) m_sink.pwmOut(i, m_pulse[i]); }
 
 void SepSimCore::start() {
   if (m_state != DrvState::OFF) return;
@@ -88,7 +103,7 @@ void SepSimCore::tick() {
     case DrvState::INIT: {
       uint8_t mask = 0;
       if (!m_nv.sepReleasedGet(mask)) { enter(DrvState::FAULT, FaultReason::NV_READ_FAIL); break; }
-      m_fired = mask & 0x0F;  // 開機時已釋放的通道：不再輸出 fire_us，維持 lock_us（對齊真驅動）
+      m_fired = mask & kSepBits;  // 開機時已釋放的通道：不再輸出 fire_us，維持 lock_us（對齊真驅動）
       enter(DrvState::SELFTEST);
       break;
     }
@@ -105,7 +120,7 @@ void SepSimCore::tick() {
       break;
     }
     case DrvState::READY:
-      for (uint8_t i = 0; i < 4; i++)
+      for (uint8_t i = 0; i < kSepCh; i++)
         if (m_holdTicks[i] > 0) --m_holdTicks[i];  // 保持結束後仍停在 fire_us（已釋放通道保持釋放，對齊真驅動）
       break;
     case DrvState::FAULT: break;  // 維持現狀，SEP 不動
@@ -114,12 +129,14 @@ void SepSimCore::tick() {
 }
 
 void SepSimCore::cmdIn(const SepCmd& c) {
-  if (m_state != DrvState::READY) { m_sink.evCmdDropped(c.seq, DropReason::NOT_READY); return; }
-  if (!c.valid) { m_sink.evCmdDropped(c.seq, DropReason::INVALID); return; }
-  if (m_haveSeq && c.seq == m_lastSeq) { m_sink.evCmdDropped(c.seq, DropReason::SEQ_DUP); return; }
-  if (m_haveSeq && c.seq < m_lastSeq) { m_sink.evCmdDropped(c.seq, DropReason::SEQ_BACKWARD); return; }
+  auto drop = [&](DropReason r) { if (!m_dropLogged || r != m_lastDrop) { m_dropLogged = true; m_lastDrop = r; m_sink.evCmdDropped(c.seq, r); } };
+  if (m_state != DrvState::READY) { drop(DropReason::NOT_READY); return; }
+  if (!c.valid) { drop(DropReason::INVALID); return; }
+  if (m_haveSeq && c.seq == m_lastSeq) { drop(DropReason::SEQ_DUP); return; }
+  if (m_haveSeq && c.seq < m_lastSeq) { drop(DropReason::SEQ_BACKWARD); return; }
+  m_dropLogged = false;
   m_lastSeq = c.seq; m_haveSeq = true;
-  for (uint8_t ch = 0; ch < 4; ch++) {
+  for (uint8_t ch = 0; ch < kSepCh; ch++) {
     const uint8_t bit = static_cast<uint8_t>(1u << ch);
     if (!(c.channelMask & bit)) continue;
     uint8_t nvMask = 0;
@@ -134,6 +151,6 @@ void SepSimCore::cmdIn(const SepCmd& c) {
   }
 }
 
-void SepSimCore::uvIn(UvState st) { m_uv = st; m_sink.evUvSeen(st); }
+void SepSimCore::uvIn(UvState st) { const bool ch = (st != m_uv); m_uv = st; if (ch) m_sink.evUvSeen(st); }
 
 }  // namespace ServoSim

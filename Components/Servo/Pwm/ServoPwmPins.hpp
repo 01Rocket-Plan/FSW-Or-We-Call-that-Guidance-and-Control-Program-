@@ -3,7 +3,8 @@
 // \author 伺服馬達驅動組（Evgeny）
 // \brief  LEDC GPIO／通道／timer 設定常數（勿寫死在驅動內）
 //
-// MCU 組（唐德元）v0.1 草案，pending Anatoly review。
+// MCU 組 v0.1 草案。全箭腳位表由 MCU 組（EdwardWang+Claude）在 ESP32 平台 PR 統一整理
+// （Edward 2026-11-10：腳位自訂、不衝突即可）。
 // ======================================================================
 #ifndef COMPONENTS_SERVO_PWM_SERVOPWMPINS_HPP
 #define COMPONENTS_SERVO_PWM_SERVOPWMPINS_HPP
@@ -31,10 +32,10 @@ constexpr U8 TAIL_GPIO[4] = {25, 26, 27, 14};
 constexpr U8 TAIL_LEDC_CH[4] = {0, 1, 2, 3};
 constexpr U8 TAIL_LEDC_TIMER = kLedcTimerShared;
 
-//! DS 級間分離 MG996R（SepServoDriver base 0x3100）— SEP_1..4
-//! MCU 組 v0.1 草案，pending Anatoly review：GPIO 32,33,13,4；HS ch 4–7
-constexpr U8 SEP_GPIO[4] = {32, 33, 13, 4};
-constexpr U8 SEP_LEDC_CH[4] = {4, 5, 6, 7};
+//! DS 級間分離 MG996R（SepServoDriver base 0x3100）— SEP_1..3（3 顆環排 120°，SSS §7）
+//! MCU 組 v0.1 草案：GPIO 32,33,13；HS ch 4–6（原 SEP_4 的 GPIO4／ch7 釋出）
+constexpr U8 SEP_GPIO[3] = {32, 33, 13};
+constexpr U8 SEP_LEDC_CH[3] = {4, 5, 6};
 constexpr U8 SEP_LEDC_TIMER = kLedcTimerShared;
 
 //! US 雲台 SG90（ServoDriver 實例 base 0x3200）— PITCH／ROLL

@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  ImuDriverSim.hpp
-// \brief  ImuDriver Sim — Base ID 0x4080
+// \brief  ImuDriver Sim — Base ID 0x4080（晶片暫存器級模擬＋同一顆 imu_core）
 // ======================================================================
 #ifndef COMPONENTS_IMUDRIVERSIM_HPP
 #define COMPONENTS_IMUDRIVERSIM_HPP
@@ -28,6 +28,7 @@ class ImuDriverSim final : public ImuDriverSimComponentBase {
   ImuSimDevice m_dev;
   ImuCore* m_core;
   U32 m_tlmDiv;
+  ImuDrvState m_lastState;
 };
 
 }  // namespace Components

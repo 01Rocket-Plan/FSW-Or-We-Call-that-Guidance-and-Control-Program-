@@ -21,7 +21,8 @@ struct Sg90Limits {
   static constexpr uint16_t kPulseMaxUs = 2000;
   static constexpr uint16_t kNeutralUs = 1500;
   static constexpr uint16_t kPwmHz = 50;
-  // Datasheet-typical hobby servo travel; assumption, NOT measured on vehicle.
+  // 行程 180°「定位型」（Edward 2026-11-11：手上的 360° 是連續旋轉版，不能定位 → 改買 180° 定位型）。
+  // 1000–2000 µs ↔ −90°…+90°（TowerPro 規格書；冷測再確認）。連續旋轉版不得用於尾翼／雲台／分離。
   static constexpr float kTravelDeg = 180.0f;
 };
 

@@ -15,14 +15,12 @@ typedef enum {
   IMU_DRV_FAULT = 4
 } ImuDrvState;
 
-typedef enum { IMU_SENS_PRIMARY = 0, IMU_SENS_BACKUP = 1 } ImuSensorId;
 typedef enum {
   IMU_FAULT_NONE = 0,
   IMU_FAULT_WHOAMI = 1,
   IMU_FAULT_BUS = 2,
   IMU_FAULT_STUCK = 3,
-  IMU_FAULT_SELFTEST = 4,
-  IMU_FAULT_BOTH = 5
+  IMU_FAULT_SELFTEST = 4
 } ImuFaultReason;
 
 typedef struct {
@@ -37,10 +35,10 @@ typedef struct {
   uint32_t selftestSamples;
   float gyroSatThresh_rads;
   float accelSatThresh_mps2;
-  float dcmPrimary[9];
-  float dcmBackup[9];
-  uint8_t primaryAddr;
-  uint8_t backupAddr;
+  /* 機體←晶片 DCM（row-major）。機體系 X 鼻／Y 右／Z=X×Y（docs/conventions.md §2）。
+   * 預設＝ICM-20948 晶片 Z 沿鼻的安裝：機體 = (晶片 Z, 晶片 Y, −晶片 X)。 */
+  float dcm[9];
+  uint8_t i2cAddr;
 } ImuParams;
 
 typedef struct {
@@ -67,12 +65,10 @@ void imu_core_set_params(ImuCore* c, const ImuParams* p);
 void imu_core_reset(ImuCore* c);
 bool imu_core_tick(ImuCore* c, double t_s, ImuSampleOut* out);
 ImuDrvState imu_core_state(const ImuCore* c);
-ImuSensorId imu_core_active(const ImuCore* c);
 ImuFaultReason imu_core_fault(const ImuCore* c);
 uint32_t imu_core_seq(const ImuCore* c);
 uint32_t imu_core_bus_err(const ImuCore* c);
 uint32_t imu_core_stuck(const ImuCore* c);
-uint32_t imu_core_failover(const ImuCore* c);
 ImuParams imu_params_default(void);
 
 #ifdef __cplusplus

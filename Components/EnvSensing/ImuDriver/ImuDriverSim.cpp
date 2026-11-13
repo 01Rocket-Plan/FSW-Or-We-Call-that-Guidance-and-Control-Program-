@@ -7,7 +7,7 @@ static RocketTypes::DrvState toFpp(ImuDrvState s) {
 }
 
 ImuDriverSim::ImuDriverSim(const char* compName)
-    : ImuDriverSimComponentBase(compName), m_core(nullptr), m_tlmDiv(0) {
+    : ImuDriverSimComponentBase(compName), m_core(nullptr), m_tlmDiv(0), m_lastState(IMU_DRV_OFF) {
   m_core = imu_core_create(m_dev.busOps());
 }
 
@@ -49,18 +49,16 @@ void ImuDriverSim::schedIn_handler(FwIndexType, U32) {
   ImuSampleOut out;
   imu_core_tick(m_core, t_s, &out);
   const ImuDrvState st = imu_core_state(m_core);
-  if (st == IMU_DRV_READY) {
-    /* opportunistic ready log throttled via tlm path */
-  }
-  if (st == IMU_DRV_FAULT) {
-    this->log_WARNING_HI_EnterFault(static_cast<U8>(imu_core_active(m_core)),
-                                    static_cast<U8>(imu_core_fault(m_core)));
+  if (st != m_lastState) {  // 只在狀態剛改變時記（原本 FAULT 每拍記一次 → 1 kHz 洪水）
+    if (st == IMU_DRV_READY) this->log_ACTIVITY_HI_EnterReady();
+    if (st == IMU_DRV_FAULT) this->log_WARNING_HI_EnterFault(static_cast<U8>(imu_core_fault(m_core)));
+    m_lastState = st;
+    this->tlmWrite_drvState(toFpp(st));
   }
   emitSample(out);
   if (++m_tlmDiv >= 1000) {
     m_tlmDiv = 0;
     this->tlmWrite_drvState(toFpp(st));
-    this->tlmWrite_activeSensor(static_cast<U8>(imu_core_active(m_core)));
     this->tlmWrite_injectCode(m_dev.inject());
   }
 }

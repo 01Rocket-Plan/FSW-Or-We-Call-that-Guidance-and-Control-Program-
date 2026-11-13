@@ -1,7 +1,8 @@
-@ MG996R interstage separation SEP_1–4 (DsMcu only). Identity via params model+role.
+@ MG996R interstage separation SEP_1–3 (DsMcu only；3 顆環排 120°，SSS §7). Identity via params model+role.
 module Components {
 
-  @ MG996R SEP_1–4 (DsMcu). Base ID 0x3100. Valid (model,role)=(MG996R,SEP) else FAULT.
+  @ 事件只在狀態改變時記（CmdDropped／UvSeen，#38）。channelMask 只看 bit0–2。
+  @ MG996R SEP_1–3 (DsMcu). Base ID 0x3100. Valid (model,role)=(MG996R,SEP) else FAULT.
   @ No cmd_timeout→neutral. Fire-once via Power.SepReleasedSet/Get. No sleep.
   passive component SepServoDriver {
 

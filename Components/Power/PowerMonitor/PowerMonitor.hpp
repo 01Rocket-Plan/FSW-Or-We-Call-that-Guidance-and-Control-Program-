@@ -19,9 +19,9 @@ class PowerMonitor : public PowerMonitorComponentBase {
 
     void SET_SIM_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, bool enabled) override;
     void SIM_READ_FAIL_cmdHandler(FwOpcodeType opCode, U32 cmdSeq,
-                                  PowerRailId rail, bool fail) override;
+                                  const PowerRailId& rail, bool fail) override;
     void SIM_FROZEN_cmdHandler(FwOpcodeType opCode, U32 cmdSeq,
-                               PowerRailId rail, bool frozen) override;
+                               const PowerRailId& rail, bool frozen) override;
 
     void parametersLoaded() override;
     void parameterUpdated(FwPrmIdType id) override;

@@ -19,6 +19,8 @@ ServoDriver::ServoDriver(const char* compName)
       m_lastCmd_s(0.0),
       m_haveCmd(false),
       m_lockNeutral(true),
+      m_dropLogged(false),
+      m_clampActiveMask(0),
       m_tick(0),
       m_pwmPeriodTicks(20),
       m_tlmDiv(0),
@@ -157,9 +159,15 @@ U16 ServoDriver::clampPulse(U8 ch, U16 raw) {
   } else if (used > m_max_us) {
     used = m_max_us;
   }
+  const U8 bit = static_cast<U8>(1u << ch);
   if (used != raw) {
-    ++m_clampCount;
-    this->log_WARNING_LO_PulseClamped(ch, raw, used);
+    ++m_clampCount;  // 計數每拍都加（遙測看得到持續多久）
+    if ((m_clampActiveMask & bit) == 0) {
+      m_clampActiveMask = static_cast<U8>(m_clampActiveMask | bit);
+      this->log_WARNING_LO_PulseClamped(ch, raw, used);  // 事件只記剛開始限幅那一拍
+    }
+  } else {
+    m_clampActiveMask = static_cast<U8>(m_clampActiveMask & ~bit);
   }
   (void)modelClamped;
   return used;
@@ -192,6 +200,7 @@ void ServoDriver::writeTlm() {
   }
   this->tlmWrite_cmdAge_s(age);
   this->tlmWrite_uvState(m_uv);
+  this->tlmWrite_lockNeutral(m_lockNeutral);
   this->tlmWrite_clampCount(m_clampCount);
   this->tlmWrite_dropCount(m_dropCount);
   this->tlmWrite_model(m_model);
@@ -199,29 +208,52 @@ void ServoDriver::writeTlm() {
 }
 
 void ServoDriver::uvIn_handler(FwIndexType, const RocketTypes::UvState& st) {
+  const bool changed = (st.e != m_uv.e);
   m_uv = st;
-  this->tlmWrite_uvState(st);
-  this->log_ACTIVITY_HI_UvSeen(st);
+  if (changed) {  // 同一級重複送來不記（PowerMonitor 每拍都送）
+    this->tlmWrite_uvState(st);
+    this->log_ACTIVITY_HI_UvSeen(st);
+  }
+}
+
+void ServoDriver::logDrop(U32 seq, U8 reason) {
+  ++m_dropCount;
+  if (!m_dropLogged || reason != m_lastDropReason) {  // 同原因連續只記第一筆；原因改變或收到有效指令後重新記
+    m_dropLogged = true;
+    m_lastDropReason = reason;
+    this->log_WARNING_LO_CmdDropped(seq, reason);
+  }
+}
+
+void ServoDriver::flushTlmNow() {
+  // 狀態剛改變那一拍立刻寫一次遙測，之後回到 1 Hz（#38）
+  writeTlm();
+  m_tlmDiv = 0;
 }
 
 void ServoDriver::cmdIn_handler(FwIndexType, const RocketTypes::ServoCmd& c) {
   if (m_state != RocketTypes::DrvState::READY) {
-    ++m_dropCount;
-    this->log_WARNING_LO_CmdDropped(c.get_seq(), DROP_NOT_READY);
+    logDrop(c.get_seq(), DROP_NOT_READY);
     return;
   }
   if (m_haveSeq && c.get_seq() <= m_lastSeq) {
-    ++m_dropCount;
-    this->log_WARNING_LO_CmdDropped(c.get_seq(), DROP_SEQ);
+    logDrop(c.get_seq(), DROP_SEQ);
     return;
   }
+  m_dropLogged = false;
   m_haveSeq = true;
   m_lastSeq = c.get_seq();
   m_haveCmd = true;
   m_lastCmd_s = now_s();  // prefer F´ time; cmd.t_s available but age uses service time
-  m_lockNeutral = c.get_lockNeutral();
+  // 1 kHz 照收照做；事件／遙測只在「鎖定狀態改變」那一拍送（#38，Edward 2026-11-10）
+  const bool lock = c.get_lockNeutral();
+  const bool lockChanged = (lock != m_lockNeutral);
+  m_lockNeutral = lock;
   if (m_lockNeutral) {
-    this->log_ACTIVITY_HI_LockNeutral(LOCK_CMD);
+    if (lockChanged) {
+      this->log_ACTIVITY_HI_LockNeutral(LOCK_CMD);
+    }
+    m_clampActiveMask = 0;
     for (U8 i = 0; i < m_channelCount; ++i) {
       m_out_us[i] = m_neutral_us;
     }
@@ -235,6 +267,9 @@ void ServoDriver::cmdIn_handler(FwIndexType, const RocketTypes::ServoCmd& c) {
     m_out_us[i] = m_neutral_us;
   }
   applyOutputs(false);
+  if (lockChanged) {
+    flushTlmNow();
+  }
 }
 
 void ServoDriver::schedIn_handler(FwIndexType, U32) {
@@ -271,14 +306,21 @@ void ServoDriver::schedIn_handler(FwIndexType, U32) {
       if (m_haveCmd) {
         const F32 age = static_cast<F32>(t - m_lastCmd_s);
         if (age > m_cmdTimeout_s) {
+          const bool lockChanged = !m_lockNeutral;
           m_lockNeutral = true;
+          m_clampActiveMask = 0;  // 回中位＝限幅狀態結束，下次超限要再記（#38）
           for (U8 i = 0; i < m_channelCount; ++i) {
             m_out_us[i] = m_neutral_us;
           }
           this->log_WARNING_HI_CmdTimeout(age);
-          this->log_ACTIVITY_HI_LockNeutral(LOCK_TIMEOUT);
+          if (lockChanged) {  // 已經鎖中位就不重記（與 SimCore 一致）
+            this->log_ACTIVITY_HI_LockNeutral(LOCK_TIMEOUT);
+          }
           m_haveCmd = false;  // one-shot until next cmd
           applyOutputs(false);
+          if (lockChanged) {
+            flushTlmNow();
+          }
         }
       }
       if ((m_tick % m_pwmPeriodTicks) == 0) {

@@ -41,7 +41,7 @@ IMP=$(printf '%s,' \
 echo "== fpp-to-cpp =="
 fpp-to-cpp -d "$OUT" -p "$ROOT,$FPRIME" -i "$IMP" \
   "$ROOT/RocketTypes/RocketTypes.fpp" \
-  "$ES/EnvSensingBus.fpp" \
+  "$ES/Bus/EnvSensingBus.fpp" \
   "$ES/ImuDriver/ImuDriver.fpp" \
   "$ES/UsMpu6050/UsMpu6050.fpp"
 

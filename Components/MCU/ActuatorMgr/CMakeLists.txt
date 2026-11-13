@@ -1,3 +1,8 @@
-# TODO(MCU 組（唐德遠）): 加入 ActuatorMgr.fpp 與實作後啟用
-# set(SOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/ActuatorMgr.fpp" "${CMAKE_CURRENT_LIST_DIR}/ActuatorMgr.cpp")
-# register_fprime_module()
+# ActuatorMgr — DS 作動管理 W4（MCU 組）
+set(SOURCE_FILES
+  "${CMAKE_CURRENT_LIST_DIR}/ActuatorMgr.fpp"
+  "${CMAKE_CURRENT_LIST_DIR}/ActuatorMgr.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/ActuatorMgrCore.cpp"
+)
+set(MOD_DEPS RocketTypes)
+register_fprime_module()
