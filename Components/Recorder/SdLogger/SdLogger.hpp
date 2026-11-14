@@ -48,6 +48,7 @@ class SdLogger final : public SdLoggerComponentBase, private ISdLoggerSink {
   void onImageFrameGap(uint32_t expected, uint32_t got) override;
   void onImageChunkGap(uint32_t frameNumber, uint32_t expected, uint32_t got) override;
   void onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex) override;
+  void onQueueDepthClamped(uint8_t which, uint32_t requested, uint32_t maxDepth) override;
 
   void loadParams();
   void writeTlm();

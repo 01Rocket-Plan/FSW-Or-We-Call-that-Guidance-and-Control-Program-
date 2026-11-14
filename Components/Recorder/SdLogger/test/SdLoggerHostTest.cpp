@@ -4,6 +4,7 @@
 #include "../SdLoggerCore.hpp"
 #include "../RecordChannels.hpp"
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 using namespace Components;
@@ -31,6 +32,12 @@ struct Sink : ISdLoggerSink {
   void onImageTruncatedSeen(uint32_t frame, uint32_t chunk) override {
     imgTrunc++; imgFrame = frame; imgChunk = chunk;
   }
+  void onQueueDepthClamped(uint8_t which, uint32_t requested, uint32_t maxDepth) override {
+    clamped++; clampWhich = which; clampReq = requested; clampMax = maxDepth;
+  }
+  int clamped = 0;
+  uint8_t clampWhich = 0xFF;
+  uint32_t clampReq = 0, clampMax = 0;
 };
 
 static void testSimRoundtrip() {
@@ -191,6 +198,106 @@ static void testImageGapsAndTrunc() {
   CHECK(sink.imgFrameGaps == 1);
   CHECK(sink.imgTrunc == 1);
   CHECK(sink.imgFrame == 7);
+  CHECK(log.imageQueueDepth() == SdLoggerCore::kMaxImageQueueDepth);  // 16 > 8 → 夾到 8
+}
+
+// 靜態環形緩衝：先進先出、繞圈後順序不亂、滿了不覆蓋舊資料。
+static void testStaticRingWrap() {
+  StaticRing<int, 3> q;
+  CHECK(q.empty() && q.capacity() == 3);
+  int next = 0, expect = 0;
+  for (int round = 0; round < 10; ++round) {  // 每輪放 2 取 2 → head 會繞圈好幾次
+    CHECK(q.push(next++));
+    CHECK(q.push(next++));
+    CHECK(q.size() == 2);
+    CHECK(q.front() == expect); q.pop(); ++expect;
+    CHECK(q.front() == expect); q.pop(); ++expect;
+    CHECK(q.empty());
+  }
+  CHECK(q.push(100) && q.push(101) && q.push(102));
+  CHECK(q.full());
+  CHECK(!q.push(103));        // 滿了：不放、不覆蓋
+  CHECK(q.backSlot() == nullptr);
+  CHECK(q.front() == 100);    // 最舊的還在
+  q.pop();
+  int* s = q.backSlot();
+  CHECK(s != nullptr);
+  if (s) { *s = 104; q.commitBack(); }
+  CHECK(q.size() == 3);
+  CHECK(q.front() == 101); q.pop();
+  CHECK(q.front() == 102); q.pop();
+  CHECK(q.front() == 104); q.pop();
+  CHECK(q.empty());
+  q.pop();                    // 空的 pop 不動作
+  CHECK(q.size() == 0);
+}
+
+// 深度參數：0 → 1；超過編譯時上限 → 用上限並發 QueueDepthClamped；上限內照設。
+static void testDepthClamp() {
+  SdCardSimDevice dev;
+  SdCardCore card(dev);
+  Sink sink;
+  SdLoggerCore log(card, sink);
+  CHECK(log.queueDepth() == 64 && log.imageQueueDepth() == 8);  // 預設＝上限
+  CHECK(log.setQueueDepth(0) == 1 && sink.clamped == 0);
+  CHECK(log.setQueueDepth(64) == 64 && sink.clamped == 0);
+  CHECK(log.setQueueDepth(100) == SdLoggerCore::kMaxRecordQueueDepth);
+  CHECK(sink.clamped == 1 && sink.clampWhich == 0 && sink.clampReq == 100 && sink.clampMax == 64);
+  CHECK(log.setImageQueueDepth(13) == SdLoggerCore::kMaxImageQueueDepth);
+  CHECK(sink.clamped == 2 && sink.clampWhich == 1 && sink.clampReq == 13 && sink.clampMax == 8);
+  CHECK(log.setImageQueueDepth(5) == 5 && sink.clamped == 2);
+  // 滿上限 64 筆後第 65 筆丟掉
+  CHECK(log.start());
+  PackedRecord r;
+  CHECK(packRecord(RecordChannel::BARO, 0, 1.0, nullptr, 0, r));
+  for (uint32_t i = 0; i < 64; ++i) { r.producerSeq = i; CHECK(log.ingest(r)); }
+  r.producerSeq = 64;
+  CHECK(!log.ingest(r));
+  CHECK(log.queueSize() == 64 && log.dropCount() == 1);
+}
+
+// 影像環形緩衝繞圈：寫進 SD 的內容和順序要對（繞圈不能讀到舊格子），沒給 data 的那塊要是全 0。
+static void testImageRingWrapContent() {
+  SdCardSimDevice dev;
+  SdCardCore card(dev);
+  Sink sink;
+  SdLoggerCore log(card, sink);
+  CHECK(log.start());
+  uint8_t b[64];
+  uint32_t written = 0;
+  for (uint32_t frame = 0; frame < 5; ++frame) {  // 5 幀 × 3 塊，每幀 flush → 環形緩衝繞圈
+    for (uint32_t c = 0; c < 3; ++c) {
+      for (int i = 0; i < 64; ++i) b[i] = static_cast<uint8_t>(frame * 31 + c * 7 + i);
+      CHECK(log.ingestImageChunk(frame, c, c == 2 ? 1 : 0, b, 64, 1.0 + frame + c * 0.01));
+    }
+    log.flush();
+    written += 3;
+    CHECK(log.imageChunkCount() == written && log.imageQueueSize() == 0);
+  }
+  CHECK(log.imageFrameCount() == 5 && sink.imgChunkGaps == 0 && sink.imgFrameGaps == 0);
+  // 最後一塊（frame 4, chunk 2）的內容要出現在 SD 影像裡
+  for (int i = 0; i < 64; ++i) b[i] = static_cast<uint8_t>(4 * 31 + 2 * 7 + i);
+  const std::vector<uint8_t>& img = dev.image();
+  bool found = false;
+  for (size_t p = 0; p + 64 <= img.size() && !found; ++p) {
+    found = std::memcmp(img.data() + p, b, 64) == 0;
+  }
+  CHECK(found);
+  // 塞滿 8 格（上一輪留下資料）再 flush，接著送一塊「有長度沒 data」→ 那格要清 0，不能是舊資料
+  for (uint32_t c = 0; c < 8; ++c) {
+    for (int i = 0; i < 64; ++i) b[i] = 0xAB;
+    CHECK(log.ingestImageChunk(5, c, 0, b, 64, 7.0 + c * 0.01));
+  }
+  CHECK(!log.ingestImageChunk(5, 8, 0, b, 64, 7.1));  // 第 9 塊：滿了丟最新
+  log.flush();
+  const size_t before = dev.image().size();
+  CHECK(log.ingestImageChunk(5, 9, 1, nullptr, 64, 7.2));
+  log.flush();
+  const std::vector<uint8_t>& img2 = dev.image();
+  CHECK(img2.size() > before + 64);
+  bool allZero = true;
+  for (size_t p = img2.size() - 64; p < img2.size(); ++p) allZero = allZero && img2[p] == 0;
+  CHECK(allZero);
 }
 
 
@@ -204,6 +311,9 @@ int main() {
   testImageChunkRoundtrip();
   testImageDropNewest();
   testImageGapsAndTrunc();
+  testStaticRingWrap();
+  testDepthClamp();
+  testImageRingWrapContent();
   std::printf(g_fail ? "SdLoggerHostTest: %d FAILED\n" : "SdLoggerHostTest: ALL PASSED\n", g_fail);
   return g_fail ? 1 : 0;
 }

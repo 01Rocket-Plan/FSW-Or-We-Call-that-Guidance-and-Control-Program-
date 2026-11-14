@@ -233,4 +233,8 @@ void SdLoggerSim::onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex
   this->log_WARNING_HI_ImageTruncatedSeen(frameNumber, chunkIndex);
 }
 
+void SdLoggerSim::onQueueDepthClamped(uint8_t which, uint32_t requested, uint32_t maxDepth) {
+  this->log_WARNING_LO_QueueDepthClamped(which, requested, maxDepth);
+}
+
 }  // namespace Components

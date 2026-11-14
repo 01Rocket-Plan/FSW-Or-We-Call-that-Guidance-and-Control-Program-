@@ -1,13 +1,49 @@
 // SdLoggerCore: queue + seq + monotonic time + drop-newest + image chunks (host-testable, no F´).
+// 兩個佇列都是 StaticRing（編譯時固定大小，不用動態記憶體）。
 #ifndef RECORDER_SDLOGGERCORE_HPP
 #define RECORDER_SDLOGGERCORE_HPP
 
 #include "Components/Recorder/SdLogger/RecordChannels.hpp"
 #include "Components/Recorder/SdLogger/SdCardCore.hpp"
 #include <cstdint>
-#include <deque>
 
 namespace Components {
+
+//! 固定大小的環形佇列（Edward 2026-11-14 PR #55：不用動態記憶體）。
+//! 容量 N 在編譯時決定，元素放在物件本身裡；執行中不跟系統要記憶體。滿了不覆蓋舊資料（呼叫端丟最新的）。
+template <typename T, uint32_t N>
+class StaticRing {
+ public:
+  static_assert(N > 0, "StaticRing capacity must be > 0");
+  static constexpr uint32_t capacity() { return N; }
+  uint32_t size() const { return m_count; }
+  bool empty() const { return m_count == 0; }
+  bool full() const { return m_count == N; }
+  //! 放到尾端；滿了回 false。
+  bool push(const T& v) {
+    if (m_count == N) return false;
+    m_buf[(m_head + m_count) % N] = v;
+    ++m_count;
+    return true;
+  }
+  //! 尾端下一格，直接寫入（省掉先在堆疊上組一份 2 KB 再複製）；滿了回 nullptr。寫完呼叫 commitBack()。
+  T* backSlot() { return (m_count == N) ? nullptr : &m_buf[(m_head + m_count) % N]; }
+  void commitBack() {
+    if (m_count < N) ++m_count;
+  }
+  //! 最舊的一筆；呼叫前先確認 !empty()。
+  const T& front() const { return m_buf[m_head]; }
+  void pop() {
+    if (m_count == 0) return;
+    m_head = (m_head + 1) % N;
+    --m_count;
+  }
+
+ private:
+  T m_buf[N]{};
+  uint32_t m_head = 0;   // 最舊一筆的位置
+  uint32_t m_count = 0;  // 目前筆數
+};
 
 enum class LoggerDrvState : uint8_t { OFF = 0, INIT = 1, SELFTEST = 2, READY = 3, FAULT = 4 };
 
@@ -24,14 +60,25 @@ class ISdLoggerSink {
   virtual void onImageFrameGap(uint32_t expected, uint32_t got) = 0;
   virtual void onImageChunkGap(uint32_t frameNumber, uint32_t expected, uint32_t got) = 0;
   virtual void onImageTruncatedSeen(uint32_t frameNumber, uint32_t chunkIndex) = 0;
+  //! 深度參數超過編譯時上限 → 改用上限（which：0＝感測佇列，1＝影像佇列）。
+  virtual void onQueueDepthClamped(uint8_t which, uint32_t requested, uint32_t maxDepth) = 0;
 };
 
 class SdLoggerCore {
  public:
+  //! 佇列容量上限（編譯時固定、靜態配置），等於原本兩個深度參數的預設值。
+  //! 記憶體：64 × sizeof(PackedRecord) ＋ 8 × sizeof(ImageChunkRecord)，約 64×280 B ＋ 8×2,072 B ≈ 34.5 KB，
+  //! 開機就佔著、執行中不變。
+  static constexpr uint32_t kMaxRecordQueueDepth = 64;
+  static constexpr uint32_t kMaxImageQueueDepth = 8;
+
   SdLoggerCore(SdCardCore& card, ISdLoggerSink& sink);
 
-  void setQueueDepth(uint32_t d) { m_queueDepth = d ? d : 1; }
-  void setImageQueueDepth(uint32_t d) { m_imageQueueDepth = d ? d : 1; }
+  //! 0 → 1；大於上限 → 用上限並通知 sink。回傳實際採用的深度。
+  uint32_t setQueueDepth(uint32_t d);
+  uint32_t setImageQueueDepth(uint32_t d);
+  uint32_t queueDepth() const { return m_queueDepth; }
+  uint32_t imageQueueDepth() const { return m_imageQueueDepth; }
   void setRunning(bool on) { m_running = on; }
   bool running() const { return m_running; }
 
@@ -74,8 +121,8 @@ class SdLoggerCore {
 
   SdCardCore& m_card;
   ISdLoggerSink& m_sink;
-  std::deque<PackedRecord> m_q;
-  std::deque<ImageChunkRecord> m_iq;
+  StaticRing<PackedRecord, kMaxRecordQueueDepth> m_q;
+  StaticRing<ImageChunkRecord, kMaxImageQueueDepth> m_iq;
   uint32_t m_queueDepth = 64;
   uint32_t m_imageQueueDepth = 8;
   uint32_t m_queueHwm = 0;

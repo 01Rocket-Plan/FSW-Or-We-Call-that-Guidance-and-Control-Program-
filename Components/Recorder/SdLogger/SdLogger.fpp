@@ -183,7 +183,12 @@ module Components {
       severity warning high \
       format "SdLogger image truncated seen frame={} chunk={}"
 
-    @ Max depth of the inbound record queue (HWM ceiling)
+    @ local 0x0A / abs 0x200A — 深度參數超過編譯時上限（靜態環形緩衝），改用上限。which：0＝感測佇列，1＝影像佇列
+    event QueueDepthClamped(which: U8, requested: U32, maxDepth: U32) \
+      severity warning low \
+      format "SdLogger queue {} depth {} > max {}, clamped"
+
+    @ Depth of the inbound record queue (HWM ceiling)；上限 64（靜態環形緩衝，編譯時固定），設更大 → 用 64＋QueueDepthClamped
     param RECORD_QUEUE_DEPTH: U32 default 64
     @ SD write buffer pool size (buffers)
     param SD_WRITE_POOL_SIZE: U32 default 8
@@ -191,7 +196,7 @@ module Components {
     param CARD_MODEL: SdCardModel default SdCardModel.MICRO_SDHC_UHS_I_16GB
     @ Instance role DS_LOG or US_LOG
     param CARD_ROLE: SdCardRole default SdCardRole.DS_LOG
-    @ Max depth of the inbound image-chunk queue (2KB entries)
+    @ Depth of the inbound image-chunk queue (2KB entries)；上限 8（靜態環形緩衝），設更大 → 用 8＋QueueDepthClamped
     param IMAGE_QUEUE_DEPTH: U32 default 8
   }
 
@@ -290,6 +295,10 @@ module Components {
     event ImageTruncatedSeen(frameNumber: U32, chunkIndex: U32) \
       severity warning high \
       format "SdLoggerSim image truncated seen frame={} chunk={}"
+
+    event QueueDepthClamped(which: U8, requested: U32, maxDepth: U32) \
+      severity warning low \
+      format "SdLoggerSim queue {} depth {} > max {}, clamped"
 
     param RECORD_QUEUE_DEPTH: U32 default 64
     param SD_WRITE_POOL_SIZE: U32 default 8

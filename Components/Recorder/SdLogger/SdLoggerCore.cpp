@@ -5,6 +5,26 @@ namespace Components {
 
 SdLoggerCore::SdLoggerCore(SdCardCore& card, ISdLoggerSink& sink) : m_card(card), m_sink(sink) {}
 
+uint32_t SdLoggerCore::setQueueDepth(uint32_t d) {
+  if (d == 0) d = 1;
+  if (d > kMaxRecordQueueDepth) {
+    m_sink.onQueueDepthClamped(0, d, kMaxRecordQueueDepth);
+    d = kMaxRecordQueueDepth;
+  }
+  m_queueDepth = d;
+  return d;
+}
+
+uint32_t SdLoggerCore::setImageQueueDepth(uint32_t d) {
+  if (d == 0) d = 1;
+  if (d > kMaxImageQueueDepth) {
+    m_sink.onQueueDepthClamped(1, d, kMaxImageQueueDepth);
+    d = kMaxImageQueueDepth;
+  }
+  m_imageQueueDepth = d;
+  return d;
+}
+
 void SdLoggerCore::setState(LoggerDrvState s, uint8_t faultReason) {
   if (m_state == s) return;
   m_state = s;
@@ -94,13 +114,13 @@ bool SdLoggerCore::ingest(const PackedRecord& rec) {
   checkTime(rec.t_s);
   m_lastProducerSeq = rec.producerSeq;
 
-  if (m_q.size() >= m_queueDepth) {
+  // 深度參數可能在佇列裡已有資料時被調小：size 會暫時大於 depth，照樣丟最新的，等 flush 消化。
+  if (m_q.size() >= m_queueDepth || !m_q.push(rec)) {
     ++m_drops;
-    m_sink.onQueueFullDrop(m_drops, static_cast<uint32_t>(m_q.size()));
+    m_sink.onQueueFullDrop(m_drops, m_q.size());
     return false;
   }
-  m_q.push_back(rec);
-  if (m_q.size() > m_queueHwm) m_queueHwm = static_cast<uint32_t>(m_q.size());
+  if (m_q.size() > m_queueHwm) m_queueHwm = m_q.size();
   return true;
 }
 
@@ -115,21 +135,26 @@ bool SdLoggerCore::ingestImageChunk(uint32_t frameNumber, uint32_t chunkIndex, u
   m_lastImageChunk = chunkIndex;
   m_lastProducerSeq = frameNumber;
 
-  if (m_iq.size() >= m_imageQueueDepth) {
+  ImageChunkRecord* rec = (m_iq.size() >= m_imageQueueDepth) ? nullptr : m_iq.backSlot();
+  if (rec == nullptr) {
     ++m_imageDrops;
-    m_sink.onImageChunkDrop(m_imageDrops, static_cast<uint32_t>(m_iq.size()));
+    m_sink.onImageChunkDrop(m_imageDrops, m_iq.size());
     return false;
   }
-
-  ImageChunkRecord rec;
-  rec.frameNumber = frameNumber;
-  rec.chunkIndex = chunkIndex;
-  rec.flags = flags;
-  rec.len = len;
-  rec.t_s = t_s;
-  if (len && data) std::memcpy(rec.bytes, data, len);
-  m_iq.push_back(rec);
-  if (m_iq.size() > m_imageQueueHwm) m_imageQueueHwm = static_cast<uint32_t>(m_iq.size());
+  // 直接寫進環形緩衝那一格（不在堆疊上另組一份 2 KB）。
+  rec->frameNumber = frameNumber;
+  rec->chunkIndex = chunkIndex;
+  rec->flags = flags;
+  rec->len = len;
+  rec->t_s = t_s;
+  // 這一格可能還留著上一輪的資料：有 data 就複製，沒有就清 0（和原本新建一筆、bytes 全 0 的行為一樣）。
+  if (len && data) {
+    std::memcpy(rec->bytes, data, len);
+  } else if (len) {
+    std::memset(rec->bytes, 0, len);
+  }
+  m_iq.commitBack();
+  if (m_iq.size() > m_imageQueueHwm) m_imageQueueHwm = m_iq.size();
   return true;
 }
 
@@ -149,7 +174,7 @@ void SdLoggerCore::flush() {
       break;
     }
     ++m_loggerSeq;
-    m_q.pop_front();
+    m_q.pop();
   }
 
   while (!m_iq.empty()) {
@@ -177,7 +202,7 @@ void SdLoggerCore::flush() {
     ++m_loggerSeq;
     ++m_imageChunkCount;
     m_imageBytesWritten += rec.len;
-    m_iq.pop_front();
+    m_iq.pop();
   }
 
   (void)m_card.sync();

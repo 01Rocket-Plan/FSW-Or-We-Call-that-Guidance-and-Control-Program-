@@ -22,6 +22,7 @@
 - Time only from F´ time service
 - HWM: `RecordQueueHwm` (0x2002), `SdWritePoolHwm` (0x2003), `ImageQueueHwm` (0x2011)
 - Image queue full → **drop newest** + `ImageChunkDrop` (never block)
+- **不用動態記憶體**（Edward 2026-11-14 PR #55）：兩個佇列是 `StaticRing`（`SdLoggerCore.hpp`），容量編譯時固定：感測 64 筆（`PackedRecord` 約 280 B）、影像 8 塊（`ImageChunkRecord` 約 2,072 B），合計約 34.5 KB，開機就佔著。`RECORD_QUEUE_DEPTH`／`IMAGE_QUEUE_DEPTH` 是「最多用幾格」，設超過 64／8 → 用上限並發 `QueueDepthClamped`（0x200A）。`SdCardSimDevice` 的 `std::vector` 只在模擬／主機測試用，不進飛行板。
 
 ## New TLM (子Bot2)
 
@@ -48,6 +49,7 @@
 | 0x2007 | ImageFrameGap |
 | 0x2008 | ImageChunkGap |
 | 0x2009 | ImageTruncatedSeen |
+| 0x200A | QueueDepthClamped |
 
 Ports: `usImageIn: CamImageOut`, `dsImageIn: CamImageOut`（型別在 `Components/Camera/CamTypes`） (2KB chunks; END=1, TRUNCATED=2). Param `IMAGE_QUEUE_DEPTH` default 8; channel `IMAGE=11`.
 
