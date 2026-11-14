@@ -1,131 +1,140 @@
-# FlightMode（狀態機殼）
+# FlightMode（飛行模式狀態機）
 
-- **邏輯負責：Edward 本人**（CONTRIBUTING 第 7 條：Bot 不得撰寫轉移邏輯、觸發、抑制窗或計時器）
-- 殼：MCU 組（EdwardWang+Claude）——只有埠、資料結構、空的 `tick()`、輸出接線
-- 部署：DsMcu（`role = DS`）、UsMcu（`role = US`）
+- 邏輯：照 SSS `sss/fsw/flight_mode.py`（2026-11-09 版）1:1 移植，**Edward 2026-11-14 授權 Claude 填**（原 CONTRIBUTING 第 7 條：Bot 不寫轉移邏輯）
+- 外殼＋核心：MCU 組（EdwardWang+Claude）
+- 部署：DsMcu（`role = DS`）、UsMcu（`role = US`）。**上下級沒有通訊**，各跑各的。
 - Base ID：`0x1400`
 - 速率：rg1kHz，排在 `estimator` 之後、`controller` 之前
-- 依賴：RocketTypes（#26 `FlightModeId`、#43 `DiscreteData`／`StageLinkPort`／`ChuteCmdPort`，皆已在 main）
+- 依賴：RocketTypes、Power/NvFlags、Wireless/UmbilicalLink（`PadToRocketPort`，架 → 箭）
 
-## 殼現在會做什麼
+## 填空狀態
 
-| | 行為 |
+| 編號 | 內容 | SSS 對應 | 狀態 |
+|---|---|---|---|
+| FM-P | 門檻參數（`FmParams`，數字見下表） | `FlightParams` L103–138 | ✅ |
+| FM-01 | 每拍清脈衝 | `tick` L192–194 | ✅ |
+| FM-02 | IMU 過期累計 | `tick` L199–202 | ✅ |
+| FM-03 | 解保險互鎖 | `tick` L204 | ✅ **repo 差異**：看發射架安檢結論（見下） |
+| FM-04 | 地面指令過濾、LEGAL 表 | `tick` L207–223 | ✅ 邏輯；**中止來源 PIL 接**（UplinkAuth） |
+| FM-05 | 假分禁傘 | `tick` L225–227 | ⏸ 等分離開關硬體 |
+| FM-06 | D12 自動中止（傾角、角速度、看門狗） | `tick` L229–252 | ✅ |
+| FM-07 | PAD_IDLE → ARMED | `tick` L255–259 | ✅ 架進 ARMED／COUNTDOWN |
+| FM-08 | ARMED：FIRE、離台、HANGFIRE | `tick` L260–281 | ✅ **repo 差異**：FIRE＝架點火證據（見下） |
+| FM-08b | HANGFIRE | `tick` L282–285 | ✅ |
+| FM-09 | LIFTOFF → BOOST_PASSIVE | `tick` L286–288 | ✅ |
+| FM-10 | BOOST_PASSIVE → BOOST_ACTIVE | `tick` L289–293 | ✅ |
+| FM-11 | 燃盡 → COAST | `_maybe_coast` L374–391 | ✅ |
+| FM-12 | 分離 | `_maybe_sep` L393–410 | ✅ **進 COAST 後 4 s 分離**（Edward 2026-11-14 暫定；0.8 s 抑制窗保留；`sep_ok` 恆 false） |
+| FM-13 | SEPARATED → LS_DESCENT／SEP_FAIL | `tick` L298–307 | ⏸ 等分離開關硬體 |
+| FM-14 | 下級開傘（分離後 3.1 s，accel_high 抑制） | `_maybe_chute_ds` L412–427 | ✅（要 FM-13 才進得了 LS_DESCENT） |
+| FM-15 | LS_CHUTE → LS_LANDED | `tick` L310–315 | ⏸ 等著地接觸硬體 |
+| FM-16 | SEP_FAIL 側傘 | `tick` L316–317 | ✅（要 FM-13／17 才進得了 SEP_FAIL） |
+| FM-17 | ABORT 後續 | `tick` L318–326 | ⏸ 等分離開關硬體（進入動作 `enterAbort`＝分離＋開傘各一次 已做） |
+| FM-18 | 上級（US 部署） | `_tick_us` L478–518 | ⏸ 等分離開關＋上級 IMU（見下） |
+| FM-19 | 組輸出 | `tick` L331–350 | ✅ `sepMask=0x07`（三顆 MG996R）；SEP_FAIL 時 `ChuteCmd.side=true` |
+| FM-20 | 重啟恢復（NvFlags phase） | SSS 沒有 | ⏸ 規則待 Edward 定 |
+
+開機會發一次 `LogicIncomplete` 警告，提醒還有 ⏸ 的格。全部填完後刪掉事件。
+
+### 現在的實際行為（重要）
+- **DS 分離後停在 `SEPARATED`，不會開傘**（FM-13 等硬體）。ABORT（D12 或已驗證中止）照樣會分離＋開傘。
+- **US 永遠 `US_WAIT`，不會開上級傘**（FM-18 等硬體）。
+- SIL 裡 `umbilicalLink` 還沒進拓樸（外殼未寫，#37-3），`padStatusIn` 沒接 → DS 停在 `PAD_IDLE`。完整剖面看主機測試。
+
+## repo 差異（和 SSS 不一樣的地方）
+
+### FM-03／07：解保險＝看發射架的安檢結論
+SSS 的四條件（seated、點火迴路、READY、地面鏈路）在 repo 由**發射架即時安檢**：PadController 的 `kPadPermitMask`
+（箭到位、點火迴路、實體鑰匙、架傾角、導軌、架電、地面鏈路、臍帶鏈路、箭 READY）全綠才會進 ARMED，任一紅燈退回 SAFE。
+箭經臍帶 UART（`UmbilicalLink.padStatusOut`）只看架的結論：
+
+| 箭這邊 | 條件 |
 |---|---|
-| DS | 永遠 `PAD_IDLE`，每拍廣播給 6 路 `modeOut` |
-| US | 永遠 `US_WAIT` |
-| 分離／開傘／NV | **都不會發生** |
-| 級間鏈路 | DS 每拍送 `stageLinkOut`（`alive=true`，其餘欄位＝core 的 `bus*`，殼裡全 false／-1） |
-| 開機 | 發一次 `ShellOnly` 警告事件，提醒還沒填 |
+| `interlock` | 架狀態夠新（`linkOk`）∧ 架有收到箭（`ROCKET_LINK_OK`）∧ 架在 ARMED／COUNTDOWN／IGNITION／RELEASED／LIFTED_OFF |
+| `arm`（SSS ARM 指令） | 同上，且架在 ARMED／COUNTDOWN（架已收到簽名過的 ARM） |
 
-主機測試 `ST-FM-SHELL-SAFE-*`：餵最壞輸入（全部放行、100 m/s²、傾 3 rad、ARM＋FIRE＋中止）跑 60 s，確認殼不轉移、不分離、不開傘。
+### FM-08：FIRE＝架點火證據（衝突 C-1，gate C15：點火只在架）
+箭不在點火迴路裡。ARMED 時看到下列任一就閂 FIRE：
+1. 架旗標 `IGNITER_ON`，或架已在 IGNITION／RELEASED／LIFTED_OFF；
+2. **架在 COUNTDOWN 且剩 ≤ `t_fire_lead_s`（0.15 s）**——臍帶 10 Hz 一幀，點火那幀可能還沒到臍帶就被拔掉；
+   沒有這條，箭會永遠看不到點火、起飛偵測不會開，然後臍帶逾時把箭退回 PAD_IDLE（飛行中！）。`t_fire` 用倒數推回 T=0。
 
-## 你要填的只有一個檔：`FlightModeCore.cpp`
+閂了以後（點火後臍帶本來就會拔脫）：
+- 架狀態變舊 **不**回 PAD_IDLE（SSS 會；repo 不行）
+- 架狀態還新且架回 SAFE（最後一幀後倒數被中止）→ PAD_IDLE、解閂
+- 架狀態還新且架回報 HANG_FIRE／HOLD_ABORT／NO_LIFTOFF → HANGFIRE
+- 其餘照 SSS：加速度 > 5 m/s² 持續 20 ms → LIFTOFF；`t_fire` 後 1 s 沒離台 → HANGFIRE
 
-外殼（`FlightMode.cpp`）已經把輸入搬好、把輸出送好。你只要在 `FlightModeCore::tick()` 裡填 `[FM-xx]`。要我幫忙時說「**填 FM-12**」就好，不用把整份程式抓下來。
+### FM-04：中止
+SSS 用密碼；repo 用「通過 UplinkAuth（HMAC＋白名單）的 ABORT」＝`FmGroundCmd.abortValid`。外殼目前沒有來源（白名單也還沒有 ABORT opcode），**PIL 時接**。
+墊上（離台前）的中止走發射架，不走這裡（SSS 同：只在飛行中受理）。
 
-## 填空清單
+### FM-18：為什麼上級還不能填
+SSS 的上級靠級間鏈路知道「下級已下令分離」，分得出假分。repo 上下級沒有通訊，上級唯一的證據是自己的分離開關；
+開關在墊上被碰開時上級分不出來，會在墊上 3.2 s 後開傘。所以要等分離開關＋上級 IMU（UsMpu6050，讓上級自己確認已離台）。
 
-來源：`SSS_Mission/sss/fsw/flight_mode.py`（2026-11-09 版；行號以這版為準）
+## FM-P 參數（`FlightModeCore.hpp` `FmParams`）
 
-| 編號 | 要寫什麼 | SSS 對應 | 需要的輸入 | 狀態 |
-|---|---|---|---|---|
-| FM-P | 門檻參數（下表） | `FlightParams` L103–138 | — | 數字已有 |
-| FM-01 | 每拍開頭清脈衝 | `tick` L192–194 | — | 可填 |
-| FM-02 | IMU 過期累計 | `tick` L199–202 | `imu_fresh` ✅ | 可填 |
-| FM-03 | 解保險互鎖 | `tick` L204 | `seated` `loop_ok` `ready` `ground_link` ❌ | 卡 FM-IN-1 |
-| FM-04 | 地面指令過濾、LEGAL 表 | `tick` L207–223、`LEGAL` | 地面指令 ❌ | 卡 FM-IN-6 |
-| FM-05 | 假分禁傘 | `tick` L225–227 | `sep_switch_open` ❌ | 卡 FM-IN-2 |
-| FM-06 | D12 自動中止 | `tick` L229–252 | `tilt_rad` `rate_rads` ✅ | 可填 |
-| FM-07 | PAD_IDLE → ARMED | `tick` L255–259 | 互鎖、`arm` ❌ | 卡 FM-IN-1/6 |
-| FM-08 | ARMED：FIRE、離台、HANGFIRE | `tick` L260–281、`_enter_liftoff` | `accel_u_mps2` ✅；`fire` ⚠️ | 卡衝突 C-1 |
-| FM-08b | HANGFIRE | `tick` L282–285 | — | 可填 |
-| FM-09 | LIFTOFF → BOOST_PASSIVE | `tick` L286–288 | — | 可填 |
-| FM-10 | BOOST_PASSIVE → BOOST_ACTIVE | `tick` L289–293 | `v_est_mps` ✅ | 可填 |
-| FM-11 | 燃盡 → COAST | `_maybe_coast` L374–391 | `accel_u_mps2` ✅ | 可填 |
-| FM-12 | 分離 | `_maybe_sep` L393–410 | `sep_ok` ❌（門檻未定） | 卡 FM-IN-4 |
-| FM-13 | SEPARATED → LS_DESCENT／SEP_FAIL | `tick` L298–307、`_enter_sep_fail` | `sep_switch_open` ❌ | 卡 FM-IN-2 |
-| FM-14 | 下級開傘 | `_maybe_chute_ds` L412–427 | `accel_high`（可由 `accel_u_mps2` 算）✅ | 可填（輸出卡 FM-IN-7） |
-| FM-15 | LS_CHUTE → LS_LANDED | `tick` L310–315 | `contact_ds` ❌ | 卡 FM-IN-3（可先只用 `t_land_max`） |
-| FM-16 | SEP_FAIL 側傘 | `tick` L316–317 | — | 可填 |
-| FM-17 | ABORT 後續 | `tick` L318–326、`_enter_abort` | `sep_switch_open` ❌ | 卡 FM-IN-2 |
-| FM-18 | 上級（US 部署） | `_tick_us` L478–518、`_advance_us` L455–476 | 級間鏈路 ❌、`contact_us` ❌ | 卡 FM-IN-5 |
-| FM-19 | 組輸出（分離 mask、開傘、bus） | `tick` L331–350 | — | 可填；`sepMask` 要你定（硬體 3 顆 MG996R） |
-| FM-20 | 重啟恢復（讀 NvFlags phase） | SSS 沒有 | `phaseGetOut` 已接 | 要你定規則（gates：重啟後進安全態） |
-
-**現在就能填、不用等別人的：** FM-01、02、06、08b、09、10、11、14、16、19。
-
-## FM-P 參數（SSS `FlightParams` 的數字，照抄給你參考）
-
-| 名稱 | SSS 值 | 用在 |
+| 名稱 | 值 | 用在 |
 |---|---:|---|
 | `a_liftoff_mps2` | 5.0 | FM-08 |
 | `n_accel_s` | 0.020 | FM-08 |
 | `t_hang_s` | 1.0 | FM-08 |
+| `t_fire_lead_s` | 0.15 | FM-08（repo 加的） |
 | `v_active_mps` | 8.0 | FM-10 |
-| `t_passive_min_s` | 0.10 | FM-10 |
-| `t_passive_max_s` | 0.50 | FM-10 |
+| `t_passive_min_s`／`t_passive_max_s` | 0.10／0.50 | FM-10 |
 | `a_burnout_mps2` | −5.0 | FM-11 |
 | `n_burnout_s` | 0.020 | FM-11 |
-| `t_burnout_min_s` | 0.40 | FM-11 |
-| `t_burnout_max_s` | 8.0 | FM-11 |
+| `t_burnout_min_s`／`t_burnout_max_s` | 0.40／8.0 | FM-11 |
 | `t_sep_inhibit_s` | 0.80 | FM-12 |
-| `t_sep_backup_s` | 4.0（2026-11-09 由 10 改） | FM-12 |
-| `t_sep_fail_s` | 5.0 | FM-13、17 |
+| `t_sep_backup_s` | **4.0** | FM-12 |
+| `t_sep_fail_s` | 5.0 | FM-13、17（未填） |
 | `t_chute_ds_s` | 3.1 | FM-14 |
-| `t_chute_us_s` | 3.2 | FM-18 |
-| `t_land_max_s` | 50.0 | FM-15、18 |
+| `t_chute_us_s` | 3.2 | FM-18（未填） |
+| `t_land_max_s` | 50.0 | FM-15（未填） |
 | `tilt_abort_rad` | 30° | FM-06 |
 | `rate_abort_rads` | 100°/s | FM-06 |
 | `t_abort_hold_s` | 1.0 | FM-06 |
 | `t_abort_min_s` | 0.20 | FM-06 |
 | `t_watchdog_s` | 20.0 | FM-06 |
 | `t_imu_stale_s` | 0.020 | FM-02 |
-| `sep_ok` 門檻 | **未定**（你記得「< 5 m/s」，未查證；gates D14） | FM-12 |
+| `a_high_mps2` | 5.0 | FM-14 `accel_high`（SSS 夾具定義） |
+| `sep_ok` 門檻 | 未定（gates D14） | FM-12（輸入恆 false） |
 
-SSS 的 `abort_password` **不要**放進 repo（值也不要寫在任何檔案或 PR 裡）：CONTRIBUTING 第 6 條禁止入庫密鑰，repo 的中止走 UplinkAuth HMAC（見衝突 C-2）。
+門檻是 C++ 預設值；要 HIL 現場改再開成 F´ param。SSS 的 `abort_password` **不入庫**。
 
-## 輸入對照（SSS `Meas` → repo）
+## 輸入對照
 
-| SSS 欄位 | repo 來源 | 外殼已搬？ |
+| SSS `Meas` | repo 來源 | 外殼 |
 |---|---|---|
-| `accel_u_mps2` | `StateOut.accAxial_mps2`（Estimator 已對齊 SSS 定義） | ✅ |
+| `accel_u_mps2` | `StateOut.accAxial_mps2` | ✅ |
 | `v_est_mps` | `|StateOut.vel_enu_mps|` | ✅ |
 | `tilt_rad` | `StateOut.tilt_rad` | ✅ |
-| `rate_rads` | `hypot(rate_body_rads[1], [2])`（俯仰＋偏航，不含滾轉；SSS fixture 同日修成同一定義） | ✅ |
+| `rate_rads` | `hypot(rate_body_rads[1], [2])`（俯仰＋偏航） | ✅ |
 | `imu_fresh` | `StateOut.imuValid` | ✅ |
-| `accel_high` | `accel_u_mps2 > 5`（SSS 夾具的定義）——在 tick 裡算 | 你算 |
-| 欠壓 | `UvState` | ✅（`uvState`） |
-| `seated` `loop_ok` `ready` `ground_link` | ❌ FM-IN-1 | 填 false |
-| `sep_switch_open` | `discreteIn` → `DiscreteSample.sepSwitchOpen`（`hdr.valid=false` 不更新） | ✅（埠已接；驅動元件尚無，未接線前保持 false） |
-| `contact_ds` `contact_us` | `discreteIn` → `DiscreteSample.groundContact`（DS 部署寫 `contact_ds`、US 寫 `contact_us`） | ✅（同上） |
-| `sep_ok` | ❌ FM-IN-4 | 填 false |
-| `link_*`（級間） | `stageLinkIn` → `StageLinkMsg`（`alive`／`sepCmd`／`tSepCmd_s`／`usInhibit`）；逾時由你在 tick 判斷 | ✅（埠已接；級間鏈路元件尚無） |
-| `GroundCmd` | ❌ FM-IN-6 | 全 false |
+| `accel_high` | `accel_u_mps2 > a_high_mps2`，core 裡算 | ✅ |
+| `seated`／`loop_ok`／`ready`／`ground_link` | 架安檢 `padStatusIn`（`padState`、`flags`、`countdown_s`、`linkOk`） | ✅ 埠已加；拓樸待 UmbilicalLink 外殼 |
+| `sep_switch_open`／`contact_*` | `discreteIn` → `DiscreteSample` | 埠已接；驅動元件尚無 |
+| `sep_ok` | — | false |
+| 地面指令 | UplinkAuth（PIL） | 全 false |
 
-## 缺的介面（repo 目前沒有，不是我能決定的）
+## 輸出
+- `modeOut[6]`：DS 部署廣播 `ds`、US 部署廣播 `us`
+- `sepCmdOut`（mask 0x07）＋`sepCommandedOut`（NV 閂鎖）
+- `chuteCmdOut`（`stage`、`side`）＋`dsChuteCommandedOut`
+- 舵權 `FmOutputs.authority`（SSS `_authority`）：core 已算，Controller 目前用模式自己判斷，還沒接
 
-| 編號 | 缺什麼 | 誰的 | 建議 |
-|---|---|---|---|
-| FM-IN-1 | 互鎖四條件 | 無線組（`UmbilicalLink.padStatusOut`，但該模組 CMake 還沒啟用） | 啟用 UmbilicalLink 模組後接 `PadToRocketPort` |
-| FM-IN-2 | 分離面微動開關 | 型別＋埠已在 main（#43）、`discreteIn` 已接；**GPIO 驅動元件還沒有** | 新離散輸入驅動 → `DiscreteData` |
-| FM-IN-3 | 著地接觸 | 同 FM-IN-2 | 同上，或先只用 `t_land_max` |
-| FM-IN-4 | `sep_ok` | **門檻未定** | 你定數字（gates D14） |
-| FM-IN-5 | DS↔US 級間鏈路 | 型別＋埠已在 main（#43）、`stageLinkIn`／`stageLinkOut` 已接；**實體鏈路元件還沒有** | 新元件（要首席核） |
-| FM-IN-6 | 地面 ARM／中止 指令進 FlightMode | 無線組（UplinkAuth → cmdDisp） | 在 FlightMode.fpp 加 F´ command（你定） |
-| FM-IN-7 | **開傘驅動** | 型別＋埠已在 main（#43）、`chuteCmdOut` 已接（`chuteDs`→`stage=DS`、`chuteUs`→`stage=US`，`side` 殼一律 false）；**開傘驅動元件還沒有** | 新驅動（DS 傘、US 傘），fire-once 由驅動＋NvFlags 閂鎖 |
+## 測試
+`./run_host_tests.sh` → `test/FlightModeCoreTest.cpp`，17 組（SSS `test_flight_mode.py` 的 CP-* 移植＋repo 差異）：
 
-## 衝突（SSS ≠ repo，要你定）
-
-| 編號 | SSS | repo | 影響 |
-|---|---|---|---|
-| C-1 | 箭上 `cmd.fire` → `motor_on` 點火 | **gate C15：點火只走地面 → 發射架，箭不在點火迴路**（`UmbilicalLink.fpp`） | FM-08 的 FIRE 閂鎖要改成看架的 `PTR_IGNITER_ON`／`PTR_THRUST_CONFIRMED` 旗標？ |
-| C-2 | 中止用密碼 `abort_password` | UplinkAuth HMAC＋白名單，密鑰不入庫 | FM-04 改成「收到已驗證的 ABORT 指令」 |
-| ~~C-3~~ | ~~機體 X 指向鼻錐~~ | ~~conventions：機體 Z 指向鼻錐~~ | **2026-11-10 已解**：repo 改成業界標準 X 指鼻錐，與 SSS 一致 |
+CP-INTERLOCK、CP-HANGFIRE（計時／架回報）、CP-FINAL-COUNT（倒數最後一幀＋臍帶拔脫）、CP-NOMINAL（ARMED → 4 s 分離）、
+CP-INHIBIT-SEP、CP-BACKUP-SEP、CP-NO-EARLY-SEP、CP-ABORT-D12、CP-ABORT-TIPOFF、CP-WATCHDOG、CP-CMD-WHITELIST、
+CP-PAD-ABORT、CP-ILLEGAL-TRANS、CP-CHUTE-DS、CP-IMU-STALE、CP-PAD-SAFE、CP-US。
 
 ## 檔案
 | 檔案 | 內容 |
 |---|---|
-| `FlightModeCore.hpp/.cpp` | **你要填的地方**：資料結構（照 SSS `ModeState`）＋空 `tick()` |
-| `FlightMode.fpp/.hpp/.cpp` | 外殼：搬輸入、送輸出、事件、NV 閂鎖；沒有轉移判斷 |
-| `test/FlightModeShellTest.cpp` | 殼安全測試；填完後換成 SSS COVER4 站 |
+| `FlightModeCore.hpp/.cpp` | 狀態機（純 C++14） |
+| `FlightMode.fpp/.hpp/.cpp` | F´ 外殼：搬輸入、送輸出、事件、NV 閂鎖；沒有轉移判斷 |
+| `test/FlightModeCoreTest.cpp` | 主機測試 |
 | `run_host_tests.sh`／`run_fpp_check.sh` | 自測 |

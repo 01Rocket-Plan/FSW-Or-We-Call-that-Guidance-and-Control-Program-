@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  FlightMode.cpp
-// \author 殼：MCU 組（EdwardWang+Claude）｜邏輯：Edward 本人
+// \author 殼：MCU 組（EdwardWang+Claude）｜邏輯：FlightModeCore（照 SSS，Edward 2026-11-14 授權）
 // \brief  F´ 外殼：搬輸入 → core.tick() → 廣播模式、送 SepCmd、寫 NV 閂鎖、事件。
 //         這裡只有「搬資料」與「把 core 的輸出送出去」，沒有任何轉移判斷。
 // ======================================================================
@@ -13,6 +13,17 @@ namespace Mcu {
 namespace {
 constexpr U32 kTlmDivider = 100;  // 1 kHz → 10 Hz
 
+// FmPad 數值必須等於 Components.PadState（PadLink.fpp）
+static_assert(static_cast<U8>(Components::PadState::SAFE) == FmPad::SAFE, "PadState");
+static_assert(static_cast<U8>(Components::PadState::ARMED) == FmPad::ARMED, "PadState");
+static_assert(static_cast<U8>(Components::PadState::COUNTDOWN) == FmPad::COUNTDOWN, "PadState");
+static_assert(static_cast<U8>(Components::PadState::IGNITION) == FmPad::IGNITION, "PadState");
+static_assert(static_cast<U8>(Components::PadState::RELEASED) == FmPad::RELEASED, "PadState");
+static_assert(static_cast<U8>(Components::PadState::LIFTED_OFF) == FmPad::LIFTED_OFF, "PadState");
+static_assert(static_cast<U8>(Components::PadState::HANG_FIRE) == FmPad::HANG_FIRE, "PadState");
+static_assert(static_cast<U8>(Components::PadState::HOLD_ABORT) == FmPad::HOLD_ABORT, "PadState");
+static_assert(static_cast<U8>(Components::PadState::NO_LIFTOFF) == FmPad::NO_LIFTOFF, "PadState");
+
 RocketTypes::FlightModeId toFpp(FmMode m) {
   return RocketTypes::FlightModeId(static_cast<RocketTypes::FlightModeId::T>(static_cast<U8>(m)));
 }
@@ -24,9 +35,8 @@ FlightMode::FlightMode(const char* compName)
       m_lastMode(RocketTypes::FlightModeId::PAD_IDLE),
       m_sepSeq(0),
       m_chuteSeq(0),
-      m_linkSeq(0),
       m_tlmDiv(0),
-      m_warnedShell(false) {}
+      m_warnedIncomplete(false) {}
 
 FlightMode::~FlightMode() {}
 
@@ -87,12 +97,13 @@ void FlightMode::discreteIn_handler(FwIndexType, const RocketTypes::DiscreteSamp
   }
 }
 
-// [FM-IN-5] 只搬資料。對端逾時由 Edward 在 tick 裡判斷（看 t_s）。
-void FlightMode::stageLinkIn_handler(FwIndexType, const RocketTypes::StageLinkMsg& m) {
-  m_in.link_alive = m.get_alive();
-  m_in.link_sep_cmd = m.get_sepCmd();
-  m_in.link_t_sep_cmd_s = m.get_tSepCmd_s();
-  m_in.link_us_inhibit = m.get_usInhibit();
+// [FM-03] 只搬資料。linkOk＝UmbilicalLink 判定架狀態夠新（padLinkTimeout_s）。
+void FlightMode::padStatusIn_handler(FwIndexType, const Components::PadState& padState, F32 countdown_s, U8 flags,
+                                     bool linkOk) {
+  m_in.padLinkOk = linkOk;
+  m_in.padState = static_cast<uint8_t>(padState.e);
+  m_in.padCountdown_s = countdown_s;
+  m_in.padFlags = flags;
 }
 
 void FlightMode::emitOutputs(const FmOutputs& o) {
@@ -116,8 +127,9 @@ void FlightMode::emitOutputs(const FmOutputs& o) {
     this->log_ACTIVITY_HI_ChuteDsCommanded();
     if (this->isConnected_dsChuteCommandedOut_OutputPort(0)) (void)this->dsChuteCommandedOut_out(0);
     if (this->isConnected_chuteCmdOut_OutputPort(0)) {
-      // side（SEP_FAIL 側傘）由 Edward 決定何時為 true；殼一律 false
-      this->chuteCmdOut_out(0, RocketTypes::ChuteCmd(this->nowSeconds(), ++m_chuteSeq, RocketTypes::Stage::DS, false, true));
+      // side＝SEP_FAIL 側傘
+      this->chuteCmdOut_out(0, RocketTypes::ChuteCmd(this->nowSeconds(), ++m_chuteSeq, RocketTypes::Stage::DS,
+                                                     o.chuteDsSide, true));
     }
   }
   if (o.chuteUs) {
@@ -126,17 +138,12 @@ void FlightMode::emitOutputs(const FmOutputs& o) {
       this->chuteCmdOut_out(0, RocketTypes::ChuteCmd(this->nowSeconds(), ++m_chuteSeq, RocketTypes::Stage::US, false, true));
     }
   }
-  // [FM-IN-5] 級間匯流排：DS 部署每拍送（alive＝本端活著）
-  if (m_core.role() == FmRole::DS && this->isConnected_stageLinkOut_OutputPort(0)) {
-    this->stageLinkOut_out(0, RocketTypes::StageLinkMsg(this->nowSeconds(), ++m_linkSeq, true, o.busSepCmd,
-                                                         o.busTSepCmd_s, o.busUsInhibit));
-  }
 }
 
 void FlightMode::schedIn_handler(FwIndexType, U32) {
-  if (!m_warnedShell) {
-    this->log_WARNING_HI_ShellOnly();  // 殼提醒：填完 FM-01..FM-19 後刪掉這行與事件
-    m_warnedShell = true;
+  if (!m_warnedIncomplete) {
+    this->log_WARNING_HI_LogicIncomplete();  // FM-05/13/15/17/18/20 填完後刪掉這行與事件
+    m_warnedIncomplete = true;
   }
   m_in.t_s = this->nowSeconds();
   FmOutputs o;

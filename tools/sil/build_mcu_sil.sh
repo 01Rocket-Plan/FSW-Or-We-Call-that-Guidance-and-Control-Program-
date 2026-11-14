@@ -30,6 +30,8 @@ MODS=(
   Components/MCU/FlightMode
   Components/Power/NvFlags
   Components/EnvSensing/BaroDriver
+  Components/Wireless/PadLink
+  Components/Wireless/UmbilicalLink
   Deployments/DsMcu
   Deployments/UsMcu
 )

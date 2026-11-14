@@ -22,7 +22,7 @@ US 飛控 MCU（獨立板）。**不含控制律**：不安裝 Controller、Actu
 
 ## SIL 實跑結果（3 s）
 ```
-FlightMode 仍是殼：不會離開 PAD_IDLE／US_WAIT
+FlightMode 未填 FM-05/13/15/17/18/20（等硬體／待定）：DS 分離後停在 SEPARATED、US 停在 US_WAIT
 Platform 開機 reset=POWER_ON
 ```
 
@@ -31,6 +31,5 @@ Platform 開機 reset=POWER_ON
 |---|---|
 | UsMpu6050、UsDht22 → rg100Hz、sdLogger | 下一輪（先確認能用真 F´ 編譯） |
 | gimbalServoDriver（0x3200） | Servo 組模組找不到自己的標頭（issue） |
-| 級間鏈路 → flightMode | 沒有元件（FlightMode README FM-IN-5） |
 | 上級開傘驅動 | 沒有元件（FM-IN-7） |
 | 相機不併入本部署（見 `Deployments/UsCam`） | — |

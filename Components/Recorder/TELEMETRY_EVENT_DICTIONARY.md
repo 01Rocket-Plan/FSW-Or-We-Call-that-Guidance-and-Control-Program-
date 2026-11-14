@@ -199,7 +199,7 @@ FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡，Ed
 | `Estimator` | `0x1100` | 0 `Aligned(tilt_rad)`（activity hi）、1 `ImuStale()`（warning hi）、2 `ImuRecovered()`（activity hi）、3 `LeftPad()`（activity hi） |
 | `Controller` | `0x1200` | 0 `ClosedLoopOn()`（activity hi）、1 `ClosedLoopOff(reason)`（activity hi） |
 | `ActuatorMgr` | `0x1300` | 0 `Locked(reason)`（activity hi）、1 `Unlocked()`（activity hi）、2 `SepForwarded(mask)`（activity hi）、3 `SepDropped(seq)`（warning lo） |
-| `FlightMode` | `0x1400` | 0 `ModeChanged(fromMode,toMode)`（activity hi；**無 cause**）、1 `SepCommanded(mask)`（activity hi）、2 `ChuteDsCommanded()`（activity hi）、3 `ChuteUsCommanded()`（activity hi）、4 `ShellOnly()`（warning hi） |
+| `FlightMode` | `0x1400` | 0 `ModeChanged(fromMode,toMode)`（activity hi；**無 cause**）、1 `SepCommanded(mask)`（activity hi）、2 `ChuteDsCommanded()`（activity hi）、3 `ChuteUsCommanded()`（activity hi）、4 `LogicIncomplete()`（warning hi；開機一次，FM 未填格填完後刪） |
 
 ### 紀錄建議（給 sdLogger）
 - 1 kHz 樣本埠（`stateIn`、`finCmdIn`、`servoCmdIn`）照收；遙測頻道 1 Hz 就夠（事件在狀態改變當拍就有）。
