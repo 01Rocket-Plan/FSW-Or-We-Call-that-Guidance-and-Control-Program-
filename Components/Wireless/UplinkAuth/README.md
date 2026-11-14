@@ -11,5 +11,6 @@
 
 ```bash
 ./Components/Wireless/UplinkAuth/run_host_tests.sh            # HMAC + anti-replay
-./Components/Wireless/UplinkAuth/whitelist/run_host_tests.sh  # whitelist gate
+# 白名單閘（whitelist/test/WhitelistHostTest.cpp）在 F´ UT 裡跑：
+# tools/verify/fprime_verify.sh --ut Components/Wireless/UplinkAuth
 ```
