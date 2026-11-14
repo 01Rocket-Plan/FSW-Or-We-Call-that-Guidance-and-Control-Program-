@@ -52,6 +52,8 @@ struct Ov7670Params {
   uint32_t faultRecoverR = 3;
   // Max bytes streamed per logical frame (adapter enforces; Core forwards length).
   uint32_t frameMaxBytes = Ov7670Regs::FRAME_BYTES;
+  // 幀率上限：兩次轉存之間至少隔幾個 100 Hz 拍。100＝1 fps（Edward 2026-11-14）；0＝不限（每幀都轉存）。
+  uint32_t framePeriodTicks = 100;
 };
 
 class Ov7670Core {
@@ -109,6 +111,7 @@ class Ov7670Core {
   uint32_t m_initIdx = 0;
   uint32_t m_busMisses = 0;
   uint32_t m_noFrameTicks = 0;
+  uint32_t m_sinceSendTicks = 0;  // 距上次轉存幾個 100 Hz 拍（幀率上限用）
   uint16_t m_lastChipId = 0;
   bool m_idOk = false;
   bool m_testFrameOk = false;

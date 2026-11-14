@@ -10,21 +10,22 @@ struct RegPair {
 };
 
 // 第 0 筆是軟重置（COM7=0x80）；寫完這一拍就結束，下一拍（100 Hz＝10 ms 後，> 規格 1 ms）再寫其餘。
-// 輸出：QVGA 320×240、RGB565。值對照 Linux ov7670.c（ov7670_default_regs／QVGA／RGB565 段）。
+// 輸出：QCIF 176×144、YUV422（YUYV）；驅動只取 Y 當灰階（Edward 2026-11-14：144p＋灰階）。
+// 值對照 Linux ov7670.c（ov7670_default_regs／YUYV 格式／QCIF 段）；縮放與 PCLK 值冷測時對規格書＋實拍確認。
 constexpr RegPair kInitTable[] = {
     {Ov7670Regs::COM7, Ov7670Regs::COM7_RESET},
     {Ov7670Regs::CLKRC, 0x01},
-    {Ov7670Regs::COM7, Ov7670Regs::COM7_QVGA_RGB},
+    {Ov7670Regs::COM7, Ov7670Regs::COM7_QCIF_YUV},
     {Ov7670Regs::RGB444, 0x00},
-    {Ov7670Regs::COM15, 0xD0},
-    {Ov7670Regs::TSLB, 0x04},
-    {Ov7670Regs::COM3, 0x04},
-    {Ov7670Regs::COM14, 0x19},
+    {Ov7670Regs::COM15, Ov7670Regs::COM15_YUV_FULL},
+    {Ov7670Regs::TSLB, 0x04},  // bit3＝0：YUYV（Y 在偶數位元組）
+    {Ov7670Regs::COM3, 0x04},  // DCW 致能
+    {Ov7670Regs::COM14, 0x11},  // DCW／縮放 PCLK 致能＋PCLK ÷2（QCIF）
     {Ov7670Regs::SCALING_XSC, 0x3A},
     {Ov7670Regs::SCALING_YSC, 0x35},
     {Ov7670Regs::SCALING_DCWCTR, 0x11},
     {Ov7670Regs::SCALING_PCLK_DIV, 0xF1},
-    {Ov7670Regs::SCALING_PCLK_DELAY, 0x02},
+    {Ov7670Regs::SCALING_PCLK_DELAY, 0x52},
 };
 
 constexpr uint32_t kInitTableSize =
@@ -100,6 +101,7 @@ bool Ov7670Core::captureStart() {
   if (m_state != CamState::READY) return false;
   m_capturing = true;
   m_noFrameTicks = 0;
+  m_sinceSendTicks = m_params.framePeriodTicks;  // 開始擷取後第一幀立刻轉存
   return true;
 }
 
@@ -246,13 +248,22 @@ bool Ov7670Core::stepReady(uint32_t tickHz) {
   if (!m_capturing) {
     return true;
   }
+  if (tickHz == 100u && m_sinceSendTicks < 0xFFFFFFFFu) {
+    ++m_sinceSendTicks;
+  }
   CamFrameView view{};
   bool got = false;
   if (m_frameSrc) {
     got = m_frameSrc->pollFrame(view) && view.complete && view.length > 0;
   }
   if (got) {
-    m_noFrameTicks = 0;
+    m_noFrameTicks = 0;  // 感測器有出幀就算活著（不管這幀有沒有轉存）
+    // 幀率上限（Edward 2026-11-14：上級 1 fps）：距上次轉存不到 framePeriodTicks（100 Hz 拍）就丟掉這幀。
+    // 丟的是感測器 DVP 緩衝裡的這一幀，不是另外存起來：不需要額外記憶體。
+    if (m_params.framePeriodTicks != 0u && m_sinceSendTicks < m_params.framePeriodTicks) {
+      return true;
+    }
+    m_sinceSendTicks = 0;
     const uint32_t frameNumber = m_frameCount + 1u;
     bool accepted = true;
     if (m_sink) {

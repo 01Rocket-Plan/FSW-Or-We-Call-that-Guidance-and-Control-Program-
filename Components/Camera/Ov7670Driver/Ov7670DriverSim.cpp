@@ -1,4 +1,5 @@
 #include "Components/Camera/Ov7670Driver/Ov7670DriverSim.hpp"
+#include "Components/Camera/Ov7670Driver/Ov7670Gray.hpp"
 #include <cstring>
 
 namespace Components {
@@ -19,6 +20,7 @@ void Ov7670DriverSim::loadParams() {
   p.faultRecoverK = this->paramGet_FAULT_RECOVER_K(v);
   p.faultRecoverR = this->paramGet_FAULT_RECOVER_R(v);
   p.frameMaxBytes = this->paramGet_FRAME_MAX_BYTES(v);
+  p.framePeriodTicks = this->paramGet_FRAME_PERIOD_TICKS(v);
   m_frameMaxBytes = p.frameMaxBytes == 0 ? Ov7670Regs::FRAME_BYTES : p.frameMaxBytes;
   m_core.setParams(p);
 }
@@ -105,14 +107,18 @@ bool Ov7670DriverSim::streamChunks(const uint8_t* data, uint32_t length, uint32_
   if (!this->isConnected_imageOut_OutputPort(0)) return false;
   if (!data || length == 0) return false;
 
-  const U32 limit = (length < m_frameMaxBytes) ? length : m_frameMaxBytes;
-  const bool truncated = length > m_frameMaxBytes;
+  // 同 Ov7670Driver：length 是 YUYV 位元組數，送出灰階（只有 Y）。
+  const U32 grayLen = ov7670GrayPixels(length);
+  if (grayLen == 0) return false;
+  const U32 limit = (grayLen < m_frameMaxBytes) ? grayLen : m_frameMaxBytes;
+  const bool truncated = grayLen > m_frameMaxBytes;
   U32 sent = 0;
   U32 chunkIdx = 0;
   while (sent < limit) {
     U32 n = limit - sent;
     if (n > kChunk) n = kChunk;
-    std::memcpy(m_imgScratch, data + sent, n);
+    n = ov7670PackY(data, length, sent, m_imgScratch, n);
+    if (n == 0) break;
     sent += n;
     U8 flags = 0;
     if (sent >= limit) {

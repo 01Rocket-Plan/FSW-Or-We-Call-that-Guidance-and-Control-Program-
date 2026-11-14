@@ -1,6 +1,7 @@
 // Ov7670SimTest：F´ 單元測試（真 F´ 自動碼型別＋gtest）。涵蓋 Core＋SimDevice 的狀態機路徑。
 // 跑法：tools/verify/fprime_verify.sh --ut Components/Camera/CamTypes Components/Camera/Ov7670Driver
 #include "Components/Camera/Ov7670Driver/Ov7670Core.hpp"
+#include "Components/Camera/Ov7670Driver/Ov7670Gray.hpp"
 #include "Components/Camera/Ov7670Driver/Ov7670SimDevice.hpp"
 
 #include <gtest/gtest.h>
@@ -56,7 +57,13 @@ struct Fixture {
   Ov7670SimDevice sim{};
   RecordingSink sink{};
   Ov7670Core core{};
-  Fixture() { core.configure(&sim, &sim, &sink); }
+  Fixture() {
+    core.configure(&sim, &sim, &sink);
+    // 既有案例測的是每拍一幀的狀態機路徑：關掉 1 fps 上限（上限本身由 testOneFpsLimit 測）。
+    Ov7670Params p{};
+    p.framePeriodTicks = 0;
+    core.setParams(p);
+  }
 };
 
 void run(Ov7670Core& core, Ov7670SimDevice& sim, uint32_t tickHz, uint32_t ticks) {
@@ -345,6 +352,46 @@ void testRejectedFrameNotCounted() {
   ASSERT_TRUE(f.core.frameCount() == 2u);
 }
 
+// Edward 2026-11-14：上級 1 fps。感測器每拍都出幀，預設 FRAME_PERIOD_TICKS＝100 → 每 100 拍只轉存一幀，
+// 丟掉的幀不算斷訊（不會 FRAME_TIMEOUT）。
+void testOneFpsLimit() {
+  Fixture f;
+  f.core.setParams(Ov7670Params{});  // 預設值：framePeriodTicks＝100
+  ASSERT_EQ(f.core.params().framePeriodTicks, 100u);
+  f.core.start();
+  ASSERT_TRUE(runUntil(f.core, f.sim, 100u, CamState::READY, 64u));
+  ASSERT_TRUE(f.core.captureStart());
+  run(f.core, f.sim, 100u, 1u);
+  ASSERT_EQ(f.core.frameCount(), 1u);  // 開始擷取後第一幀立刻轉存
+  run(f.core, f.sim, 100u, 99u);
+  ASSERT_EQ(f.core.frameCount(), 1u);  // 還沒滿 1 s
+  run(f.core, f.sim, 100u, 1u);
+  ASSERT_EQ(f.core.frameCount(), 2u);  // 第 101 拍＝1 s 後
+  run(f.core, f.sim, 100u, 199u);
+  ASSERT_EQ(f.core.frameCount(), 3u);  // 3 s 內 3 幀（第 1、101、201 拍）
+  ASSERT_TRUE(f.core.state() == CamState::READY);
+  ASSERT_EQ(f.sink.frameEvents, 3u);
+}
+
+// 灰階：YUYV（Y0 U0 Y1 V0 …）只取偶數位元組；分塊起點、尾端截斷都要對。
+void testGrayPackY() {
+  uint8_t yuyv[12];
+  for (uint32_t i = 0; i < 12; ++i) yuyv[i] = static_cast<uint8_t>(i % 2 == 0 ? 100 + i / 2 : 0xEE);
+  ASSERT_EQ(ov7670GrayPixels(12u), 6u);
+  uint8_t dst[8]{};
+  ASSERT_EQ(ov7670PackY(yuyv, 12u, 0u, dst, 4u), 4u);
+  ASSERT_EQ(dst[0], 100u);
+  ASSERT_EQ(dst[3], 103u);
+  ASSERT_EQ(ov7670PackY(yuyv, 12u, 4u, dst, 8u), 2u);  // 只剩 2 個像素
+  ASSERT_EQ(dst[0], 104u);
+  ASSERT_EQ(dst[1], 105u);
+  ASSERT_EQ(ov7670PackY(yuyv, 12u, 6u, dst, 8u), 0u);
+  ASSERT_EQ(ov7670PackY(nullptr, 12u, 0u, dst, 8u), 0u);
+  // 實際尺寸：QCIF YUYV 50,688 B → 灰階 25,344 B（2 KB 分塊＝13 塊）
+  ASSERT_EQ(ov7670GrayPixels(Ov7670Regs::RAW_FRAME_BYTES), Ov7670Regs::FRAME_BYTES);
+  ASSERT_EQ((Ov7670Regs::FRAME_BYTES + 2047u) / 2048u, 13u);
+}
+
 }  // namespace
 
 TEST(Ov7670Core, NormalPath) { testNormalPath(); }
@@ -360,3 +407,5 @@ TEST(Ov7670Core, ParamFrameTimeoutAnd1Hz) { testParamFrameTimeoutAnd1Hz(); }
 TEST(Ov7670Core, TelemetryHasNoImage) { testTelemetryHasNoImage(); }
 TEST(Ov7670Core, FaultRecoverKR) { testFaultRecoverKR(); }
 TEST(Ov7670Core, RejectedFrameNotCounted) { testRejectedFrameNotCounted(); }
+TEST(Ov7670Core, OneFpsLimit) { testOneFpsLimit(); }
+TEST(Ov7670Core, GrayPackY) { testGrayPackY(); }

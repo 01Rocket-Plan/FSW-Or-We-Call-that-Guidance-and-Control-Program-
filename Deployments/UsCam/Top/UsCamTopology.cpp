@@ -15,11 +15,11 @@ Svc::ActiveRateGroup::ContextArray rg1HzContext(0);
 
 enum TopologyConstants {
   COMM_PRIORITY = 34,
-  //! SIL 幀率：100 Hz 下每 10 拍一幀 ＝ 10 fps
+  //! 模擬感測器出幀：100 Hz 下每 10 拍一幀 ＝ 10 fps；驅動的 FRAME_PERIOD_TICKS（100）只轉存 1 fps。
   SIL_FRAME_EVERY_N = 10,
-  //! SIL 幀大小：16 KB（8 塊）。一整張 QVGA RGB565 是 153,600 B（75 塊），
-  //! 超過 SdLogger 影像佇列預設深度 8 → 會掉塊；兩組要一起定（見 Deployments/UsCam/README.md）。
-  SIL_FRAME_BYTES = 16384,
+  //! 模擬感測器一幀：QCIF 176×144 YUYV＝50,688 B；驅動取 Y → 灰階 25,344 B（13 塊）。
+  //! SdLogger 影像佇列預設 8 塊 → START 後每幀會掉 5 塊（Edward 2026-11-14 已知、接受；見 Deployments/UsCam/README.md）。
+  SIL_FRAME_BYTES = 50688,
 };
 
 void configureTopology() {

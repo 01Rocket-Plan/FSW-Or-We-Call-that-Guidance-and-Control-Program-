@@ -1,13 +1,13 @@
 @ OV7670 US 相機驅動（型號 OV7670、角色 US_CAM；SSS §7，Edward 2026-11-10 定案）
 @ Core／Sim 介面一致；狀態機 1 Hz，擷取 100 Hz；影像只走 imageOut → sdLogger（2KB 分塊串流）。
-@ OV7670 沒有 JPEG：預設 QVGA 320×240 RGB565，一幀 153,600 B（75 塊）。
+@ OV7670 沒有 JPEG：感測器出 QCIF 176×144 YUV422，驅動只取 Y → 灰階一幀 25,344 B（13 塊）；1 fps（Edward 2026-11-14）。
 @ 硬體：SCCB 7-bit 位址 0x21；XCLK 10–48 MHz（典型 24 MHz）；DVP 8-bit＋VSYNC／HREF／PCLK。
 module Components {
 
   constant Ov7670_DECLARED_MODEL = CamModel.OV7670
   constant Ov7670_DECLARED_ROLE = CamRole.US_CAM
-  @ QVGA RGB565 一整幀（bytes）
-  constant Ov7670_FRAME_BYTES = 153600
+  @ QCIF 176×144 灰階一整幀（bytes，只有 Y）
+  constant Ov7670_FRAME_BYTES = 25344
 
   @ US OV7670 驅動（SCCB 設定 + DVP 擷取）
   passive component Ov7670Driver {
@@ -59,8 +59,10 @@ module Components {
     param FAULT_RECOVER_K: U32 default 5
     @ FAULT 自動重試上限；超過後鎖住，僅 RESET 可清
     param FAULT_RECOVER_R: U32 default 3
-    @ 單幀最多串流 bytes；超過則截斷並 FrameTruncated（預設＝一整張 QVGA RGB565）
+    @ 單幀最多串流 bytes（灰階）；超過則截斷並 FrameTruncated（預設＝一整張 QCIF 灰階）
     param FRAME_MAX_BYTES: U32 default Ov7670_FRAME_BYTES
+    @ 幀率上限：兩次轉存之間至少隔幾個 100 Hz 拍（100＝1 fps；0＝不限）
+    param FRAME_PERIOD_TICKS: U32 default 100
 
     time get port timeCaller
     command recv port cmdIn
@@ -113,6 +115,7 @@ module Components {
     param FAULT_RECOVER_K: U32 default 5
     param FAULT_RECOVER_R: U32 default 3
     param FRAME_MAX_BYTES: U32 default Ov7670_FRAME_BYTES
+    param FRAME_PERIOD_TICKS: U32 default 100
 
     time get port timeCaller
     command recv port cmdIn

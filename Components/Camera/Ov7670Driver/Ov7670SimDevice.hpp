@@ -20,8 +20,8 @@ enum class Ov7670SimFault : uint8_t {
 class Ov7670SimDevice : public IOv7670Sccb, public IOv7670FrameSource {
  public:
   static constexpr uint32_t kSimFrameBytes = 16;
-  // 最大可模擬一整張 QVGA RGB565（153,600 B）；SIL／host 測試用，不是飛行 RAM 配置。
-  static constexpr uint32_t kSimFrameCap = Ov7670Regs::FRAME_BYTES;
+  // 最大可模擬感測器一整張 QCIF YUYV（50,688 B）；SIL／host 測試用，不是飛行 RAM 配置。
+  static constexpr uint32_t kSimFrameCap = Ov7670Regs::RAW_FRAME_BYTES;
 
   Ov7670SimDevice();
 
