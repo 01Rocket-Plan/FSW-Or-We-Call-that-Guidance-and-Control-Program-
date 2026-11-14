@@ -49,8 +49,8 @@ module Components {
     param period_s: F64 default 0.1
     @ BIT 資料年齡上限，超過就報 ready=false
     param bitMaxAge_s: F64 default 0.5
-    @ 多久沒收到架狀態 → PadLinkOk=false【待 Edward 定】
-    param padLinkTimeout_s: F64 default 0.5
+    @ 多久沒收到架狀態 → PadLinkOk=false（只標記不動作）。2026-11-10 改 1.0 s（#42 C3）
+    param padLinkTimeout_s: F64 default 1.0
 
     telemetry SentFrames: U32
     telemetry WriteFailures: U32

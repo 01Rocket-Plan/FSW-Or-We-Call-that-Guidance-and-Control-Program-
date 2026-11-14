@@ -10,8 +10,22 @@ void WhitelistGate::tick() {
   // No internal queue today; kept for non-blocking cadence parity with F´ components.
 }
 
+ModeClass modeClassOf(FlightModeId mode) {
+  switch (mode.e) {
+    case FlightModeId::PAD_IDLE:
+    case FlightModeId::ARMED:
+    case FlightModeId::HANGFIRE:
+      return ModeClass::PAD;
+    // US_WAIT（上級「分離前等待」）橫跨墊上＋DS 推進／滑翔，上級自己分不出是否已離台，
+    // 所以一律當 AFTER_LIFTOFF（fail-safe）：墊上專用指令（參數／測試）在飛行中不能進上級。
+    // 若上級墊上真的需要這類指令，要由 DS／臍帶提供「仍在架上」旗標再細分（待 MCU 組／Edward）。
+    default:
+      return ModeClass::AFTER_LIFTOFF;
+  }
+}
+
 bool WhitelistGate::modeAllowed(const WhitelistEntry& e, FlightModeId mode) {
-  const uint8_t bit = static_cast<uint8_t>(1u << static_cast<uint8_t>(mode));
+  const uint8_t bit = static_cast<uint8_t>(1u << static_cast<uint8_t>(modeClassOf(mode)));
   return (e.modeMask & bit) != 0;
 }
 

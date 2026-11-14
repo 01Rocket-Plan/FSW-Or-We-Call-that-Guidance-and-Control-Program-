@@ -1,7 +1,7 @@
-#include "HmacSha256.hpp"
-#include "OpcodeAuthTable.hpp"
-#include "RamAuthNvStore.hpp"
-#include "UplinkAuthCore.hpp"
+#include "Components/Wireless/UplinkAuth/HmacSha256.hpp"
+#include "Components/Wireless/UplinkAuth/OpcodeAuthTable.hpp"
+#include "Components/Wireless/UplinkAuth/RamAuthNvStore.hpp"
+#include "Components/Wireless/UplinkAuth/UplinkAuthCore.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -354,7 +354,7 @@ void testDefaultExemptTableIsGimbalOnly() {
 
 }  // namespace
 
-int main() {
+static int UplinkAuthLegacyMain() {
     testSha256EmptyKnownVector();
     testHmacRfc4231Case1();
     testReplayRejected();
@@ -383,3 +383,11 @@ int main() {
     std::printf("%d CHECK(s) FAILED\n", g_failures);
     return 1;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return UplinkAuthLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, UplinkAuthHostSuite) { ASSERT_EQ(0, UplinkAuthLegacyMain()); }
+#endif

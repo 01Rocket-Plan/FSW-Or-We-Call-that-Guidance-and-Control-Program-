@@ -17,7 +17,7 @@
 #ifndef WIRELESS_UMBILICALLINKCORE_HPP
 #define WIRELESS_UMBILICALLINKCORE_HPP
 
-#include "PadLinkCodec.hpp"
+#include "Components/Wireless/PadLink/PadLinkCodec.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -38,7 +38,9 @@ class IUmbilicalUart {
 struct UmbilicalLinkParams {
   double period_s = 0.1;          // 10 Hz
   double bitMaxAge_s = 0.5;       // BIT 資料超過這個年齡 → ready=false
-  double padLinkTimeout_s = 0.5;  // 多久沒收到架狀態 → padLinkOk=false
+  // 多久沒收到架狀態 → padLinkOk=false。2026-11-10 改 1.0 s（Edward #42 C3）。逾時只標記、不做任何動作：
+  // 墊上是「臍帶或架子掛了」（架那邊自己會因收不到箭而 HOLD）；起飛後是臍帶正常拔脫。
+  double padLinkTimeout_s = 1.0;
 };
 
 class UmbilicalLinkCore {

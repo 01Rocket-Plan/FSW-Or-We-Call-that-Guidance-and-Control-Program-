@@ -8,7 +8,7 @@
 // 7) APID 超 11 位拒絕並發事件
 // 8) 預設 frameMax_B=255（SX1278 單包上限）
 // 9) 超過 255 Byte 拒絕；恰 255 通過
-#include "FramerCore.hpp"
+#include "Components/Wireless/Framer/FramerCore.hpp"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -41,7 +41,7 @@ uint64_t readU64(const uint8_t* p) {
 }
 }  // namespace
 
-int main() {
+static int FramerLegacyMain() {
   // ---- Test 1: 已知向量 CRC 正確 ----
   {
     uint8_t payload[4] = {0x01, 0x02, 0x03, 0x04};
@@ -249,3 +249,11 @@ int main() {
   std::printf("ALL FRAMER TESTS PASSED\n");
   return 0;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return FramerLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, FramerHostSuite) { ASSERT_EQ(0, FramerLegacyMain()); }
+#endif

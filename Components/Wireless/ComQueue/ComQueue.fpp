@@ -31,7 +31,8 @@ module Components {
     output port buffOut: Svc.ComDataWithContext
 
     @ rfDriver 忙碌／就緒
-    sync input port comStatusIn: Svc.ComStatus
+    @ F´ v4：通訊狀態埠是 Fw.SuccessCondition（舊 stub 的 Svc.ComStatus 在真 F´ 不存在）
+    sync input port comStatusIn: Fw.SuccessCondition
 
     time get port timeCaller
     param get port prmGetOut

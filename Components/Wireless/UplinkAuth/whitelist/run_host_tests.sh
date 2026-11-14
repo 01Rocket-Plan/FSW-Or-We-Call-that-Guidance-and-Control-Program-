@@ -10,7 +10,7 @@ if [ -z "${CXX:-}" ]; then
   else CXX="python3 -m ziglang c++"
   fi
 fi
-CXXFLAGS=(-std=c++17 -Wall -Wextra -Werror -Wno-unused-variable -O0 -UNDEBUG -I"$HERE")
+CXXFLAGS=(-std=c++17 -DHOST_TEST_MAIN -I"$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" -Wall -Wextra -Werror -Wno-unused-variable -O0 -UNDEBUG -I"$HERE")
 cd "$HERE"
 # shellcheck disable=SC2086
 $CXX "${CXXFLAGS[@]}" WhitelistGate.cpp WhitelistSimTable.cpp test/WhitelistHostTest.cpp -o build_whitelist_test

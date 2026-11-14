@@ -14,7 +14,7 @@ fi
 
 echo "== UplinkAuth host (HMAC + anti-replay) =="
 # shellcheck disable=SC2086
-$CXX -std=c++14 -Wall -Wextra -I"$UA" \
+$CXX -std=c++14 -DHOST_TEST_MAIN -I"$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" -Wall -Wextra -I"$UA" \
   "$UA/test/UplinkAuthHostTest.cpp" \
   "$UA/UplinkAuthCore.cpp" \
   "$UA/HmacSha256.cpp" \

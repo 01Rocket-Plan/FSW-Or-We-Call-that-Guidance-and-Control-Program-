@@ -1,6 +1,6 @@
 // Host tests for WhitelistGate (fake table only; no F´ / no keys).
-#include "WhitelistGate.hpp"
-#include "WhitelistSimTable.hpp"
+#include "Components/Wireless/UplinkAuth/whitelist/WhitelistGate.hpp"
+#include "Components/Wireless/UplinkAuth/whitelist/WhitelistSimTable.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -64,7 +64,7 @@ CmdView makeCmd(uint16_t opcode, FlightModeId mode, VehicleRole vehicle, bool au
 void testUnknownOpcodeDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& rej) {
   const uint32_t c0 = cmd.n;
   const uint32_t r0 = rej.n;
-  const GateDecision d = g.handle(makeCmd(0xDEAD, FlightModeId::MODE_PAD, VehicleRole::US, true));
+  const GateDecision d = g.handle(makeCmd(0xDEAD, FlightModeId::PAD_IDLE, VehicleRole::US, true));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
   CHECK(rej.n == r0 + 1);
@@ -79,7 +79,7 @@ void testBoostParamDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& re
   beInt16(0, args);
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::MODE_BOOST_AFTER, VehicleRole::DS,
+      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::COAST, VehicleRole::DS,
               true, args, 2));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
@@ -92,12 +92,12 @@ void testBoostParamDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& re
 void testPadTestNeedsAuthThenAllow(WhitelistGate& g, CmdRecorder& cmd) {
   const uint32_t c0 = cmd.n;
   GateDecision d =
-      g.handle(makeCmd(WhitelistSimTable::kOpcodeTest, FlightModeId::MODE_PAD, VehicleRole::DS,
+      g.handle(makeCmd(WhitelistSimTable::kOpcodeTest, FlightModeId::PAD_IDLE, VehicleRole::DS,
                        false));
   CHECK(d == GateDecision::AUTH_REQUIRED);
   CHECK(cmd.n == c0);
 
-  d = g.handle(makeCmd(WhitelistSimTable::kOpcodeTest, FlightModeId::MODE_PAD, VehicleRole::DS,
+  d = g.handle(makeCmd(WhitelistSimTable::kOpcodeTest, FlightModeId::PAD_IDLE, VehicleRole::DS,
                        true));
   CHECK(d == GateDecision::ALLOW);
   CHECK(cmd.n == c0 + 1);
@@ -107,7 +107,7 @@ void testPadTestNeedsAuthThenAllow(WhitelistGate& g, CmdRecorder& cmd) {
 void testAuthDemoNotDirectlyForwarded(WhitelistGate& g, CmdRecorder& cmd) {
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeAuthDemo, FlightModeId::MODE_PAD, VehicleRole::US, false));
+      makeCmd(WhitelistSimTable::kOpcodeAuthDemo, FlightModeId::PAD_IDLE, VehicleRole::US, false));
   CHECK(d == GateDecision::AUTH_REQUIRED);
   CHECK(cmd.n == c0);
 }
@@ -116,14 +116,14 @@ void testMalformedLength(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& rej
   const uint32_t c0 = cmd.n;
   uint8_t one = 0x00;
   GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::MODE_PAD, VehicleRole::DS, true, &one,
+      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::PAD_IDLE, VehicleRole::DS, true, &one,
               1));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
   CHECK(rej.lastReason == DenyReason::MalformedLength);
 
   d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::MODE_PAD, VehicleRole::DS, true,
+      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::PAD_IDLE, VehicleRole::DS, true,
               nullptr, 2));
   CHECK(d == GateDecision::DENY);
   CHECK(rej.lastReason == DenyReason::MalformedLength);
@@ -134,7 +134,7 @@ void testParamOutOfRange(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& rej
   beInt16(101, args);
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::MODE_PAD, VehicleRole::DS, true, args,
+      makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::PAD_IDLE, VehicleRole::DS, true, args,
               2));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
@@ -146,7 +146,7 @@ void testGimbalInRangeAcceptedWithoutAuth(WhitelistGate& g, CmdRecorder& cmd) {
   beInt16(45, args);
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::MODE_BOOST_AFTER, VehicleRole::US,
+      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::COAST, VehicleRole::US,
               false, args, 2));
   CHECK(d == GateDecision::ALLOW);
   CHECK(cmd.n == c0 + 1);
@@ -158,7 +158,7 @@ void testGimbalOutOfRangeDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecord
   beInt16(91, args);
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::MODE_PAD, VehicleRole::US, false,
+      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::PAD_IDLE, VehicleRole::US, false,
               args, 2));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
@@ -170,7 +170,7 @@ void testGimbalOnDsDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& re
   beInt16(0, args);
   const uint32_t c0 = cmd.n;
   const GateDecision d = g.handle(
-      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::MODE_PAD, VehicleRole::DS, false,
+      makeCmd(WhitelistSimTable::kOpcodeGimbal, FlightModeId::PAD_IDLE, VehicleRole::DS, false,
               args, 2));
   CHECK(d == GateDecision::DENY);
   CHECK(cmd.n == c0);
@@ -179,7 +179,56 @@ void testGimbalOnDsDenied(WhitelistGate& g, CmdRecorder& cmd, RejectRecorder& re
 
 }  // namespace
 
-int main() {
+static void testModeClassMapping() {
+  // 18 個 RocketTypes.FlightModeId → 粗分類（#37-2），逐一列出，新增值時這裡會提醒要歸類。
+  struct Row {
+    FlightModeId::T mode;
+    ModeClass cls;
+  };
+  const Row rows[] = {
+      {FlightModeId::PAD_IDLE, ModeClass::PAD},
+      {FlightModeId::ARMED, ModeClass::PAD},
+      {FlightModeId::LIFTOFF, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::BOOST_PASSIVE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::BOOST_ACTIVE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::COAST, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::SEPARATED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_DESCENT, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_CHUTE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::LS_LANDED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::HANGFIRE, ModeClass::PAD},
+      {FlightModeId::SEP_FAIL, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::ABORT, ModeClass::AFTER_LIFTOFF},
+      // US_WAIT＝上級分離前等待（墊上＋DS 推進／滑翔都在這個模式）→ fail-safe 當 AFTER_LIFTOFF
+      {FlightModeId::US_WAIT, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_COAST, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_CHUTE, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_LANDED, ModeClass::AFTER_LIFTOFF},
+      {FlightModeId::US_CHUTE_INHIBIT, ModeClass::AFTER_LIFTOFF},
+  };
+  CHECK(sizeof(rows) / sizeof(rows[0]) == FlightModeId::NUM_CONSTANTS);
+  for (const Row& r : rows) {
+    CHECK(modeClassOf(FlightModeId(r.mode)) == r.cls);
+  }
+}
+
+// US_WAIT 時（上級可能已在空中）墊上專用指令必須被擋。
+static void testUsWaitBlocksPadOnlyCommands() {
+  WhitelistSimTable table;
+  CmdRecorder cmd;
+  RejectRecorder rej;
+  WhitelistGate g(table, cmd, rej);
+  uint8_t args[2];
+  beInt16(0, args);
+  const GateDecision d = g.handle(makeCmd(WhitelistSimTable::kOpcodeParam, FlightModeId::US_WAIT,
+                                          VehicleRole::US, true, args, 2));
+  CHECK(d == GateDecision::DENY);
+  CHECK(cmd.n == 0u);
+}
+
+static int WhitelistLegacyMain() {
+  testModeClassMapping();
+  testUsWaitBlocksPadOnlyCommands();
   WhitelistSimTable table;
   CmdRecorder cmd;
   RejectRecorder rej;
@@ -203,3 +252,11 @@ int main() {
   std::printf("WhitelistGate host tests: PASS\n");
   return 0;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return WhitelistLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, WhitelistHostSuite) { ASSERT_EQ(0, WhitelistLegacyMain()); }
+#endif

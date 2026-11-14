@@ -7,7 +7,8 @@ module Components {
 
     sync input port dataIn: Svc.ComDataWithContext
     output port dataOut: Svc.ComDataWithContext
-    output port comStatusOut: Svc.ComStatus
+    @ F´ v4：通訊狀態埠是 Fw.SuccessCondition（舊 stub 的 Svc.ComStatus 在真 F´ 不存在）
+    output port comStatusOut: Fw.SuccessCondition
     output port healthOut: RfHealth
 
     sync input port run: Svc.Sched

@@ -1,5 +1,5 @@
 // ComQueueHostTest：§12.3 + maxPktsPerRun + guarded mutex 模擬
-#include "ComQueueCore.hpp"
+#include "Components/Wireless/ComQueue/ComQueueCore.hpp"
 #include <atomic>
 #include <cassert>
 #include <cstdio>
@@ -306,7 +306,7 @@ void test_concurrent_enqueue_with_mutex() {
 
 }  // namespace
 
-int main() {
+static int ComQueueLegacyMain() {
   test_fifo_same_tier();
   test_cross_priority();
   test_p0_drop_newest_keeps_earliest();
@@ -323,3 +323,11 @@ int main() {
   std::printf("ComQueueHostTest: all 13 tests passed\n");
   return 0;
 }
+
+// 真 F´ UT（gtest，ctest 會跑）；-DHOST_TEST_MAIN 時仍可用舊的 run_host_tests.sh 快速自測
+#ifdef HOST_TEST_MAIN
+int main() { return ComQueueLegacyMain(); }
+#else
+#include <gtest/gtest.h>
+TEST(Wireless, ComQueueHostSuite) { ASSERT_EQ(0, ComQueueLegacyMain()); }
+#endif

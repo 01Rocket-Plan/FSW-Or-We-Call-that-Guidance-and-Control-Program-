@@ -4,7 +4,7 @@ namespace UplinkAuth {
 namespace Whitelist {
 
 namespace {
-constexpr uint8_t modeBit(FlightModeId m) {
+constexpr uint8_t modeBit(ModeClass m) {
   return static_cast<uint8_t>(1u << static_cast<uint8_t>(m));
 }
 constexpr uint8_t vehicleBit(VehicleRole v) {
@@ -22,7 +22,7 @@ WhitelistSimTable::WhitelistSimTable() {
     WhitelistEntry& e = m_entries[0];
     e.used = true;
     e.opcode = kOpcodeParam;
-    e.modeMask = modeBit(FlightModeId::MODE_PAD);
+    e.modeMask = modeBit(ModeClass::PAD);
     e.vehicleMask = static_cast<uint8_t>(vehicleBit(VehicleRole::DS) | vehicleBit(VehicleRole::US));
     e.hmacExempt = false;
     e.expectedArgLen = 2;
@@ -36,7 +36,7 @@ WhitelistSimTable::WhitelistSimTable() {
     WhitelistEntry& e = m_entries[1];
     e.used = true;
     e.opcode = kOpcodeTest;
-    e.modeMask = modeBit(FlightModeId::MODE_PAD);
+    e.modeMask = modeBit(ModeClass::PAD);
     e.vehicleMask = static_cast<uint8_t>(vehicleBit(VehicleRole::DS) | vehicleBit(VehicleRole::US));
     e.hmacExempt = false;
     e.expectedArgLen = 0;
@@ -48,8 +48,8 @@ WhitelistSimTable::WhitelistSimTable() {
     WhitelistEntry& e = m_entries[2];
     e.used = true;
     e.opcode = kOpcodeAuthDemo;
-    e.modeMask = static_cast<uint8_t>(modeBit(FlightModeId::MODE_PAD) |
-                                     modeBit(FlightModeId::MODE_BOOST_AFTER));
+    e.modeMask = static_cast<uint8_t>(modeBit(ModeClass::PAD) |
+                                     modeBit(ModeClass::AFTER_LIFTOFF));
     e.vehicleMask = static_cast<uint8_t>(vehicleBit(VehicleRole::DS) | vehicleBit(VehicleRole::US));
     e.hmacExempt = false;
     e.expectedArgLen = UINT16_MAX;
@@ -61,8 +61,8 @@ WhitelistSimTable::WhitelistSimTable() {
     WhitelistEntry& e = m_entries[3];
     e.used = true;
     e.opcode = kOpcodeGimbal;
-    e.modeMask = static_cast<uint8_t>(modeBit(FlightModeId::MODE_PAD) |
-                                     modeBit(FlightModeId::MODE_BOOST_AFTER));
+    e.modeMask = static_cast<uint8_t>(modeBit(ModeClass::PAD) |
+                                     modeBit(ModeClass::AFTER_LIFTOFF));
     e.vehicleMask = vehicleBit(VehicleRole::US);
     e.hmacExempt = true;
     e.expectedArgLen = 2;
