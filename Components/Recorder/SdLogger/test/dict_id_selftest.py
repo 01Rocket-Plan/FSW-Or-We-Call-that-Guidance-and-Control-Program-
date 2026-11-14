@@ -18,6 +18,7 @@ req_tlm = [
 req_ev = [
     "QueueFullDrop", "SdError", "EnterReady", "EnterFault", "SeqGap", "TimeNonMonotonic",
     "ImageChunkDrop", "ImageFrameGap", "ImageChunkGap", "ImageTruncatedSeen",
+    "QueueDepthClamped",
 ]
 
 errors = []
@@ -81,6 +82,7 @@ for abs_id, name in (
     (0x2007, "ImageFrameGap"),
     (0x2008, "ImageChunkGap"),
     (0x2009, "ImageTruncatedSeen"),
+    (0x200A, "QueueDepthClamped"),
     (0x200D, "ImageChunkCount"),
     (0x2013, "LastImageChunk"),
 ):

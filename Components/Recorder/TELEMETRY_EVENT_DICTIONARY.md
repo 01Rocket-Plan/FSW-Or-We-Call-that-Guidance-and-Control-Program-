@@ -131,6 +131,7 @@
 | 0x07 | **0x2007** | `ImageFrameGap` | warning high | `expected: U32`, `got: U32`（frameNumber 不連續） |
 | 0x08 | **0x2008** | `ImageChunkGap` | warning high | `frameNumber: U32`, `expected: U32`, `got: U32` |
 | 0x09 | **0x2009** | `ImageTruncatedSeen` | warning high | `frameNumber: U32`, `chunkIndex: U32`（CamChunkFlag.TRUNCATED） |
+| 0x0A | **0x200A** | `QueueDepthClamped` | warning low | `which: U8`（0＝感測、1＝影像）, `requested: U32`, `maxDepth: U32`（深度參數超過靜態上限 64／8 → 用上限） |
 
 影像輸入：`usImageIn: Ov3640ImageOut`、`dsImageIn: Esp32CamImageOut`（2KB 分塊；flags END=1／TRUNCATED=2）；獨立 `IMAGE_QUEUE_DEPTH`（預設 8）；頻道 `RecordChannel::IMAGE=11`。
 
@@ -161,7 +162,7 @@ FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡，Ed
 | §9 EVENTS 映射列 | 17 |
 | HWM 列（含占位） | 6 |
 | **SdLogger 具體遙測 ID** | **20**（0x2000–0x2013；含 Bot2 0x2008–0x200C 與影像 0x200D–0x2013） |
-| **SdLogger 具體事件 ID** | **10**（local 0x00–0x09；abs 0x2000–0x2009；含影像 0x2006–0x2009） |
+| **SdLogger 具體事件 ID** | **11**（local 0x00–0x0A；abs 0x2000–0x200A；含影像 0x2006–0x2009、佇列上限 0x200A） |
 
 ---
 
