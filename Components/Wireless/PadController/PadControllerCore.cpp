@@ -49,6 +49,19 @@ bool PadControllerCore::configure(const PadParams& p) {
   return m_paramsOk;
 }
 
+double PadControllerCore::missionTimeAt(double now_s) const {
+  if (m_ignitionUsed) return now_s - m_t0_s;                     // T+（含終態）
+  if (m_state == PadState::COUNTDOWN) return -m_countdownRemaining_s;  // T−30 → T−0
+  return -m_p.countdown_s;  // SAFE／ARMED：同一條軸，停在 T−30（hold）
+}
+
+void PadControllerCore::releaseClamp(double T) {
+  m_releaseT_s = T;
+  m_clampOpenSeen = false;
+  m_loadLow = false;
+  setState(PadState::RELEASED, PadReason::NONE);
+}
+
 void PadControllerCore::setState(PadState s, PadReason r) {
   const PadState from = m_state;
   m_reason = r;
@@ -130,6 +143,7 @@ PadCmdResult PadControllerCore::onGroundPacket(const std::uint8_t* data, std::si
     ++m_groundRejects;
   }
   m_lastCmdResult = res;
+  m_missionT_s = missionTimeAt(now_s);
   if (m_events != nullptr) m_events->onCommand(cmd.op, res, why);
   return res;
 }
@@ -231,17 +245,19 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       }
       m_countdownRemaining_s = m_p.countdown_s - (now_s - m_tCountdown_s);
       if (m_countdownRemaining_s <= 0.0) {
+        // T＝0：點火信號正式發出（這一拍 igniterOn 變 true）。
         m_countdownRemaining_s = 0.0;
         m_ignitionUsed = true;  // 一次開機只點一次
-        m_tIgnition_s = now_s;
-        m_thrustSince_s = kNotYet_s;
-        m_thrustFirst_s = kNotYet_s;
-        m_tConfirm_s = kNotYet_s;
+        m_t0_s = now_s;
+        m_thrustSeen = false;
+        m_thrustRun = false;
+        m_thrustConfirmed = false;
         setState(PadState::IGNITION, PadReason::NONE);
       }
       break;
 
     case PadState::IGNITION: {
+      const double T = missionTimeAt(now_s);  // T+（T＝0＝點火信號發出）
       // 夾持還沒鬆：異常就點火關、保持鎖死。地面斷線不算異常（點了就只能自己走完）；
       // 點火迴路連續性在引線燒斷後本來就會開路，也不算。
       PadReason bad = PadReason::NONE;
@@ -253,48 +269,48 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         setState(PadState::HOLD_ABORT, bad);
         break;
       }
-      // 鬆夾持期限（Edward PR #52 審查）：第一次看到推力後太久還沒鬆 → 不鬆、繼續夾住。
+      // 鬆夾持期限（Edward PR #52 審查）：第一個推力樣本之後太久還沒鬆 → 不鬆、繼續夾住。
       const double deadline =
           m_p.releaseDeadline_s > m_p.thrustConfirm_s ? m_p.releaseDeadline_s : m_p.thrustConfirm_s;
-      if (m_tConfirm_s >= 0.0) {
+      if (m_thrustConfirmed) {
         // 推力已確認，等 releaseMargin_s：這段時間推力只要消失一拍就不鬆（鬆架那一拍也要有推力）。
         if (!in.thrustOk) {
           setState(PadState::HOLD_ABORT, PadReason::THRUST_LOST);
-        } else if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
+        } else if (T - m_thrustFirstT_s > deadline + kTimeEps_s) {
           setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
-        } else if (now_s - m_tConfirm_s + kTimeEps_s >= m_p.releaseMargin_s) {
-          m_tRelease_s = now_s;
-          m_clampOpenSeen = false;
-          m_loadLowSince_s = kNotYet_s;
-          setState(PadState::RELEASED, PadReason::NONE);
+        } else if (T - m_confirmT_s + kTimeEps_s >= m_p.releaseMargin_s) {
+          releaseClamp(T);
         }
         break;
       }
       if (in.thrustOk) {
-        if (m_thrustFirst_s < 0.0) m_thrustFirst_s = now_s;
-        if (m_thrustSince_s < 0.0) m_thrustSince_s = now_s;
+        if (!m_thrustSeen) {
+          m_thrustSeen = true;
+          m_thrustFirstT_s = T;
+        }
+        if (!m_thrustRun) {
+          m_thrustRun = true;
+          m_thrustRunStartT_s = T;
+        }
       } else {
-        m_thrustSince_s = kNotYet_s;
+        m_thrustRun = false;
       }
-      if (m_thrustFirst_s >= 0.0) {
-        if (now_s - m_thrustFirst_s > deadline + kTimeEps_s) {
+      if (m_thrustSeen) {
+        if (T - m_thrustFirstT_s > deadline + kTimeEps_s) {
           setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
           break;
         }
-        if (in.thrustOk && now_s - m_thrustSince_s + kTimeEps_s >= m_p.thrustConfirm_s) {
-          m_tConfirm_s = now_s;
-          if (m_p.releaseMargin_s <= kTimeEps_s) {  // 裕度 0：確認那拍就鬆（舊行為）
-            m_tRelease_s = now_s;
-            m_clampOpenSeen = false;
-            m_loadLowSince_s = kNotYet_s;
-            setState(PadState::RELEASED, PadReason::NONE);
-          }
+        if (m_thrustRun && T - m_thrustRunStartT_s + kTimeEps_s >= m_p.thrustConfirm_s) {
+          m_thrustConfirmed = true;
+          m_confirmT_s = T;
+          if (m_p.releaseMargin_s <= kTimeEps_s) releaseClamp(T);  // 裕度 0：確認那拍就鬆（舊行為）
           break;
         }
       }
-      // 點火窗只管「點火器通電後有沒有出現第一個推力樣本」（點火延遲）。已經看到推力就不再看點火窗，
+      // 點火窗：到 T＝ignitionWindow_s 還沒看到任何推力 → HANG_FIRE（點火關、夾持保持鎖死、不重試）。
+      // 沒推力就不會有人鬆架：這是故意的，沒在燒的箭不放。已經看到推力就不再看點火窗，
       // 改由 thrustConfirm_s／releaseDeadline_s 處理；否則推力在窗尾才出現時，馬達在燒卻會被判 HANG_FIRE。
-      if (m_thrustFirst_s < 0.0 && now_s - m_tIgnition_s >= m_p.ignitionWindow_s) {
+      if (!m_thrustSeen && T >= m_p.ignitionWindow_s) {
         setState(PadState::HANG_FIRE, PadReason::NO_THRUST);  // 不自動重試
       }
       break;
@@ -306,24 +322,27 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
       //   備援 荷重元低於 liftoffLoadMin_N 持續 liftoffLoadHold_s；
       //   輔助 臍帶逾時單獨不算（可能只是被震斷），要和荷重元低同時成立才算。
       //   備援／輔助都要先讀到夾持開到位（沒裝開關時不等）：夾持沒開，荷重元掉下來不代表箭走了。
+      const double T = missionTimeAt(now_s);
       const bool clampCheck = m_p.clampOpenTimeout_s > 0.0;
       if (in.clampOpen) m_clampOpenSeen = true;
       const bool loadLow = in.load_N < m_p.liftoffLoadMin_N;  // NaN → false（不算離軌）
       if (loadLow) {
-        if (m_loadLowSince_s < 0.0) m_loadLowSince_s = now_s;
+        if (!m_loadLow) {
+          m_loadLow = true;
+          m_loadLowStartT_s = T;
+        }
       } else {
-        m_loadLowSince_s = kNotYet_s;
+        m_loadLow = false;
       }
-      const bool loadHeld =
-          loadLow && now_s - m_loadLowSince_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
+      const bool loadHeld = m_loadLow && T - m_loadLowStartT_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
       const bool backupAllowed = !clampCheck || m_clampOpenSeen;
       if (in.offRail || (backupAllowed && (loadHeld || (loadLow && !m_rocketFresh)))) {
         setState(PadState::LIFTED_OFF, PadReason::NONE);
       } else if (clampCheck && !m_clampOpenSeen &&
-                 now_s - m_tRelease_s + kTimeEps_s >= m_p.clampOpenTimeout_s) {
+                 T - m_releaseT_s + kTimeEps_s >= m_p.clampOpenTimeout_s) {
         // 夾持卡住：點火早已關、鬆夾持輸出維持 true（不會再夾回），通知人員不要靠近。
         setState(PadState::NO_LIFTOFF, PadReason::CLAMP_STUCK);
-      } else if (now_s - m_tRelease_s >= m_p.liftoffTimeout_s) {
+      } else if (T - m_releaseT_s >= m_p.liftoffTimeout_s) {
         setState(PadState::NO_LIFTOFF, PadReason::NO_LIFTOFF);
       }
       break;
@@ -337,6 +356,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
   }
 
   m_il = computeInterlocks(in, now_s);  // 狀態可能變了（SW_ARMED／CLAMP 位元）
+  m_missionT_s = missionTimeAt(now_s);
   PadOutputs out;
   out.igniterOn = (m_state == PadState::IGNITION) && in.keyOn;
   out.clampRelease = m_state == PadState::RELEASED || m_state == PadState::LIFTED_OFF ||

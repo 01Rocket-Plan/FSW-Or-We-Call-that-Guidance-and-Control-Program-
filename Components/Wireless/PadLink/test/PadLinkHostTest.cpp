@@ -5,6 +5,7 @@
 #include "Components/Wireless/PadLink/PadLinkCodec.hpp"
 #include "Components/Wireless/UmbilicalLink/UmbilicalLinkCore.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -470,6 +471,48 @@ void testThrustNearIgnitionWindowEnd() {
   CHECK(r.out.clampRelease && !r.out.igniterOn);
 }
 
+// 任務時間 T 只有一條軸（Edward 2026-11-14）：點火前 SAFE／ARMED 停在 T−30，倒數 T−30 → T−0，
+// T＝0＝點火信號發出那一拍，之後 T+；倒數中止回 SAFE，T 回到 −30。點火窗 2 s 用 T 判。
+void testMissionTimeAxis() {
+  auto near = [](double a, double b) { return std::fabs(a - b) < 1e-6; };
+  Rig r;
+  r.warmUp();
+  CHECK(!r.pad.missionStarted());
+  CHECK(near(r.pad.missionTime_s(), -30.0));  // SAFE：hold 在 T−30
+  CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+  r.run(5.0);
+  CHECK(near(r.pad.missionTime_s(), -30.0));  // ARMED：同一條軸，時鐘還沒走
+  CHECK(r.send(PadCmdOp::LAUNCH) == PadCmdResult::ACCEPTED);
+  CHECK(near(r.pad.missionTime_s(), -30.0));
+  r.run(10.0);
+  CHECK(std::fabs(r.pad.missionTime_s() - (-20.0)) < 0.0015);  // T−20
+  CHECK(r.send(PadCmdOp::DISARM) == PadCmdResult::ACCEPTED);  // 倒數中止
+  CHECK(near(r.pad.missionTime_s(), -30.0));
+  r.step();
+  CHECK(near(r.pad.missionTime_s(), -30.0));
+  // 重走一次到點火
+  CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+  CHECK(r.send(PadCmdOp::LAUNCH) == PadCmdResult::ACCEPTED);
+  double tIgnite = -1.0;
+  for (int i = 0; i < 31000 && tIgnite < 0.0; ++i) {
+    r.step();
+    if (r.out.igniterOn) tIgnite = r.t;
+  }
+  CHECK(tIgnite > 0.0);
+  CHECK(r.pad.missionStarted());
+  CHECK(near(r.pad.missionTime_s(), 0.0));  // 點火信號發出那一拍＝T0
+  r.run(1.0);
+  CHECK(std::fabs(r.pad.missionTime_s() - 1.0) < 0.0015);  // T+1
+  CHECK(r.pad.state() == PadState::IGNITION);
+  r.run(0.998);
+  CHECK(r.pad.state() == PadState::IGNITION);  // T+1.998：點火窗還沒到
+  r.run(0.003);
+  CHECK(r.pad.state() == PadState::HANG_FIRE);  // T+2：沒推力 → HANG_FIRE，沒人鬆架
+  CHECK(!r.out.clampRelease && !r.out.igniterOn);
+  r.run(1.0);
+  CHECK(std::fabs(r.pad.missionTime_s() - 3.001) < 0.0015);  // 終態 T 繼續算
+}
+
 void testGroundLossDuringIgnitionContinues() {
   Rig r;
   reachIgnition(r);
@@ -928,6 +971,7 @@ static int PadLinkLegacyMain() {
   testGroundLossDuringCountdownAborts();
   testHangFire();
   testThrustNearIgnitionWindowEnd();
+  testMissionTimeAxis();
   testGroundLossDuringIgnitionContinues();
   testAbortDuringIgnitionHoldsClamp();
   testKeyPulledDuringIgnition();
@@ -946,7 +990,7 @@ static int PadLinkLegacyMain() {
   testRocketVetoSeenByRocket();
   testUmbilicalLinkRxRules();
   if (g_fail == 0) {
-    std::printf("PadLinkHostTest: all 29 test groups passed\n");
+    std::printf("PadLinkHostTest: all 30 test groups passed\n");
     return 0;
   }
   std::printf("PadLinkHostTest: %d CHECK(s) FAILED\n", g_fail);

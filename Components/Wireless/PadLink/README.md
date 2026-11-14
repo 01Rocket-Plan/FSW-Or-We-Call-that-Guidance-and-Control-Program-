@@ -86,18 +86,30 @@ RELEASED ──liftoffTimeout_s 沒離軌──► NO_LIFTOFF／NO_LIFTOFF（夾
 這段時間每一拍都要仍有推力（鬆架那一拍也要），只要推力消失一拍就 HOLD_ABORT／THRUST_LOST、不鬆。
 軟體最小單位是一拍（1e-3 s），比一拍小的裕度等同下一拍；`releaseMargin_s`＝0 就是確認那拍鬆。
 
-**兩個碼錶。** 點火窗從「點火器通電」起算，只等第一個推力樣本（點火延遲，`ignitionWindow_s`＝2 s，超過才 HANG_FIRE）；
-推力確認和鬆夾持從「第一個推力樣本」T+0 起算（下表），0.02 s 指的是這一段。看到推力之後就不再看點火窗。
+**一條時間軸：任務時間 T（Edward 2026-11-14，參考 SpaceX 的 T−／T+）。** T＝0＝點火信號正式發出那一拍。
+點火前是 T−：SAFE／ARMED 時 T 停在 −30 s（同一條軸，時鐘還沒走），LAUNCH 後 T−30 → T−0；倒數中止回 SAFE，T 回到 −30 停住。
+點火後是 T+，所有事件都記成 T+ 值（遙測 `MissionTime_s`）。程式裡不再用負數當「還沒發生」的標記，改用旗標。
 
-| 時間 | 事件 | 參數 |
+T_th＝第一個推力樣本出現的 T（點火延遲，事前不知道，每次點火不同）。推力確認和鬆夾持只能從 T_th 往後算：
+推力還沒出現，就沒有東西可以確認。0.02 s 指的是 T_th 之後這一段。
+
+| 時間（T） | 事件 | 參數 |
 |---|---|---|
-| 點火器通電後 ≤ 2 s | 出現第一個有推力的樣本＝T+0（沒出現 → HANG_FIRE） | `ignitionWindow_s`＝2 |
-| T+2e-2 s | 第 21 個樣本仍有推力 → 推力確認 | `thrustConfirm_s`＝2e-2 |
-| T+2e-2+1e-3 s | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
-| T+2e-2+1e-3+2e-2 s | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |
-| ≤ T+5e-2 s | 整段的期限；超過還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE） | `releaseDeadline_s`＝5e-2 |
+| T−30 → T−0 | 待點火倒數，一紅就終止 | `countdown_s`＝30 |
+| T＝0 | 點火信號發出（點火繼電器通電） | — |
+| T_th（≤ T+2 s） | 出現第一個有推力的樣本；到 T+2 s 都沒有 → HANG_FIRE（夾持鎖住、點火關、不重試；**沒推力就沒人鬆架，故意的**） | `ignitionWindow_s`＝2 |
+| T_th+2e-2 | 第 21 個樣本仍有推力 → 推力確認 | `thrustConfirm_s`＝2e-2 |
+| T_th+2e-2+1e-3 | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
+| T_th+2e-2+1e-3+2e-2 | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |
+| ≤ T_th+5e-2 | 整段的期限；超過還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE） | `releaseDeadline_s`＝5e-2 |
 | 鬆夾持命令後 1e-1 s 內 | 要讀到夾持開到位，否則 NO_LIFTOFF／CLAMP_STUCK | `clampOpenTimeout_s`＝1e-1 |
 | 鬆夾持命令後 1 s 內 | 要判定離軌，否則 NO_LIFTOFF | `liftoffTimeout_s`＝1 |
+
+**點火窗 2 s 的來源（待查證）。** 不是算出來的：取自 Edward gate C15 答案（2026-08-19）「同時發射塔會開始倒計時 2 秒，
+點火確認正常引燃後鬆開機械臂」，gate 備註把「塔上 2 秒」留給 H 區，無線組把它當點火窗用。它應該滿足
+`ignitionWindow_s` ≥ 點火頭作動時間＋馬達點火延遲（點火頭點燃推進劑到推力出現）＋裕度；
+這兩個時間要查點火頭規格書和 CTI 74F85 搭配原廠點火頭的資料，最後以 HIL 實測（點火信號 → 荷重元出現推力）定。
+查到之前維持 2 s。
 
 **參數檢查。** `thrustConfirm_s`＋`releaseMargin_s`＋`clampActuatorLatency_s` 必須 ≤ `releaseDeadline_s`
 （預設 4.1e-2 ≤ 5e-2），時間參數也必須是有限值且不為負。不合理時 `configure()` 回 false、發 `PadBadParams` 事件，
@@ -159,7 +171,7 @@ CLAMP_STUCK 之後是終態，之後才觸發的離軌開關不會再改成 LIFT
 ## 自測
 
 ```
-bash Components/Wireless/PadLink/run_host_tests.sh   # 29 組
+bash Components/Wireless/PadLink/run_host_tests.sh   # 30 組
 fpp-check Components/Wireless/PadLink/fpp_stubs/Fw_Svc_stubs.fpp RocketTypes/RocketTypes.fpp \
   Components/Wireless/PadLink/PadLink.fpp Components/Wireless/PadController/PadController.fpp \
   Components/Wireless/UmbilicalLink/UmbilicalLink.fpp

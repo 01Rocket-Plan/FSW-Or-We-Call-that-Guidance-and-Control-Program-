@@ -39,9 +39,9 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 待點火倒數（E1：約 30 s）
+    @ 待點火倒數（E1：約 30 s）：T−30 → T−0；T＝0＝點火信號發出
     param countdown_s: F64 default 30.0
-    @ 點火窗：點火器通電後多久內要出現「第一個推力樣本」（點火延遲；C15：塔上 2 秒）。不是推力確認：推力確認從第一個推力樣本起算 thrustConfirm_s＝0.02 s
+    @ 點火窗：到 T＝ignitionWindow_s 還沒有任何推力樣本 → HANG_FIRE（夾持鎖住、點火關、不重試）。2 s 取自 Edward gate C15 答案，待 HIL／廠商資料確認
     param ignitionWindow_s: F64 default 2.0
     @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s）。1 kHz：t0 … t0+20 ms 連 21 個樣本有推力 → t0+20 ms 確認
     param thrustConfirm_s: F64 default 0.02
@@ -51,7 +51,7 @@ module Components {
     param clampActuatorLatency_s: F64 default 0.02
     @ 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 改 1.0 s（74F85 燃燒 0.873 s）
     param liftoffTimeout_s: F64 default 1.0
-    @ 鬆夾持期限：第一次看到推力後超過此時間還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）。定為 0.05 s
+    @ 鬆夾持期限：從第一個推力樣本的 T 起算，超過此時間還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）。定為 0.05 s
     param releaseDeadline_s: F64 default 0.05
     @ 離軌備援：荷重元讀值低於此值（N，假設值）
     param liftoffLoadMin_N: F64 default 0.5
@@ -72,6 +72,8 @@ module Components {
     telemetry LastReason: Components.PadReason
     telemetry Interlocks: U16
     telemetry CountdownRemaining_s: F32
+    @ 任務時間 T（s）：T＝0＝點火信號發出；點火前為負（SAFE／ARMED 停在 −countdown_s，COUNTDOWN 走向 0）
+    telemetry MissionTime_s: F64
     telemetry RocketMode: U8
     telemetry RocketBit: U16
     telemetry UmbilicalCrcErrors: U32
