@@ -2,7 +2,7 @@ module Components {
 
   @ 發射架主控（PadMcu，ESP32）；Base ID 0x8700
   @ 臍帶 UART 收箭體狀態（箭 → 架）並回送架上狀態（架 → 箭）、NRF24 收地面指令／送架上狀態（架 ↔ 地面）、
-  @ 發射許可互鎖、待點火倒數、點火窗、推力確認後鬆夾持、離軌判斷。
+  @ 發射許可互鎖、待點火倒數、推力確認後鬆夾持、離軌判斷。
   @ 邏輯全部在 PadControllerCore（host 可測）；本元件只是 F´ 外殼。
   @ 點火只走地面 → 架，火箭不在點火迴路裡（gate C15）；實體鑰匙在硬體串聯。
   passive component PadController {
@@ -41,9 +41,8 @@ module Components {
 
     @ 待點火倒數（E1：約 30 s）：T−30 → T−0；T＝0＝點火信號發出
     param countdown_s: F64 default 30.0
-    @ 點火窗：到 T＝ignitionWindow_s 還沒有任何推力樣本 → HANG_FIRE（夾持鎖住、點火關、不重試）。2 s 取自 Edward gate C15 答案，待 HIL／廠商資料確認
-    param ignitionWindow_s: F64 default 2.0
-    @ 推力訊號持續多久才算確認。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s）。1 kHz：t0 … t0+20 ms 連 21 個樣本有推力 → t0+20 ms 確認
+    @ 推力訊號持續多久才算確認（從最後一次沒推力的 T 算起）。2026-11-10 改 0.02 s（#42 C2；74F85 燃燒 0.873 s）。點火延遲當 0（Issue #56）：1 kHz 下 T+1 … T+20 ms 連 20 個樣本有推力 → T+20 ms 確認
+    @ （2026-11-14 刪掉 ignitionWindow_s：沒推力改由 releaseDeadline_s 判 HANG_FIRE）
     param thrustConfirm_s: F64 default 0.02
     @ 推力確認後至少再等多久才發鬆夾持命令（1e-3 s＝一拍）；這段時間推力一消失 → HOLD_ABORT／THRUST_LOST、不鬆
     param releaseMargin_s: F64 default 0.001
@@ -51,7 +50,7 @@ module Components {
     param clampActuatorLatency_s: F64 default 0.02
     @ 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 改 1.0 s（74F85 燃燒 0.873 s）
     param liftoffTimeout_s: F64 default 1.0
-    @ 鬆夾持期限：從第一個推力樣本的 T 起算，超過此時間還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE）。定為 0.05 s
+    @ 鬆夾持期限：從 T＝0 起算（點火延遲當 0，Issue #56），T＝0.05 之後還沒鬆 → 不鬆、繼續夾住（有過推力 → HOLD_ABORT／LATE_RELEASE；沒推力 → HANG_FIRE）
     param releaseDeadline_s: F64 default 0.05
     @ 離軌備援：荷重元讀值低於此值（N，假設值）
     param liftoffLoadMin_N: F64 default 0.5
@@ -89,7 +88,7 @@ module Components {
 
     event PadHangFire() \
       severity warning high \
-      format "Pad HANG_FIRE: no thrust in ignition window; clamp held, igniter off, no retry"
+      format "Pad HANG_FIRE: no thrust by release deadline; clamp held, igniter off, no retry"
 
     event PadNoLiftoff() \
       severity warning high \

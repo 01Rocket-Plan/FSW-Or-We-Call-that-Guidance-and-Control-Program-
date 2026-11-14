@@ -28,10 +28,9 @@ PadControllerCore::PadControllerCore(IPadCmdAuth* auth, std::uint8_t bootId,
 }
 
 bool PadControllerCore::paramsValid(const PadParams& p) {
-  const double t[] = {p.countdown_s,         p.ignitionWindow_s,       p.thrustConfirm_s,
-                      p.releaseMargin_s,     p.clampActuatorLatency_s, p.liftoffTimeout_s,
-                      p.releaseDeadline_s,   p.groundLinkTimeout_s,    p.umbilicalTimeout_s,
-                      p.liftoffLoadHold_s};
+  const double t[] = {p.countdown_s,         p.thrustConfirm_s,     p.releaseMargin_s,
+                      p.clampActuatorLatency_s, p.liftoffTimeout_s, p.releaseDeadline_s,
+                      p.groundLinkTimeout_s, p.umbilicalTimeout_s,  p.liftoffLoadHold_s};
   for (double v : t) {
     if (!timeParamOk(v)) return false;
   }
@@ -250,7 +249,7 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         m_ignitionUsed = true;  // 一次開機只點一次
         m_t0_s = now_s;
         m_thrustSeen = false;
-        m_thrustRun = false;
+        m_lastNoThrustT_s = 0.0;  // T0 這拍點火信號才剛發出，算「還沒推力」（點火延遲當 0，Issue #56）
         m_thrustConfirmed = false;
         setState(PadState::IGNITION, PadReason::NONE);
       }
@@ -269,49 +268,37 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
         setState(PadState::HOLD_ABORT, bad);
         break;
       }
-      // 鬆夾持期限（Edward PR #52 審查）：第一個推力樣本之後太久還沒鬆 → 不鬆、繼續夾住。
-      const double deadline =
-          m_p.releaseDeadline_s > m_p.thrustConfirm_s ? m_p.releaseDeadline_s : m_p.thrustConfirm_s;
+      // 點火延遲先當 0（Edward 2026-11-14，Issue #56）：確認、鬆架、期限全部從 T＝0 起算。
+      // 表定 T+0.020 確認推力、T+0.021 鬆夾持；T＝releaseDeadline_s（0.05）之後還沒鬆 → 不鬆、繼續夾住。
+      if (in.thrustOk) {
+        m_thrustSeen = true;
+      } else {
+        m_lastNoThrustT_s = T;
+      }
+      // 期限先判（在確認之前）：期限那一拍之後才湊滿確認也不算。
+      if (T > m_p.releaseDeadline_s + kTimeEps_s) {
+        if (m_thrustSeen) {
+          setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
+        } else {
+          // 沒推力就不會有人鬆架：這是故意的，沒在燒的箭不放（點火關、夾持保持鎖死、不自動重試）。
+          setState(PadState::HANG_FIRE, PadReason::NO_THRUST);
+        }
+        break;
+      }
       if (m_thrustConfirmed) {
         // 推力已確認，等 releaseMargin_s：這段時間推力只要消失一拍就不鬆（鬆架那一拍也要有推力）。
         if (!in.thrustOk) {
           setState(PadState::HOLD_ABORT, PadReason::THRUST_LOST);
-        } else if (T - m_thrustFirstT_s > deadline + kTimeEps_s) {
-          setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
         } else if (T - m_confirmT_s + kTimeEps_s >= m_p.releaseMargin_s) {
           releaseClamp(T);
         }
         break;
       }
-      if (in.thrustOk) {
-        if (!m_thrustSeen) {
-          m_thrustSeen = true;
-          m_thrustFirstT_s = T;
-        }
-        if (!m_thrustRun) {
-          m_thrustRun = true;
-          m_thrustRunStartT_s = T;
-        }
-      } else {
-        m_thrustRun = false;
-      }
-      if (m_thrustSeen) {
-        if (T - m_thrustFirstT_s > deadline + kTimeEps_s) {
-          setState(PadState::HOLD_ABORT, PadReason::LATE_RELEASE);
-          break;
-        }
-        if (m_thrustRun && T - m_thrustRunStartT_s + kTimeEps_s >= m_p.thrustConfirm_s) {
-          m_thrustConfirmed = true;
-          m_confirmT_s = T;
-          if (m_p.releaseMargin_s <= kTimeEps_s) releaseClamp(T);  // 裕度 0：確認那拍就鬆（舊行為）
-          break;
-        }
-      }
-      // 點火窗：到 T＝ignitionWindow_s 還沒看到任何推力 → HANG_FIRE（點火關、夾持保持鎖死、不重試）。
-      // 沒推力就不會有人鬆架：這是故意的，沒在燒的箭不放。已經看到推力就不再看點火窗，
-      // 改由 thrustConfirm_s／releaseDeadline_s 處理；否則推力在窗尾才出現時，馬達在燒卻會被判 HANG_FIRE。
-      if (!m_thrustSeen && T >= m_p.ignitionWindow_s) {
-        setState(PadState::HANG_FIRE, PadReason::NO_THRUST);  // 不自動重試
+      // 推力持續 thrustConfirm_s（從最後一次沒推力的 T 算起）→ 確認。
+      if (in.thrustOk && T - m_lastNoThrustT_s + kTimeEps_s >= m_p.thrustConfirm_s) {
+        m_thrustConfirmed = true;
+        m_confirmT_s = T;
+        if (m_p.releaseMargin_s <= kTimeEps_s) releaseClamp(T);  // 裕度 0：確認那拍就鬆
       }
       break;
     }

@@ -3,7 +3,7 @@
 // 一顆 Core 同時負責：
 //   - 臍帶 UART 收箭體狀態（箭 → 架），監看新鮮度；回送架上狀態（架 → 箭）
 //   - NRF24 收地面指令（地面 → 架）、組架上狀態幀（架 → 地面）
-//   - 發射許可互鎖、待點火倒數、點火窗、推力確認後鬆夾持、離軌判斷
+//   - 發射許可互鎖、待點火倒數、推力確認後鬆夾持、離軌判斷
 //
 // 狀態（全部轉移寫在 PadControllerCore.cpp 的 tick()／onGroundPacket()）：
 //
@@ -12,9 +12,9 @@
 //    └──任一紅燈／ABORT／DISARM─┴────────────────────────┘                    │
 //                                                                            │
 //   IGNITION ──推力持續 thrustConfirm_s──►（IGNITION 內等 releaseMargin_s，推力要一直在）──► RELEASED
-//      │  ├──T＝ignitionWindow_s 還沒任何推力──► HANG_FIRE（夾持保持鎖死、點火關、不重試；沒推力就沒人鬆架，這是故意的）
+//      │  ├──到 T＝releaseDeadline_s 都沒任何推力──► HANG_FIRE（夾持保持鎖死、點火關、不重試；沒推力就沒人鬆架，這是故意的）
 //      │  ├──等 releaseMargin_s 時推力消失──► HOLD_ABORT／THRUST_LOST（不鬆）
-//      │  └──超過 releaseDeadline_s 還沒鬆──► HOLD_ABORT／LATE_RELEASE（不鬆）
+//      │  └──有推力但到 T＝releaseDeadline_s 還沒鬆──► HOLD_ABORT／LATE_RELEASE（不鬆）
 //      └──異常（鑰匙／架電／臍帶／導軌／ABORT）──► HOLD_ABORT（夾持保持鎖死、點火關）
 //   RELEASED ──離軌判定（三層，見 tick()）──► LIFTED_OFF
 //   RELEASED ──clampOpenTimeout_s 內沒讀到夾持開到位──► NO_LIFTOFF／CLAMP_STUCK
@@ -31,7 +31,10 @@
 //   SAFE、ARMED（還沒開始倒數）：T 停在 −countdown_s（−30 s），跟倒數同一條軸，只是時鐘還沒走（hold）。
 //   COUNTDOWN：T 從 −30 走到 0。倒數中止回 SAFE → T 回到 −30 停住。
 //   IGNITION 之後：T＝現在 − T0，一直往上加（終態也繼續算，方便事後對時）。
-//   所有點火後的事件時間（第一個推力樣本、推力確認、鬆夾持、荷重元變低）都記成 T+ 值。
+//   所有點火後的事件時間（推力確認、鬆夾持、荷重元變低）都記成 T+ 值。
+//   T＝0 是地面站看得到、記得下來的時刻（架的狀態幀變 IGNITION）；推力什麼時候出現是架上的事。
+//   點火延遲（點火信號 → 推力出現）先當 0（Edward 2026-11-14）：推力確認、鬆夾持、期限都從 T＝0 起算，
+//   表定 T+0.020 確認推力、T+0.021 鬆夾持、T+0.050 期限。實際延遲未知，待修：Issue #56。
 //
 // 時序：tick() 跑在 1 kHz 速率群組（一拍 1 ms）；狀態幀（buildStatusFrame／buildUmbilicalFrame）
 // 由呼叫端降頻到 10 Hz（每 100 拍一次），Core 本身不假設拍頻。
@@ -97,17 +100,16 @@ constexpr double kTimeEps_s = 0.00005;
 //! 門檻是無線組自訂的假設值（Edward 2026-11-13：「你們自己訂一個合理數值即可」），飛前以 HIL／100 m 資料修正。
 struct PadParams {
   double countdown_s = 30.0;          // E1：待點火臨界狀態約 30 s（T−30 → T−0）
-  // 點火窗：T＝0（點火信號發出）之後，到 T＝ignitionWindow_s 還沒有任何推力樣本 → HANG_FIRE。
-  // 2 s 的來源：Edward gate C15 答案「發射塔會開始倒計時 2 秒」，不是算出來的；
-  // 實際應 ≥ 點火頭作動時間＋馬達點火延遲＋裕度，待 HIL／廠商資料確認（見 PadLink/README.md）。
-  double ignitionWindow_s = 2.0;
+  // （2026-11-14 刪掉 2 s 點火窗 ignitionWindow_s：點火延遲先當 0，沒推力改由 releaseDeadline_s 判 HANG_FIRE。Issue #56）
   // 推力訊號持續多久才算「確認」（防單點雜訊）。2026-11-10 由 0.10 改 0.02（Edward #42 C2）：
   // 主機 CTI 74F85-15A 燃燒只有 0.873 s，0.1 s 等於把最大推力那段留在架上。
-  // 1 kHz 下的實際意義：第一個有推力的樣本在 t0，t0＋1 ms … t0＋20 ms 都有推力（連 21 個樣本），
-  // 就在 t0＋20 ms 那一拍確認推力。比較時加 kTimeEps_s，避免浮點誤差讓它隨機多等一拍（變 21 ms）。
+  // 「持續」從最後一次沒推力的時刻算起；T＝0 那拍點火信號才剛發出，算「還沒推力」。
+  // 1 kHz、點火延遲當 0：T+1 ms … T+20 ms 連 20 個樣本有推力 → T+20 ms 那一拍確認。
+  // 中途斷一拍（例如 T+11 ms 沒推力）就從那拍重新算（T+31 ms 確認）。
+  // 比較時加 kTimeEps_s，避免浮點誤差讓它隨機多等一拍。
   double thrustConfirm_s = 0.02;
   // 推力確認後至少再等多久才發鬆夾持命令（Edward PR #52 審查：避免「確認和鬆架同時」的零秒漏洞）。
-  // 預設 1e-3 s＝1 kHz 一拍：t0＋20 ms 確認、t0＋21 ms 鬆。等的這段時間每一拍都要有推力，
+  // 預設 1e-3 s＝1 kHz 一拍：T+20 ms 確認、T+21 ms 鬆。等的這段時間每一拍都要有推力，
   // 一拍沒有就 HOLD_ABORT／THRUST_LOST、不鬆。軟體最小單位是一拍，更小的值等同下一拍；0＝確認那拍就鬆。
   double releaseMargin_s = 0.001;
   // 從鬆夾持命令到夾持真正打開的時間（假設 0.02 s，型號定了以後用 HIL 實測）。
@@ -115,10 +117,11 @@ struct PadParams {
   double clampActuatorLatency_s = 0.02;
   // 鬆夾持後多久沒離軌 → NO_LIFTOFF。2026-11-10 由 3.0 改 1.0：74F85 燒 0.873 s，3 s 時發動機早熄了。
   double liftoffTimeout_s = 1.0;
-  // 鬆夾持期限：從「第一個推力樣本的 T」起算，超過這個時間還沒完成推力確認 → 不鬆了，繼續夾住
-  // （HOLD_ABORT／LATE_RELEASE）。Edward 2026-11-11 PR #52 審查提議（拖到 0.05～0.1 s 才鬆，峰值推力已過、
+  // 鬆夾持期限：從 T＝0 起算（點火延遲當 0，Edward 2026-11-14），T＝releaseDeadline_s 之後還沒鬆 → 不鬆了、繼續夾住
+  // （有過推力 → HOLD_ABORT／LATE_RELEASE；完全沒推力 → HANG_FIRE／NO_THRUST）。Edward 2026-11-11 PR #52 審查提議（拖到 0.05～0.1 s 才鬆，峰值推力已過、
   // 飛不到預定高度，還會影響分離／開傘判斷），建議值 0.04～0.08 s。定為 0.05 s：
   // 20 ms 確認＋1 ms 裕度＋20 ms 夾持動作＝41 ms，剩 9 ms 給推力訊號抖動。
+  // 也就是推力最晚要在 T+30 ms 那一拍出現（T+29 ms 是最後一個沒推力的樣本 → T+49 確認、T+50 鬆）；再晚就不鬆。
   double releaseDeadline_s = 0.05;
   // 離軌備援（荷重元，假設硬體）：讀值低於 liftoffLoadMin_N 且持續 liftoffLoadHold_s → 箭已不壓在架上。
   double liftoffLoadMin_N = 0.5;
@@ -236,10 +239,8 @@ class PadControllerCore {
   double m_countdownRemaining_s = 0.0;
   double m_t0_s = 0.0;                  // T＝0 的開機後秒數（點火信號發出那一拍）；m_ignitionUsed 時才有效
   double m_missionT_s = 0.0;            // 目前任務時間 T
-  bool m_thrustSeen = false;            // T0 之後看到過推力嗎
-  double m_thrustFirstT_s = 0.0;        // 第一個推力樣本的 T（不因推力中斷而重設）
-  bool m_thrustRun = false;             // 現在是否在一段連續推力中
-  double m_thrustRunStartT_s = 0.0;     // 這段連續推力的起點 T（推力中斷 → m_thrustRun＝false）
+  bool m_thrustSeen = false;            // T0 之後看到過推力嗎（期限到時用來分 HANG_FIRE／LATE_RELEASE）
+  double m_lastNoThrustT_s = 0.0;       // 最後一次沒推力的 T；T0 那拍設 0（點火延遲當 0）
   bool m_thrustConfirmed = false;       // 推力確認了嗎
   double m_confirmT_s = 0.0;            // 推力確認的 T（之後等 releaseMargin_s 才鬆）
   double m_releaseT_s = 0.0;            // 發鬆夾持命令的 T

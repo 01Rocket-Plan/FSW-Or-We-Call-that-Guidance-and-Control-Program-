@@ -53,10 +53,10 @@ SAFE ──ARM(簽名, 全綠)──► ARMED ──LAUNCH(簽名)──► COUN
   ▲                         │                        │
   └──任一紅燈／ABORT／DISARM─┴────────────────────────┘
 
-IGNITION ──推力持續 thrustConfirm_s（1 kHz 連 21 樣本）──► 再等 releaseMargin_s ──► RELEASED（鬆夾持）
-   ├──ignitionWindow_s 點火窗內沒推力──► HANG_FIRE   （點火關、夾持保持鎖死、不重試）
+IGNITION ──推力持續 thrustConfirm_s（1 kHz 連 20 樣本）──► 再等 releaseMargin_s ──► RELEASED（鬆夾持）
+   ├──到 T＝releaseDeadline_s 都沒推力──► HANG_FIRE   （點火關、夾持保持鎖死、不重試）
    ├──等 releaseMargin_s 時推力消失──► HOLD_ABORT／THRUST_LOST（不鬆、繼續夾住）
-   ├──第一次有推力後超過 releaseDeadline_s 還沒鬆──► HOLD_ABORT／LATE_RELEASE（不鬆了、繼續夾住）
+   ├──有推力但到 T＝releaseDeadline_s 還沒鬆──► HOLD_ABORT／LATE_RELEASE（不鬆了、繼續夾住）
    └──鑰匙／架電／臍帶／導軌異常、ABORT──► HOLD_ABORT（點火關、夾持保持鎖死）
 RELEASED ──離軌判定（三層，見下）──► LIFTED_OFF
 RELEASED ──clampOpenTimeout_s 內沒讀到夾持開到位──► NO_LIFTOFF／CLAMP_STUCK（點火關、鬆夾持輸出維持、通知人員）
@@ -90,26 +90,24 @@ RELEASED ──liftoffTimeout_s 沒離軌──► NO_LIFTOFF／NO_LIFTOFF（夾
 點火前是 T−：SAFE／ARMED 時 T 停在 −30 s（同一條軸，時鐘還沒走），LAUNCH 後 T−30 → T−0；倒數中止回 SAFE，T 回到 −30 停住。
 點火後是 T+，所有事件都記成 T+ 值（遙測 `MissionTime_s`）。程式裡不再用負數當「還沒發生」的標記，改用旗標。
 
-T_th＝第一個推力樣本出現的 T（點火延遲，事前不知道，每次點火不同）。推力確認和鬆夾持只能從 T_th 往後算：
-推力還沒出現，就沒有東西可以確認。0.02 s 指的是 T_th 之後這一段。
+**T＝0 用點火信號，不用推力（Edward 2026-11-14）。** T＝0 是地面站看得到、記得下來的時刻（架的狀態幀變 IGNITION）；
+推力什麼時候出現是架上的事。**點火延遲（點火信號 → 推力出現）先當 0**，推力確認、鬆夾持、期限全部從 T＝0 起算。
 
 | 時間（T） | 事件 | 參數 |
 |---|---|---|
 | T−30 → T−0 | 待點火倒數，一紅就終止 | `countdown_s`＝30 |
-| T＝0 | 點火信號發出（點火繼電器通電） | — |
-| T_th（≤ T+2 s） | 出現第一個有推力的樣本；到 T+2 s 都沒有 → HANG_FIRE（夾持鎖住、點火關、不重試；**沒推力就沒人鬆架，故意的**） | `ignitionWindow_s`＝2 |
-| T_th+2e-2 | 第 21 個樣本仍有推力 → 推力確認 | `thrustConfirm_s`＝2e-2 |
-| T_th+2e-2+1e-3 | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
-| T_th+2e-2+1e-3+2e-2 | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |
-| ≤ T_th+5e-2 | 整段的期限；超過還沒鬆 → 不鬆、繼續夾住（HOLD_ABORT／LATE_RELEASE） | `releaseDeadline_s`＝5e-2 |
+| T＝0 | 點火信號發出（點火繼電器通電；這一拍算「還沒推力」） | — |
+| T+1e-3 … T+2e-2 | 連 20 個樣本有推力 → T+2e-2 推力確認（推力斷一拍就從那拍重算） | `thrustConfirm_s`＝2e-2 |
+| T+2.1e-2 | 再確認一次推力 → 發鬆夾持命令 | `releaseMargin_s`＝1e-3 |
+| T+4.1e-2 | 夾持真正打開（假設值，型號定了以後用 HIL 實測） | `clampActuatorLatency_s`＝2e-2 |
+| T+5e-2 | 期限；之後還沒鬆 → 不鬆、繼續夾住。有過推力 → HOLD_ABORT／LATE_RELEASE；完全沒推力 → HANG_FIRE（**沒推力就沒人鬆架，故意的**） | `releaseDeadline_s`＝5e-2 |
 | 鬆夾持命令後 1e-1 s 內 | 要讀到夾持開到位，否則 NO_LIFTOFF／CLAMP_STUCK | `clampOpenTimeout_s`＝1e-1 |
 | 鬆夾持命令後 1 s 內 | 要判定離軌，否則 NO_LIFTOFF | `liftoffTimeout_s`＝1 |
 
-**點火窗 2 s 的來源（待查證）。** 不是算出來的：取自 Edward gate C15 答案（2026-08-19）「同時發射塔會開始倒計時 2 秒，
-點火確認正常引燃後鬆開機械臂」，gate 備註把「塔上 2 秒」留給 H 區，無線組把它當點火窗用。它應該滿足
-`ignitionWindow_s` ≥ 點火頭作動時間＋馬達點火延遲（點火頭點燃推進劑到推力出現）＋裕度；
-這兩個時間要查點火頭規格書和 CTI 74F85 搭配原廠點火頭的資料，最後以 HIL 實測（點火信號 → 荷重元出現推力）定。
-查到之前維持 2 s。
+**已知待修：點火延遲（Issue #56）。** 照上表，推力最晚要在 T+3e-2 那一拍出現才鬆得了架
+（T+2.9e-2 是最後一個沒推力的樣本 → T+4.9e-2 確認、T+5e-2 鬆）；再晚就 LATE_RELEASE／HANG_FIRE。
+實際點火延遲還不知道，**上 HIL 很可能報錯**，SIL 先這樣。要查點火頭規格書、CTI 74F85 搭原廠點火頭的資料，
+再用 HIL 量「點火信號 → 荷重元出現推力」，之後改時序。原本的 2 s 點火窗 `ignitionWindow_s` 已刪。
 
 **參數檢查。** `thrustConfirm_s`＋`releaseMargin_s`＋`clampActuatorLatency_s` 必須 ≤ `releaseDeadline_s`
 （預設 4.1e-2 ≤ 5e-2），時間參數也必須是有限值且不為負。不合理時 `configure()` 回 false、發 `PadBadParams` 事件，
@@ -157,7 +155,7 @@ CLAMP_STUCK 之後是終態，之後才觸發的離軌開關不會再改成 LIFT
 ## 已定事項與待辦
 
 1. ~~ABORT／DISARM 要不要簽名？~~ **已定（Edward 2026-11-10，#42 C1）：ABORT 要簽名**（中止是任務終止的標誌，不能讓人偽造）；**DISARM 也簽**（無線組 2026-11-12 審 PR #52）：程式在 ARMED **和 COUNTDOWN** 都接受 DISARM 並退回 SAFE，免簽的 DISARM 在倒數中等於免簽的 ABORT，會繞過 C1；也對齊無線組合約「全部指令預設 HMAC」。Edward 若要 DISARM 免簽，請書面決定，並同時把 DISARM 限定在 ARMED。地面斷線本來就會自動中止，所以 ABORT 要簽名不會「想停停不了」。
-2. 門檻：倒數 30 s、點火窗 2 s、**推力確認 0.02 s**、**離軌逾時 1 s**（2026-11-10，主機 CTI 74F85-15A 燃燒 0.873 s，#42 C2）、地面鏈路逾時 1 s、臍帶逾時 0.5 s、**箭端收架狀態逾時 1 s**（#42 C3）、架傾角離垂線 5°（＝仰角 85°）、架電源 11 V、**鬆夾持期限 0.05 s**；**已定（Edward 2026-11-13）：數值由無線組自訂**，新增的裕度／荷重元／開到位參數見上方「假設值」表。**1 kHz 速率群組已定**。
+2. 門檻：倒數 30 s、**點火延遲當 0、2 s 點火窗已刪（Edward 2026-11-14，Issue #56）**、**推力確認 0.02 s**、**離軌逾時 1 s**（2026-11-10，主機 CTI 74F85-15A 燃燒 0.873 s，#42 C2）、地面鏈路逾時 1 s、臍帶逾時 0.5 s、**箭端收架狀態逾時 1 s**（#42 C3）、架傾角離垂線 5°（＝仰角 85°）、架電源 11 V、**鬆夾持期限 0.05 s**；**已定（Edward 2026-11-13）：數值由無線組自訂**，新增的裕度／荷重元／開到位參數見上方「假設值」表。**1 kHz 速率群組已定**。
 3. 硬體型號（假設先行，定了以後修正數值並用 HIL 實測）：推力／離軌用荷重元、夾持開到位開關、離軌開關、seated 開關、傾角計的型號與腳位。
 4. `bootId` 來源：建議 PadMcu 的 NvFlags 開機計數（U8 會繞回，256 次開機才重複一次）。
 5. 地面站端程式（組 GroundCmd、顯示 PadStatus 燈號）：協定已固定在 `PadLinkCodec.hpp`，地面工具可直接 include。
