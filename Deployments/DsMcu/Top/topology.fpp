@@ -125,6 +125,7 @@ module DsMcu {
       #   actuatorMgr.sepCmdOut   → sepServoDriverSim.cmdIn
       #   powerMonitor UvState    → actuatorMgr.uvIn／flightMode.uvIn
       #   flightMode.modeOut[2..] → umbilicalLink／sdLogger／tlmSend
+      #   umbilicalLink.padStatusOut → flightMode.padStatusIn（FM-03 架安檢；UmbilicalLink 外殼還沒寫，#37-3）
     }
 
   }

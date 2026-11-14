@@ -87,7 +87,6 @@ module UsMcu {
       # 待接（見 README「還沒接的」）：
       #   usMpu6050／usDht22 → rg100Hz、sdLogger
       #   gimbalServoDriver（0x3200）
-      #   級間鏈路 → flightMode（FM-IN-5）
       #   上級開傘驅動（FM-IN-7）
     }
 
