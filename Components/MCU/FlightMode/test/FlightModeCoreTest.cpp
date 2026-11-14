@@ -1,5 +1,6 @@
 // FlightModeCore 主機測試：SSS sss/selftest/test_flight_mode.py 的檢查站（CP-*）移植，
 // 加上 repo 差異（發射架安檢 FM-03、架點火證據 FM-08、臍帶拔脫）的案例。
+// 分離開關、著地接觸用模擬值餵（SIL 不需要硬體）。
 #include "Components/MCU/FlightMode/FlightModeCore.hpp"
 
 #include <cmath>
@@ -196,7 +197,7 @@ static void cpFinalCountdown() {
 
 // ---------------------------------------------------------------- 標稱剖面 FM-07→12
 static void cpNominal() {
-  std::printf("CP-NOMINAL（ARMED → 點火 → 助推 → 滑翔 → 4 s 分離）\n");
+  std::printf("CP-NOMINAL（ARMED → 點火 → 助推 → 滑翔 → 4 s 分離 → 開傘 → 落地）\n");
   Sim s;
   toArmed(s);
   s.pad(FmPad::COUNTDOWN, 0, 1.0f);
@@ -205,19 +206,23 @@ static void cpNominal() {
   s.step(21);  // 架 T+21 ms 鬆夾持
   s.pad(FmPad::RELEASED, FmPad::FLAG_IGNITER_ON | FmPad::FLAG_THRUST_CONFIRMED | FmPad::FLAG_CLAMP_RELEASED);
   float v = 0.0f;
-  double tLift = -1, tActive = -1, tCoast = -1;
-  for (int k = 0; k < 12000; ++k) {
+  double tLift = -1, tActive = -1, tCoast = -1, tDescent = -1, tLanded = -1;
+  for (int k = 0; k < 20000; ++k) {
     const bool burning = k < 1200;
     s.in.accel_u_mps2 = burning ? 30.0f : -9.8f;
     v += s.in.accel_u_mps2 * 1e-3f;
     s.in.v_est_mps = std::fabs(v);
     if (k == 60) s.umbilicalGone();  // 離軌拔臍帶
+    if (s.tSep > 0 && s.t >= s.tSep + 0.030) s.in.sep_switch_open = true;  // 模擬：舵機放開 30 ms 後開關斷
+    if (s.ds() == FmMode::LS_CHUTE && s.t >= s.tChuteDs + 5.0) s.in.contact_ds = true;  // 模擬：開傘 5 s 後著地
     const FmMode before = s.ds();
     s.step();
     if (before != s.ds()) {
       if (s.ds() == FmMode::LIFTOFF) tLift = s.t;
       if (s.ds() == FmMode::BOOST_ACTIVE) tActive = s.t;
       if (s.ds() == FmMode::COAST) tCoast = s.t;
+      if (s.ds() == FmMode::LS_DESCENT) tDescent = s.t;
+      if (s.ds() == FmMode::LS_LANDED) tLanded = s.t;
     }
   }
   CHECK(tLift > 0, "有 LIFTOFF");
@@ -226,8 +231,11 @@ static void cpNominal() {
   CHECK(s.nSep == 1, "分離恰一次");
   CHECK(s.lastMask == kFmSepMaskAll, "mask＝三顆 0x07");
   CHECK(std::fabs((s.tSep) - (tCoast - 1e-3) - 4.0) <= 2e-3, "進 COAST 後 4 s 分離");
-  CHECK(s.ds() == FmMode::SEPARATED, "FM-13 未填：分離後停在 SEPARATED");
-  CHECK(s.nChuteDs == 0, "FM-13 未填：不會開傘");
+  CHECK(tDescent > s.tSep, "開關斷 → LS_DESCENT");
+  CHECK(s.nChuteDs == 1 && std::fabs(s.tChuteDs - s.tSep - 3.1) <= 2e-3, "分離下令後 3.1 s 開傘、只一次");
+  CHECK(s.nSide == 0, "標稱不是側傘");
+  CHECK(tLanded > 0 && s.ds() == FmMode::LS_LANDED, "著地 → LS_LANDED");
+  CHECK(!s.c.state().us_chute_inhibit, "標稱不禁上級傘");
   CHECK(s.c.state().abort_done == false, "標稱不中止");
 }
 
@@ -426,13 +434,104 @@ static void cpPadSafe() {
   CHECK(s.ds() == FmMode::PAD_IDLE && s.nSep == 0 && s.nChuteDs == 0, "墊上不轉移、不分離、不開傘");
 }
 
-static void cpUsWait() {
-  std::printf("CP-US（FM-18 未填：最壞輸入 60 s 留在 US_WAIT、不開傘）\n");
+
+// ---------------------------------------------------------------- FM-13：分離失敗
+static void cpSepFail() {
+  std::printf("CP-SEP-FAIL（下令後開關一直沒斷）\n");
+  Sim s;
+  FmState st;
+  st.ds = FmMode::COAST;
+  st.t_coast_s = 0.0;
+  st.t_liftoff_s = -1.0;
+  s.c.setStateForTest(st);
+  s.in.accel_u_mps2 = -9.8f;
+  s.step(10000);  // 4 s 分離＋5 s 逾時＋裕度
+  CHECK(s.nSep == 1, "分離下令一次");
+  CHECK(s.ds() == FmMode::SEP_FAIL && s.n(FmEvent::SEP_FAIL) == 1, "5 s 開關仍通 → SEP_FAIL");
+  CHECK(s.nChuteDs == 1 && s.nSide == 1, "SEP_FAIL 開側傘");
+  CHECK(std::fabs(s.tChuteDs - (s.tSep + 5.0)) <= 2e-3, "側傘在 SEP_FAIL 當拍（已過 3.1 s）");
+  CHECK(s.c.state().us_chute_inhibit, "禁上級傘");
+}
+
+// ---------------------------------------------------------------- FM-05：假分
+static void cpFalseSep() {
+  std::printf("CP-FALSE-SEP（還沒下令開關就斷）\n");
+  Sim s;
+  FmState st;
+  st.ds = FmMode::BOOST_ACTIVE;
+  st.t_liftoff_s = 0.0;
+  s.c.setStateForTest(st);
+  s.t = 0.5;
+  s.in.accel_u_mps2 = 20.0f;
+  s.in.sep_switch_open = true;
+  s.step();
+  CHECK(s.c.state().us_chute_inhibit, "假分 → 禁上級傘");
+  CHECK(s.nSep == 0, "假分不觸發分離");
+}
+
+// ---------------------------------------------------------------- FM-17：中止後續
+static void cpAbortFollowUp() {
+  std::printf("CP-ABORT-FOLLOW（中止後分得開／分不開）\n");
+  {
+    Sim s;
+    FmState st;
+    st.ds = FmMode::BOOST_ACTIVE;
+    st.t_liftoff_s = 0.0;
+    s.c.setStateForTest(st);
+    s.t = 1.0;
+    s.cmd.abortValid = true;
+    s.step(30);
+    s.in.sep_switch_open = true;
+    s.step();
+    CHECK(s.ds() == FmMode::LS_DESCENT, "中止後開關斷 → LS_DESCENT");
+    s.step(5000);
+    CHECK(s.nChuteDs == 1, "中止已開過傘，不再開第二次");
+  }
+  {
+    Sim s;
+    FmState st;
+    st.ds = FmMode::BOOST_ACTIVE;
+    st.t_liftoff_s = 0.0;
+    s.c.setStateForTest(st);
+    s.t = 1.0;
+    s.cmd.abortValid = true;
+    s.step(5100);
+    CHECK(s.ds() == FmMode::SEP_FAIL && s.n(FmEvent::SEP_FAIL) == 1, "中止後 5 s 開關仍通 → SEP_FAIL");
+  }
+}
+
+// ---------------------------------------------------------------- FM-15：著陸備援
+static void cpLandMax() {
+  std::printf("CP-LAND-MAX（沒收到著地，離台 50 s 備援）\n");
+  Sim s;
+  FmState st;
+  st.ds = FmMode::LS_CHUTE;
+  st.t_liftoff_s = 0.0;
+  s.c.setStateForTest(st);
+  s.t = 49.9;
+  s.step(99);
+  CHECK(s.ds() == FmMode::LS_CHUTE, "50 s 前不落地");
+  s.step(2);
+  CHECK(s.ds() == FmMode::LS_LANDED, "50 s → LS_LANDED");
+}
+
+// ---------------------------------------------------------------- FM-18：上級
+static void cpUs() {
+  std::printf("CP-US（上級：開關斷 → 3.2 s 開傘 → 著地）\n");
   Sim s(FmRole::US);
-  s.in.sep_switch_open = s.in.contact_us = true;
-  s.in.accel_u_mps2 = 100.0f;
-  s.step(60000);
-  CHECK(s.c.state().us == FmMode::US_WAIT && s.o.mode == FmMode::US_WAIT && s.nChuteUs == 0, "US 不轉移");
+  s.step(1000);
+  CHECK(s.o.mode == FmMode::US_WAIT, "開關沒斷 → US_WAIT");
+  s.in.sep_switch_open = true;
+  const double tOpen = s.t;
+  s.step();
+  CHECK(s.o.mode == FmMode::US_COAST, "開關斷 → US_COAST");
+  s.step(3300);
+  CHECK(s.nChuteUs == 1 && s.o.mode == FmMode::US_CHUTE, "3.2 s 開上級傘、只一次");
+  CHECK(s.n(FmEvent::CMD_CHUTE_US) == 1, "記 CMD_CHUTE_US");
+  (void)tOpen;
+  s.in.contact_us = true;
+  s.step();
+  CHECK(s.o.mode == FmMode::US_LANDED, "著地 → US_LANDED");
 }
 
 int main() {
@@ -452,11 +551,15 @@ int main() {
   cpChuteDs();
   cpImuStale();
   cpPadSafe();
-  cpUsWait();
+  cpSepFail();
+  cpFalseSep();
+  cpAbortFollowUp();
+  cpLandMax();
+  cpUs();
   if (g_fail) {
     std::printf("FlightModeCore: FAIL (%d)\n", g_fail);
     return 1;
   }
-  std::printf("FlightModeCore: PASS（17 組）\n");
+  std::printf("FlightModeCore: PASS（21 組）\n");
   return 0;
 }

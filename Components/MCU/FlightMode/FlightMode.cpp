@@ -142,7 +142,7 @@ void FlightMode::emitOutputs(const FmOutputs& o) {
 
 void FlightMode::schedIn_handler(FwIndexType, U32) {
   if (!m_warnedIncomplete) {
-    this->log_WARNING_HI_LogicIncomplete();  // FM-05/13/15/17/18/20 填完後刪掉這行與事件
+    this->log_WARNING_HI_LogicIncomplete();  // FM-20 填完、中止來源接好後刪掉這行與事件
     m_warnedIncomplete = true;
   }
   m_in.t_s = this->nowSeconds();

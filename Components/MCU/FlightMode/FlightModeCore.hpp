@@ -4,7 +4,7 @@
 // \brief  FlightMode 純 C++ 核心（不含 F´、不含 ESP-IDF，主機可測）。
 //
 // 來源：SSS sss/fsw/flight_mode.py（2026-11-09 版），1:1 移植；與 SSS 不同的地方都標「repo 差異」。
-// 填空狀態見 README.md「填空清單」。還沒填的格（等硬體／等定）：FM-05、13、15、17、20。
+// 填空狀態見 README.md「填空狀態」。還沒填：FM-20（重啟規則待定）。
 // ======================================================================
 #ifndef COMPONENTS_MCU_FLIGHTMODE_FLIGHTMODECORE_HPP
 #define COMPONENTS_MCU_FLIGHTMODE_FLIGHTMODECORE_HPP
@@ -77,10 +77,10 @@ struct FmParams {
   float t_burnout_max_s = 8.0f;    //!< FM-11 離台後最長窗
   float t_sep_inhibit_s = 0.80f;   //!< FM-12 進 COAST 後分離抑制窗
   float t_sep_backup_s = 4.0f;     //!< FM-12 進 COAST 後 4 s 分離（Edward 2026-11-14 暫定主路徑）
-  float t_sep_fail_s = 5.0f;       //!< FM-13／17（未填）
+  float t_sep_fail_s = 5.0f;       //!< FM-13／17 下令後開關仍通 → SEP_FAIL
   float t_chute_ds_s = 3.1f;       //!< FM-14 分離下令後下級開傘
   float t_chute_us_s = 3.2f;       //!< FM-18 上級開傘
-  float t_land_max_s = 50.0f;      //!< FM-15（未填）
+  float t_land_max_s = 50.0f;      //!< FM-15 著陸備援（離台起算）
   float tilt_abort_rad = 0.5235988f;   //!< FM-06 30°
   float rate_abort_rads = 1.7453293f;  //!< FM-06 100°/s
   float t_abort_hold_s = 1.0f;     //!< FM-06 持續
@@ -117,7 +117,7 @@ struct FmInputs {
   uint8_t padFlags = 0;        //!< FmPad::FLAG_*
   float padCountdown_s = 0.0f; //!< 架倒數剩餘秒（COUNTDOWN 時有效）
 
-  // --- 離散訊號（驅動元件尚無；FM-05／13／15 等硬體）---
+  // --- 離散訊號（驅動元件尚無；SIL／SSS 用模擬值餵）---
   bool sep_switch_open = false; //!< 分離面微動開關斷開（DiscreteSample.sepSwitchOpen）
   bool contact_ds = false;      //!< 下級著地
   bool contact_us = false;      //!< 上級著地
@@ -208,6 +208,7 @@ class FlightModeCore {
   void maybeSep(const FmInputs& in, double t, FmOutputs& out);
   void maybeChuteDs(const FmInputs& in, double t, FmOutputs& out);
   void enterAbort(double t, FmOutputs& out);
+  void enterSepFail(FmOutputs& out);
   void advanceUs(const FmInputs& in, double t, FmOutputs& out);
   FmAuthority authority() const;
   bool accelHigh(const FmInputs& in) const { return in.accel_u_mps2 > m_p.a_high_mps2; }

@@ -64,7 +64,7 @@ module Mcu {
     event SepCommanded(mask: U8) severity activity high format "FlightMode 下令分離 mask=0x{x}"
     event ChuteDsCommanded() severity activity high format "FlightMode 下令下級開傘"
     event ChuteUsCommanded() severity activity high format "FlightMode 下令上級開傘"
-    event LogicIncomplete() severity warning high format "FlightMode 未填 FM-05/13/15/17/18/20（等硬體／待定）：DS 分離後停在 SEPARATED、US 停在 US_WAIT"
+    event LogicIncomplete() severity warning high format "FlightMode 未填 FM-20（重啟恢復規則待定）；中止指令來源 PIL 接"
 
     @ 部署角色：DsMcu 設 DS、UsMcu 設 US
     param role: FmRoleId default FmRoleId.DS

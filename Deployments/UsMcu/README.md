@@ -22,7 +22,7 @@ US 飛控 MCU（獨立板）。**不含控制律**：不安裝 Controller、Actu
 
 ## SIL 實跑結果（3 s）
 ```
-FlightMode 未填 FM-05/13/15/17/18/20（等硬體／待定）：DS 分離後停在 SEPARATED、US 停在 US_WAIT
+FlightMode 未填 FM-20（重啟恢復規則待定）；中止指令來源 PIL 接
 Platform 開機 reset=POWER_ON
 ```
 

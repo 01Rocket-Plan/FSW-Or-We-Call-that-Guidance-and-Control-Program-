@@ -6,7 +6,8 @@
 //         → 依 ds 走一條邊 → 組輸出
 //
 // 1:1 移植 SSS（2026-11-09 版，行號以那版為準）。與 SSS 不同處標「repo 差異」。
-// 還沒填：FM-05、13、15、17（等硬體：分離開關／著地接觸）、18（上級，等硬體）、20（重啟規則待定）。
+// 分離開關、著地接觸在這裡只是輸入；SIL／SSS 用模擬值餵，硬體照這份邏輯做。
+// 還沒填：FM-20（重啟規則待定）。
 // ======================================================================
 #include "Components/MCU/FlightMode/FlightModeCore.hpp"
 
@@ -150,7 +151,8 @@ void FlightModeCore::tick(const FmInputs& in, const FmGroundCmd& cmd, FmOutputs&
     addEvent(out, FmEvent::REJECT_TRANS);  // 合法請求也不切模式（SSS 同）
   }
 
-  // [FM-05] 假分禁傘（SSS L225–227）：等分離開關硬體。未填。
+  // [FM-05] 假分禁傘（SSS L225–227）：開關已斷、尚未下令分離 → 假分，禁上級傘
+  if (in.sep_switch_open && !m_s.sep_fired) m_s.us_chute_inhibit = true;
 
   // [FM-06] D12 自動中止（SSS L229–252）：三門獨立，一門成立即走
   if (abortableSet(m_s.ds) && m_s.t_liftoff_s >= 0) {
@@ -236,21 +238,35 @@ void FlightModeCore::tick(const FmInputs& in, const FmGroundCmd& cmd, FmOutputs&
       maybeSep(in, t, out);
       break;
 
-    case FmMode::SEPARATED:  // [FM-13] 等分離開關硬體。未填：目前分離後停在 SEPARATED。
+    case FmMode::SEPARATED:  // [FM-13]（SSS L298–307）開關斷＝分開 → LS_DESCENT；下令後 5 s 仍通 → SEP_FAIL
+      if (in.sep_switch_open) {
+        setDs(FmMode::LS_DESCENT, out);
+      } else if (m_s.t_sep_cmd_s >= 0 && t - m_s.t_sep_cmd_s >= m_p.t_sep_fail_s) {
+        enterSepFail(out);
+      }
       break;
 
-    case FmMode::LS_DESCENT:  // [FM-14] SSS _maybe_chute_ds（要 FM-13 才進得來）
+    case FmMode::LS_DESCENT:  // [FM-14] SSS _maybe_chute_ds
       maybeChuteDs(in, t, out);
       break;
 
-    case FmMode::LS_CHUTE:  // [FM-15] 等著地接觸硬體。未填。
+    case FmMode::LS_CHUTE:  // [FM-15]（SSS L310–315）著地，或離台後 t_land_max 備援
+      if (in.contact_ds || (m_s.t_liftoff_s >= 0 && t - m_s.t_liftoff_s >= m_p.t_land_max_s)) {
+        m_s.motor_on = false;
+        setDs(FmMode::LS_LANDED, out);
+      }
       break;
 
-    case FmMode::SEP_FAIL:  // [FM-16]（SSS L316–317）側傘；模式停在 SEP_FAIL（要 FM-13／17 才進得來）
+    case FmMode::SEP_FAIL:  // [FM-16]（SSS L316–317）側傘；模式停在 SEP_FAIL
       maybeChuteDs(in, t, out);
       break;
 
-    case FmMode::ABORT:  // [FM-17] 等分離開關硬體。未填（進入動作 enterAbort 已做：分離＋開傘各一次）。
+    case FmMode::ABORT:  // [FM-17]（SSS L318–326）中止後分不開 → SEP_FAIL；分得開 → 下級走回收
+      if (m_s.t_sep_cmd_s >= 0 && !in.sep_switch_open && t - m_s.t_sep_cmd_s >= m_p.t_sep_fail_s) {
+        enterSepFail(out);
+      } else if (in.sep_switch_open) {
+        setDs(FmMode::LS_DESCENT, out);
+      }
       break;
 
     default:
@@ -341,7 +357,14 @@ void FlightModeCore::enterAbort(double t, FmOutputs& out) {
   setDs(FmMode::ABORT, out);
 }
 
-// SSS _advance_us（給 FM-18 用；目前 US 停在 US_WAIT 進不來）
+// SSS _enter_sep_fail：黏住 → 禁上級傘，下級側傘整箭回收。（DS 部署不推上級模式）
+void FlightModeCore::enterSepFail(FmOutputs& out) {
+  m_s.us_chute_inhibit = true;
+  setDs(FmMode::SEP_FAIL, out);
+  addEvent(out, FmEvent::SEP_FAIL);
+}
+
+// SSS _advance_us（FM-18 用）
 void FlightModeCore::advanceUs(const FmInputs& in, double t, FmOutputs& out) {
   if (m_s.us == FmMode::US_COAST) {
     if (m_s.t_sep_cmd_s >= 0 && t - m_s.t_sep_cmd_s >= m_p.t_chute_us_s && !accelHigh(in) &&
@@ -360,16 +383,28 @@ void FlightModeCore::advanceUs(const FmInputs& in, double t, FmOutputs& out) {
 }
 
 // [FM-18] 上級部署（SSS _tick_us L478–518）。
-// repo 差異：上下級沒有通訊（Edward 2026-11-14），SSS 用級間鏈路收的 sep_cmd／inhibit 都不存在。
-// 沒有鏈路時，上級唯一的分離證據是自己的分離開關；但開關在墊上被碰開（假分）時上級分不出來，
-// 會在墊上 3.2 s 後開傘。所以要等分離開關＋上級 IMU（UsMpu6050，讓上級自己確認已離台）硬體後再填。
-// 目前：只處理雲台事件，模式停在 US_WAIT、不開傘。
+// repo 差異：上下級沒有通訊（Edward 2026-11-14）。SSS 從級間鏈路收的 sep_cmd／t_sep_cmd／us_inhibit 都沒有，
+// 上級唯一的分離證據是自己的分離開關：開關斷 → 當作已分離，開傘計時從「開關斷」起算（SSS 從下級下令起算，
+// 差一個舵機放開的時間）。
+// ⚠️ 問題表 P-1：沒有鏈路，上級分不出「墊上被碰開（假分）」和「真的分離」，墊上碰開會在 3.2 s 後開上級傘。
+//    硬體要解（例如分離開關要有機械保險到離軌才解除，或上級加 IMU 自己確認離台），見 README。
 void FlightModeCore::tickUs(const FmInputs& in, const FmGroundCmd& cmd, FmOutputs& out) {
+  const double t = in.t_s;
   m_s.pulse_sep = false;
   m_s.pulse_chute_ds = false;
   m_s.pulse_chute_us = false;
   if (cmd.gimbal_us) addEvent(out, FmEvent::GIMBAL_US);
-  if (m_s.us == FmMode::US_COAST || m_s.us == FmMode::US_CHUTE) advanceUs(in, in.t_s, out);
+  if (m_s.us == FmMode::US_WAIT) {
+    if (m_s.us_chute_inhibit) {
+      setUs(FmMode::US_CHUTE_INHIBIT, out);
+    } else if (in.sep_switch_open) {
+      m_s.sep_fired = true;
+      m_s.t_sep_cmd_s = t;
+      setUs(FmMode::US_COAST, out);
+    }
+  } else if (m_s.us == FmMode::US_COAST || m_s.us == FmMode::US_CHUTE) {
+    advanceUs(in, t, out);
+  }
   out.mode = m_s.us;
   out.authority = FmAuthority::CENTER;
   out.chuteUs = m_s.pulse_chute_us;
