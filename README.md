@@ -17,7 +17,7 @@
 | DsMcu | DS 飛控 MCU | 有（Controller／ActuatorMgr／ServoDriver） | 1 kHz 即時鏈；級間分離判斷與分離舵機 |
 | UsMcu | US 飛控 MCU | **無** | 感測、紀錄、上級傘 |
 | DsCam | ESP32-CAM | — | 不併入 DsMcu |
-| UsCam | OV3640 自有板 | — | 不併入 UsMcu |
+| UsCam | OV7670 自有板 | — | 不併入 UsMcu |
 | PadMcu | 發射架 ESP32 | — | 不上箭；發射許可互鎖、點火、夾持（Issue #24） |
 
 ## 慣例

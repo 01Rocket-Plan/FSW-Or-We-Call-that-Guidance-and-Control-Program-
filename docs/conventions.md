@@ -36,7 +36,7 @@
 - `Deployments/DsMcu`（DsMcuDeployment）：DS 飛控 MCU，含控制律；Core 1 只跑 1 kHz 鏈與 flightMode 快速路徑，其餘在 Core 0。
 - `Deployments/UsMcu`（UsMcuDeployment）：US 飛控 MCU，**不含**控制律（無 Controller／ActuatorMgr／尾翼 ServoDriver）。
 - `Deployments/DsCam`（DsCamDeployment）：ESP32-CAM 獨立板，不併入 DsMcu。
-- `Deployments/UsCam`（UsCamDeployment）：OV3640 獨立板，不併入 UsMcu。
+- `Deployments/UsCam`（UsCamDeployment）：OV7670 獨立板，不併入 UsMcu。
 - `Deployments/PadMcu`（PadMcuDeployment）：發射架 ESP32，不上箭（Issue #24）。箭 ↔ 架走有線臍帶 UART（雙向），架 ↔ 地面走 NRF24L01。
 
 ## 5. Base ID 分配（暫定，MCU 組可提修改）

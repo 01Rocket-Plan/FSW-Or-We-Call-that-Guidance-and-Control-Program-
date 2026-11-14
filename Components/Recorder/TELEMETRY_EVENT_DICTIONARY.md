@@ -132,7 +132,7 @@
 | 0x08 | **0x2008** | `ImageChunkGap` | warning high | `frameNumber: U32`, `expected: U32`, `got: U32` |
 | 0x09 | **0x2009** | `ImageTruncatedSeen` | warning high | `frameNumber: U32`, `chunkIndex: U32`（CamChunkFlag.TRUNCATED） |
 
-影像輸入：`usImageIn: Ov3640ImageOut`、`dsImageIn: Esp32CamImageOut`（2KB 分塊；flags END=1／TRUNCATED=2）；獨立 `IMAGE_QUEUE_DEPTH`（預設 8）；頻道 `RecordChannel::IMAGE=11`。
+影像輸入：`usImageIn: CamImageOut`、`dsImageIn: CamImageOut`（相機組 `CamTypes` 定義，兩顆相機共用）（2KB 分塊；flags END=1／TRUNCATED=2）；獨立 `IMAGE_QUEUE_DEPTH`（預設 8）；頻道 `RecordChannel::IMAGE=11`。
 
 Sim 實例：base **`0x2080`**，local 對照相同（abs = 0x2080 + local）。
 

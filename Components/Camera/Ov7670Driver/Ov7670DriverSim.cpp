@@ -1,0 +1,161 @@
+#include "Components/Camera/Ov7670Driver/Ov7670DriverSim.hpp"
+#include "Components/Camera/Ov7670Driver/Ov7670Gray.hpp"
+#include <cstring>
+
+namespace Components {
+
+Ov7670DriverSim::Ov7670DriverSim(const char* compName)
+    : Ov7670DriverSimComponentBase(compName) {
+  m_core.configure(&m_dev, &m_dev, this);
+}
+
+void Ov7670DriverSim::loadParams() {
+  Fw::ParamValid v;
+  Ov7670Params p = m_core.params();
+  p.busTimeoutMisses = this->paramGet_BUS_TIMEOUT_MISSES(v);
+  p.frameTimeoutTicks = this->paramGet_FRAME_TIMEOUT_TICKS(v);
+  p.entriesPerTick = this->paramGet_ENTRIES_PER_TICK(v);
+  p.model = this->paramGet_MODEL(v);
+  p.role = this->paramGet_ROLE(v);
+  p.faultRecoverK = this->paramGet_FAULT_RECOVER_K(v);
+  p.faultRecoverR = this->paramGet_FAULT_RECOVER_R(v);
+  p.frameMaxBytes = this->paramGet_FRAME_MAX_BYTES(v);
+  p.framePeriodTicks = this->paramGet_FRAME_PERIOD_TICKS(v);
+  m_frameMaxBytes = p.frameMaxBytes == 0 ? Ov7670Regs::FRAME_BYTES : p.frameMaxBytes;
+  m_core.setParams(p);
+}
+
+void Ov7670DriverSim::configureSil(bool autoPowerOn, bool autoCapture, U32 frameEveryN, U32 frameBytes) {
+  m_autoPowerOn = autoPowerOn;
+  m_autoCapture = autoCapture;
+  m_dev.setFrameEveryN(frameEveryN);
+  m_dev.setReportedFrameLength(frameBytes);
+}
+
+void Ov7670DriverSim::parameterUpdated(FwPrmIdType) { loadParams(); }
+void Ov7670DriverSim::parametersLoaded() { loadParams(); }
+
+void Ov7670DriverSim::writeTlm() { this->tlmWrite_Status(m_core.status()); }
+
+void Ov7670DriverSim::sched1Hz_handler(FwIndexType, U32) {
+  if (m_autoPowerOn && m_core.state() == CamState::OFF) {
+    m_autoPowerOn = false;  // 只自動上電一次；之後 STOP／RESET 照指令走
+    m_core.start();
+  }
+  m_dev.advance();
+  m_core.tick(1u);
+  writeTlm();
+}
+
+void Ov7670DriverSim::sched100Hz_handler(FwIndexType, U32) {
+  m_dev.advance();
+  m_core.tick(100u);
+  if (m_autoCapture && m_core.state() == CamState::READY && !m_core.capturing()) {
+    m_autoCapture = false;
+    (void)m_core.captureStart();
+  }
+  if (++m_tlmDiv >= 100) {
+    m_tlmDiv = 0;
+    writeTlm();
+  }
+}
+
+void Ov7670DriverSim::POWER_ON_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+  m_core.start();
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+  writeTlm();
+}
+
+void Ov7670DriverSim::RESET_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+  m_core.reset();
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+  writeTlm();
+}
+
+void Ov7670DriverSim::STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+  m_core.stop();
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+  writeTlm();
+}
+
+void Ov7670DriverSim::CAPTURE_START_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+  if (!m_core.captureStart()) {
+    this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::EXECUTION_ERROR);
+    return;
+  }
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
+void Ov7670DriverSim::CAPTURE_STOP_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {
+  m_core.captureStop();
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
+void Ov7670DriverSim::SIM_INJECT_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 fault) {
+  m_dev.setFault(static_cast<Ov7670SimFault>(fault));
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
+void Ov7670DriverSim::SIM_SET_FRAME_cmdHandler(FwOpcodeType opCode, U32 cmdSeq, U8 enable) {
+  m_dev.setFrameAvailable(enable != 0);
+  if (enable == 0) m_dev.setFrameEveryN(0xFFFFFFFFu);
+  else m_dev.setFrameEveryN(0);
+  this->cmdResponse_out(opCode, cmdSeq, Fw::CmdResponse::OK);
+}
+
+bool Ov7670DriverSim::streamChunks(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+  if (!this->isConnected_imageOut_OutputPort(0)) return false;
+  if (!data || length == 0) return false;
+
+  // 同 Ov7670Driver：length 是 YUYV 位元組數，送出灰階（只有 Y）。
+  const U32 grayLen = ov7670GrayPixels(length);
+  if (grayLen == 0) return false;
+  const U32 limit = (grayLen < m_frameMaxBytes) ? grayLen : m_frameMaxBytes;
+  const bool truncated = grayLen > m_frameMaxBytes;
+  U32 sent = 0;
+  U32 chunkIdx = 0;
+  while (sent < limit) {
+    U32 n = limit - sent;
+    if (n > kChunk) n = kChunk;
+    n = ov7670PackY(data, length, sent, m_imgScratch, n);
+    if (n == 0) break;
+    sent += n;
+    U8 flags = 0;
+    if (sent >= limit) {
+      flags = static_cast<U8>(CamChunkFlag::END);
+      if (truncated) {
+        flags = static_cast<U8>(static_cast<U8>(CamChunkFlag::END) |
+                                static_cast<U8>(CamChunkFlag::TRUNCATED));
+      }
+    }
+    Fw::Buffer buf(m_imgScratch, n, frameNumber);
+    this->imageOut_out(0, frameNumber, chunkIdx, flags, buf);
+    ++chunkIdx;
+  }
+  if (truncated) {
+    this->log_WARNING_HI_FrameTruncated(frameNumber, sent);
+    return false;
+  }
+  return true;
+}
+
+bool Ov7670DriverSim::onFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
+  return streamChunks(data, length, frameNumber);
+}
+
+void Ov7670DriverSim::onStateChange(CamState from, CamState to) {
+  this->log_ACTIVITY_HI_StateChanged(from, to);
+  writeTlm();
+}
+
+void Ov7670DriverSim::onFault(CamFault code, uint32_t detail) {
+  this->log_WARNING_HI_FaultRaised(code, detail);
+  writeTlm();
+}
+
+void Ov7670DriverSim::onRecoverAttempt(uint32_t attempt, uint32_t limit) {
+  this->log_ACTIVITY_HI_RecoverAttempt(attempt, limit);
+  writeTlm();
+}
+
+}  // namespace Components

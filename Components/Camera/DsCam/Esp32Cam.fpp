@@ -1,24 +1,16 @@
 @ DsCam / ESP32-CAM：DS 飛控側驅動（I2C → ICamLink）
-@ 狀態機 1 Hz；擷取與 frameCount 100 Hz。ICamLink 無像素；影像走 imageOut 2KB 分塊（對齊 Ov3640ImageOut）。
+@ 狀態機 1 Hz；擷取與 frameCount 100 Hz。ICamLink 無像素；影像走 imageOut 2KB 分塊（Components.CamImageOut，與上級相機同一個埠型別）。
 @ 完整錄影亦可落 ESP32-CAM 本機 SD；地面預覽走獨立 IGroundPreviewLink（HTTP 144P）。
 @ 型號 ESP32_CAM、角色 DS_CAM。共用 CamTypes／CamChunkFlag。
 module Components {
 
   constant Esp32Cam_DECLARED_MODEL = CamModel.ESP32_CAM
   constant Esp32Cam_DECLARED_ROLE = CamRole.DS_CAM
-  @ 單次 imageOut 分塊大小（bytes）；與 Ov3640_FRAME_BUF_MAX 對齊
-  constant Esp32Cam_FRAME_BUF_MAX = 2048
+  @ 單次 imageOut 分塊大小（bytes）＝CAM_IMAGE_CHUNK_MAX
+  constant Esp32Cam_FRAME_BUF_MAX = CAM_IMAGE_CHUNK_MAX
   @ I2C 腳位／位址 placeholder：0xFF／0 表示未定，對齊 Anatoly 腳位表後再填
   constant Esp32Cam_I2C_PIN_PLACEHOLDER = 255
   constant Esp32Cam_I2C_ADDR_PLACEHOLDER = 0
-
-  @ 影像分塊輸出（方案對齊 Ov3640ImageOut）。flags：CamChunkFlag（END=1, TRUNCATED=2）。
-  port Esp32CamImageOut(
-    frameNumber: U32
-    chunkIndex: U32
-    flags: U8
-    ref data: Fw.Buffer
-  )
 
   passive component Esp32Cam {
 
@@ -32,7 +24,7 @@ module Components {
     @ I2C 先寫後讀
     output port i2cWriteRead: Drv.I2cWriteRead
     @ 2KB 分塊影像（接本機 SD logger／下游）；不經遙測
-    output port imageOut: Esp32CamImageOut
+    output port imageOut: CamImageOut
 
     sync command POWER_ON()
     sync command RESET()
@@ -89,7 +81,7 @@ module Components {
     sync input port sched1Hz: Svc.Sched
     sync input port sched100Hz: Svc.Sched
 
-    output port imageOut: Esp32CamImageOut
+    output port imageOut: CamImageOut
 
     sync command POWER_ON()
     sync command RESET()

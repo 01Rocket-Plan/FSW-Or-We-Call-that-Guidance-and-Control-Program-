@@ -2,10 +2,13 @@
 #include "Components/Camera/DsCam/Esp32CamCmd.hpp"
 #include "Components/Camera/DsCam/Esp32CamCore.hpp"
 #include "Components/Camera/DsCam/Esp32CamSimDevice.hpp"
+#include <gtest/gtest.h>
 #include <cstdio>
 
 using namespace Components;
-static int g_fail = 0;
+namespace {
+int g_fail = 0;
+}
 #define CHECK(c)                                                                 \
   do {                                                                           \
     if (!(c)) {                                                                  \
@@ -14,7 +17,7 @@ static int g_fail = 0;
     }                                                                            \
   } while (0)
 
-int main() {
+static int legacyMain() {
   std::printf("W1) cmd result mapping\n");
   CHECK(esp32CamCmdResult(true) == Esp32CamCmdResult::OK);
   CHECK(esp32CamCmdResult(false) == Esp32CamCmdResult::EXECUTION_ERROR);
@@ -39,7 +42,7 @@ int main() {
 
   std::printf("W4) CamStatus.camState field (not reserved 'state')\n");
   CamStatus s = core.status();
-  CHECK(s.camState == CamState::INIT);
+  CHECK(s.get_camState() == CamState::INIT);
 
   if (g_fail) {
     std::printf("Esp32CamWrapperLogicTest: FAILED (%d)\n", g_fail);
@@ -48,3 +51,5 @@ int main() {
   std::printf("Esp32CamWrapperLogicTest: passed\n");
   return 0;
 }
+
+TEST(Esp32CamCore, WrapperLogic) { ASSERT_EQ(0, legacyMain()); }

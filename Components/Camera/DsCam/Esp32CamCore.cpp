@@ -58,13 +58,7 @@ void Esp32CamCore::enterFault(CamFault f, uint32_t detail) {
 }
 
 CamStatus Esp32CamCore::status() const {
-  CamStatus s{};
-  s.camState = m_state;
-  s.fault = m_fault;
-  s.frameCount = m_frameCount;
-  s.model = m_model;
-  s.role = m_role;
-  return s;
+  return CamStatus(m_state, m_fault, m_frameCount, m_model, m_role);
 }
 
 bool Esp32CamCore::powerOn() {
@@ -184,8 +178,8 @@ void Esp32CamCore::checkSelftest() {
     uint8_t info[2] = {0, 0};
     uint32_t got = (m_link == nullptr) ? 0 : m_link->recv(info, 2);
     if (got == 2) {
-      CamModel repModel = static_cast<CamModel>(info[0]);
-      CamRole repRole = static_cast<CamRole>(info[1]);
+      const CamModel repModel = static_cast<CamModel::T>(info[0]);
+      const CamRole repRole = static_cast<CamRole::T>(info[1]);
       if (repModel != m_model || repRole != m_role) {
         enterFault(CamFault::TYPE_ROLE_MISMATCH, 0);
         return;
@@ -252,8 +246,8 @@ void Esp32CamCore::tick100Hz() {
     } else if (b == kRspInfo) {
       uint8_t info[2];
       if (m_link != nullptr && m_link->recv(info, 2) == 2) {
-        CamModel repModel = static_cast<CamModel>(info[0]);
-        CamRole repRole = static_cast<CamRole>(info[1]);
+        const CamModel repModel = static_cast<CamModel::T>(info[0]);
+        const CamRole repRole = static_cast<CamRole::T>(info[1]);
         if (repModel != m_model || repRole != m_role) {
           enterFault(CamFault::TYPE_ROLE_MISMATCH, 0);
           return;

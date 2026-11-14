@@ -6,7 +6,13 @@
 #ifndef COMPONENTS_CAMERA_DSCAM_ESP32CAMCORE_HPP
 #define COMPONENTS_CAMERA_DSCAM_ESP32CAMCORE_HPP
 
-#include "Components/Camera/Ov3640Driver/CamTypes.hpp"
+// 型別來自 FPP 自動碼（../CamTypes/CamTypes.fpp，issue #36）
+#include "Components/Camera/CamTypes/CamChunkFlagEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamFaultEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamModelEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamRoleEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStateEnumAc.hpp"
+#include "Components/Camera/CamTypes/CamStatusSerializableAc.hpp"
 #include "Components/Camera/DsCam/ICamLink.hpp"
 #include "Components/Camera/DsCam/Esp32CamImageStreamer.hpp"
 #include <cstdint>
@@ -46,7 +52,7 @@ class Esp32CamCore {
   bool captureStop();
   // 過大／壞幀：事件 only，不進 FAULT（CamFault::FRAME_TRUNCATED）
   void notifyFrameTruncated(uint32_t length);
-  // 2KB 分塊影像輸出（對齊 Ov3640ImageOut）；截斷則不計 frameCount、維持 READY
+  // 2KB 分塊影像輸出（對齊 CamImageOut）；截斷則不計 frameCount、維持 READY
   void setImageChunkSink(ICamImageChunkSink* sink) { m_streamer.setSink(sink); }
   void setFrameMaxBytes(uint32_t n) { m_streamer.setFrameMaxBytes(n); }
   uint32_t frameMaxBytes() const { return m_streamer.frameMaxBytes(); }

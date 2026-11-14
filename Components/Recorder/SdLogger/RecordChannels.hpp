@@ -19,7 +19,7 @@ enum class RecordChannel : uint16_t {
   SEP_CMD = 8,
   MPU6050 = 9,
   HUM_TEMP = 10,
-  IMAGE = 11,  // Ov3640 / Esp32Cam 2KB chunks
+  IMAGE = 11,  // Ov7670 / Esp32Cam 2KB chunks (Components.CamImageOut)
 };
 
 //! CamChunkFlag bits (Camera CamTypes) — END|TRUNCATED

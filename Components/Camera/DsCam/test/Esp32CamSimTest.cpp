@@ -4,6 +4,7 @@
 #include "Components/Camera/DsCam/Esp32CamSimDevice.hpp"
 #include "Components/Camera/DsCam/IGroundPreviewLink.hpp"
 #include "Components/Camera/DsCam/ILocalSdStore.hpp"
+#include <gtest/gtest.h>
 #include <cstdio>
 
 using namespace Components;
@@ -200,13 +201,12 @@ static void test7_telemetryFourFields() {
   Rig r;
   CHECK(r.driveToReady());
   CamStatus s = r.core.status();
-  CHECK(s.camState == CamState::READY);
-  CHECK(s.fault == CamFault::NONE);
-  CHECK(s.frameCount == 0);
-  CHECK(s.model == CamModel::ESP32_CAM);
-  CHECK(s.role == CamRole::DS_CAM);
-  // 結構僅含上述欄位（無影像指標／緩衝）
-  CHECK(sizeof(CamStatus) <= 16);
+  CHECK(s.get_camState() == CamState::READY);
+  CHECK(s.get_fault() == CamFault::NONE);
+  CHECK(s.get_frameCount() == 0);
+  CHECK(s.get_model() == CamModel::ESP32_CAM);
+  CHECK(s.get_role() == CamRole::DS_CAM);
+  // 結構僅含上述欄位（無影像指標／緩衝）：FPP 自動碼 CamStatus 只有這 5 個 get_
 }
 
 static void test8_i2cClockDefault() {
@@ -317,7 +317,7 @@ static void test12_truncationKeepsReadyNextCounts() {
   CHECK(ch.truncChunks == 0);
 }
 
-int main() {
+static int legacyMain() {
   test1_happyPath();
   test2_typeRoleMismatch();
   test3_busTimeout();
@@ -338,3 +338,5 @@ int main() {
   std::printf("Esp32CamSimTest: 12/12 passed\n");
   return 0;
 }
+
+TEST(Esp32CamCore, SimSuite) { ASSERT_EQ(0, legacyMain()); }

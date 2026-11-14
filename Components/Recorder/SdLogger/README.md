@@ -49,7 +49,7 @@
 | 0x2008 | ImageChunkGap |
 | 0x2009 | ImageTruncatedSeen |
 
-Ports: `usImageIn: Ov3640ImageOut`, `dsImageIn: Esp32CamImageOut` (2KB chunks; END=1, TRUNCATED=2). Param `IMAGE_QUEUE_DEPTH` default 8; channel `IMAGE=11`.
+Ports: `usImageIn: CamImageOut`, `dsImageIn: CamImageOut`（型別在 `Components/Camera/CamTypes`） (2KB chunks; END=1, TRUNCATED=2). Param `IMAGE_QUEUE_DEPTH` default 8; channel `IMAGE=11`.
 
 ## Layout
 
