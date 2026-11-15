@@ -17,7 +17,7 @@ tools/verify/fprime_verify.sh --run 3 Components/Wireless/PadLink Components/Wir
   Components/Wireless/PadController Deployments/PadMcu
 ```
 SIL 結果（3 s）：開機、載參數、停在 `SAFE`。沒有 PadController 事件是**正常的**：沒有狀態變化就不發事件
-（verify 腳本在「沒印出任何事件」時結束碼會是 1，這不是當機；直接跑執行檔結束碼為 timeout 的 124）。
+（verify 腳本已改成「沒事件不算失敗」）。
 遙測 `State`／`Interlocks`／`MissionTime_s`（−30 s，hold）10 Hz 更新，可從 GDS 看。
 
 ## SIL 為什麼不會點火（照實寫）
