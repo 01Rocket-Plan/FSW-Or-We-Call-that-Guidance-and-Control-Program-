@@ -11,14 +11,16 @@
 - `docs/`：協作規則（CONTRIBUTING.md）、慣例（conventions.md）、交差檢驗規則（REAL_FPRIME_VERIFICATION.md）
 - `tools/verify/`：真 F´ 建置檢驗腳本
 
-## 部署分工
-| 部署 | 板子 | 控制律 | 備註 |
-|---|---|---|---|
-| DsMcu | DS 飛控 MCU | 有（Controller／ActuatorMgr／ServoDriver） | 1 kHz 即時鏈；級間分離判斷與分離舵機 |
-| UsMcu | US 飛控 MCU | **無** | 感測、紀錄、上級傘 |
-| DsCam | ESP32-CAM | — | 不併入 DsMcu |
-| UsCam | OV7670 自有板 | — | 不併入 UsMcu |
-| PadMcu | 發射架 ESP32 | — | 不上箭；發射許可互鎖、點火、夾持（Issue #24） |
+## 部署分工與建置狀態
+建置狀態＝用真 F´（`lib/fprime` v4.4.1）在 Linux 建得起來、SIL 跑得動（`bash tools/verify/fprime_verify.sh --ut --run 3`）。ESP32 版（PIL）五份都還沒做。
+
+| 部署 | 板子 | 控制律 | 建置狀態 | 備註 |
+|---|---|---|---|---|
+| DsMcu | DS 飛控 MCU | 有（Controller／ActuatorMgr／ServoDriver） | ✅ Linux SIL | 1 kHz 即時鏈；級間分離判斷與分離舵機 |
+| UsMcu | US 飛控 MCU | **無** | ✅ Linux SIL | 感測、紀錄、上級傘；感測驅動待接 |
+| DsCam | ESP32-CAM | — | ✅ Linux SIL | 不併入 DsMcu；Sim 不產生像素 |
+| UsCam | OV7670 自有板 | — | ✅ Linux SIL | 不併入 UsMcu |
+| PadMcu | 發射架 ESP32 | — | ✅ Linux SIL | 不上箭；發射許可互鎖、點火、夾持（Issue #24）；驗證器與 I/O 驅動未接 → 停在 SAFE |
 
 ## 慣例
 ENU 世界系；機體系照航太業界標準：X 指向鼻錐（滾轉）、Y 右（俯仰）、Z = X×Y（偏航），墊上比力 (+g, 0, 0)（見 docs/conventions.md §2）；Hamilton 純量在前四元數；SI 單位加後綴；時間只來自 F´ 時間服務。
