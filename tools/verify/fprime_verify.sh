@@ -124,6 +124,6 @@ if [[ -n "$RUN_S" ]]; then
   shopt -s nullglob
   for B in "$P"/build/bin/*/Deployments_*; do
     echo "== SIL：$(basename "$B")（${RUN_S} s）"
-    (cd "$WORK" && timeout -s TERM "$RUN_S" "$B" 2>&1 || true) | grep "EVENT" | grep -v -E "prmDb|CdhCore.version" | sed -E 's/^EVENT: \([0-9]+\) \([^)]*\) //' | head -60
+    (cd "$WORK" && timeout -s TERM "$RUN_S" "$B" 2>&1 || true) | grep "EVENT" | grep -v -E "prmDb|CdhCore.version" | sed -E 's/^EVENT: \([0-9]+\) \([^)]*\) //' | head -60 || true  # 沒事件（例如 PadMcu 停在 SAFE）不算失敗
   done
 fi
