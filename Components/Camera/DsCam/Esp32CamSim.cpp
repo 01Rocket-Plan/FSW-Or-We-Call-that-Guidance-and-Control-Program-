@@ -9,6 +9,11 @@ Esp32CamSim::Esp32CamSim(const char* compName) : Esp32CamSimComponentBase(compNa
   m_core.setSink(this);
 }
 
+void Esp32CamSim::configureSil(bool autoPowerOn, bool autoCapture) {
+  m_autoPowerOn = autoPowerOn;
+  m_autoCapture = autoCapture;
+}
+
 void Esp32CamSim::writeTlm() { this->tlmWrite_Status(m_core.status()); }
 
 void Esp32CamSim::respond(FwOpcodeType opCode, U32 cmdSeq, Esp32CamCmdResult r) {
@@ -18,6 +23,10 @@ void Esp32CamSim::respond(FwOpcodeType opCode, U32 cmdSeq, Esp32CamCmdResult r) 
 }
 
 void Esp32CamSim::sched1Hz_handler(FwIndexType, U32) {
+  if (m_autoPowerOn && m_core.state() == CamState::OFF) {
+    m_autoPowerOn = false;  // 只自動上電一次
+    (void)m_core.powerOn();
+  }
   m_core.tick1Hz();
   writeTlm();
 }
@@ -25,6 +34,10 @@ void Esp32CamSim::sched1Hz_handler(FwIndexType, U32) {
 void Esp32CamSim::sched100Hz_handler(FwIndexType, U32) {
   m_dev.advance();
   m_core.tick100Hz();
+  if (m_autoCapture && m_core.state() == CamState::READY) {
+    m_autoCapture = false;  // 只自動開始一次
+    (void)m_core.captureStart();
+  }
 }
 
 void Esp32CamSim::POWER_ON_cmdHandler(FwOpcodeType opCode, U32 cmdSeq) {

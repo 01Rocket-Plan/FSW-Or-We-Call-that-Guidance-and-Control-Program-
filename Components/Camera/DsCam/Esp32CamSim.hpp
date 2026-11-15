@@ -14,6 +14,10 @@ class Esp32CamSim final : public Esp32CamSimComponentBase, private ICamSink {
   explicit Esp32CamSim(const char* compName);
   ~Esp32CamSim() override = default;
 
+  //! SIL 部署用（沒有 DsMcu 送 CamLink 指令）：開機自動上電一次、READY 後自動開始擷取一次。
+  //! 之後 RESET／CAPTURE_STOP 照指令走。真機元件 Esp32Cam 沒有這個。
+  void configureSil(bool autoPowerOn, bool autoCapture);
+
  private:
   void sched1Hz_handler(FwIndexType portNum, U32 context) override;
   void sched100Hz_handler(FwIndexType portNum, U32 context) override;
@@ -32,6 +36,8 @@ class Esp32CamSim final : public Esp32CamSimComponentBase, private ICamSink {
 
   Esp32CamSimDevice m_dev;
   Esp32CamCore m_core;
+  bool m_autoPowerOn = false;
+  bool m_autoCapture = false;
 };
 
 }  // namespace Components
