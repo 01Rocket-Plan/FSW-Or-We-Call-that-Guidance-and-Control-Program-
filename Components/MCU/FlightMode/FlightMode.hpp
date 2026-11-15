@@ -1,7 +1,7 @@
 // ======================================================================
 // \title  FlightMode.hpp
-// \author 殼：MCU 組（EdwardWang+Claude）｜邏輯：Edward 本人
-// \brief  F´ 外殼；邏輯在 FlightModeCore（目前是殼）。Base ID 0x1400。
+// \author 殼：MCU 組（EdwardWang+Claude）｜邏輯：FlightModeCore（照 SSS，Edward 2026-11-14 授權）
+// \brief  F´ 外殼；邏輯在 FlightModeCore。Base ID 0x1400。
 // ======================================================================
 #ifndef COMPONENTS_MCU_FLIGHTMODE_FLIGHTMODE_HPP
 #define COMPONENTS_MCU_FLIGHTMODE_FLIGHTMODE_HPP
@@ -25,7 +25,8 @@ class FlightMode final : public FlightModeComponentBase {
   void stateIn_handler(FwIndexType portNum, const RocketTypes::StateOut& s) override;
   void uvIn_handler(FwIndexType portNum, const RocketTypes::UvState& st) override;
   void discreteIn_handler(FwIndexType portNum, const RocketTypes::DiscreteSample& s) override;
-  void stageLinkIn_handler(FwIndexType portNum, const RocketTypes::StageLinkMsg& m) override;
+  void padStatusIn_handler(FwIndexType portNum, const Components::PadState& padState, F32 countdown_s, U8 flags,
+                           bool linkOk) override;
   void parameterUpdated(FwPrmIdType id) override;
   void parametersLoaded() override;
 
@@ -40,9 +41,8 @@ class FlightMode final : public FlightModeComponentBase {
   RocketTypes::FlightModeId m_lastMode;
   U32 m_sepSeq;
   U32 m_chuteSeq;
-  U32 m_linkSeq;
   U32 m_tlmDiv;
-  bool m_warnedShell;
+  bool m_warnedIncomplete;
 };
 
 }  // namespace Mcu

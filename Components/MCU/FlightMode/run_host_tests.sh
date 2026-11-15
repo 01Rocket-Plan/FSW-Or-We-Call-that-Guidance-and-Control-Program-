@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FlightMode 殼主機測試（不需 F´）
+# FlightModeCore 主機測試（不需 F´）：SSS CP-* 移植＋架安檢
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -12,8 +12,8 @@ elif command -v python3 >/dev/null 2>&1 && python3 -c "import ziglang" 2>/dev/nu
 elif command -v python >/dev/null 2>&1 && python -c "import ziglang" 2>/dev/null; then CXX="python -m ziglang c++"
 else echo "找不到 C++ 編譯器：請安裝 g++／clang++，或 pip install ziglang，或設定 CXX" >&2; exit 1; fi
 OUT="${TMPDIR:-/tmp}/mcu_flightmode_test"
-echo "== FlightMode shell host（CXX=$CXX）=="
+echo "== FlightModeCore host（CXX=$CXX）=="
 # shellcheck disable=SC2086
 $CXX -std=c++14 -Wall -Wextra -Werror -O0 -I"$ROOT" \
-  "$HERE/FlightModeCore.cpp" "$HERE/test/FlightModeShellTest.cpp" -o "$OUT"
+  "$HERE/FlightModeCore.cpp" "$HERE/test/FlightModeCoreTest.cpp" -o "$OUT"
 "$OUT"

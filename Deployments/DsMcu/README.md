@@ -49,7 +49,7 @@ baroDriverSim ─Baro──►│ estimator ─State[0]─► controller ─FinC
 ## SIL 實跑結果（3 s）
 ```
 BaroDriverSim OFF → INIT → SELFTEST → READY
-FlightMode 仍是殼：不會離開 PAD_IDLE／US_WAIT
+FlightMode 未填 FM-20（重啟恢復規則待定）；中止指令來源 PIL 接
 ActuatorMgr 尾翼鎖中位 reason=CMD_LOCK        ← Controller 在非主動模式送 lockNeutral，正確
 Platform 開機 reset=POWER_ON
 Estimator 墊上對準完成 tilt_rad=0.000000       ← 約開機後 0.6 s（0.1 s IMU 自檢 + 0.5 s 對準）
