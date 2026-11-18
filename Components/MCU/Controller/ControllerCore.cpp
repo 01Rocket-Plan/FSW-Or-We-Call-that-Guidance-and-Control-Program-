@@ -6,8 +6,11 @@
 // 舵權判斷順序（對齊 SSS flight_mode.py `_authority`，先到先擋）：
 //   沒模式 → 沒狀態 → 狀態太舊 → imuValid=false → 模式非主動 → demo 固定 → 閉環
 // 任何一關擋下：四片 0、lockNeutral=true。
+// 發射參考捕捉在「imuValid」那關之後、「模式非主動」那關之前：模式 = BOOST_ACTIVE 且還沒捕捉 → 捕捉。
 // ======================================================================
 #include "Components/MCU/Controller/ControllerCore.hpp"
+
+#include <cmath>
 
 namespace Mcu {
 
@@ -15,11 +18,31 @@ namespace {
 inline float sat(float x, float lim) { return x > lim ? lim : (x < -lim ? -lim : x); }
 }  // namespace
 
+void ControllerCore::captureLaunchRef(const float q[4]) {
+  const float qw = q[0], qx = q[1], qy = q[2], qz = q[3];
+  // r = R(q_ref)·x̂ = R 的第 1 行：(R00, R10, R20)
+  float r0 = 1.0f - 2.0f * (qy * qy + qz * qz);
+  float r1 = 2.0f * (qx * qy + qw * qz);
+  float r2 = 2.0f * (qx * qz - qw * qy);
+  const float n = std::sqrt(r0 * r0 + r1 * r1 + r2 * r2);
+  if (!(n > 0.5f)) return;  // q 壞掉（非單位／NaN）→ 不捕捉，下一個合格拍再試
+  r0 /= n;
+  r1 /= n;
+  r2 /= n;
+  m_ref[0] = r0;
+  m_ref[1] = r1;
+  m_ref[2] = r2;
+  m_refCaptured = true;
+}
+
 void ControllerCore::pd(const float q[4], const float w[3], float& dy, float& dz, float err[2]) const {
   const float qw = q[0], qx = q[1], qy = q[2], qz = q[3];
-  // u_b = Rᵀ·(0,0,1) = R 的第 3 列：(R20, R21, R22)
-  const float uy = 2.0f * (qy * qz + qw * qx);
-  const float uz = 1.0f - 2.0f * (qx * qx + qy * qy);
+  const float r0 = m_ref[0], r1 = m_ref[1], r2 = m_ref[2];
+  // u_b = Rᵀ·r：u_y = R 第 2 行·r，u_z = R 第 3 行·r（r = (0,0,1) 時退回 (R21, R22)，即舊式）
+  const float uy = 2.0f * (qx * qy - qw * qz) * r0 + (1.0f - 2.0f * (qx * qx + qz * qz)) * r1 +
+                   2.0f * (qy * qz + qw * qx) * r2;
+  const float uz = 2.0f * (qx * qz + qw * qy) * r0 + 2.0f * (qy * qz - qw * qx) * r1 +
+                   (1.0f - 2.0f * (qx * qx + qy * qy)) * r2;
   // e = x̂ × u_b = (0, −u_z, u_y)
   err[0] = -uz;  // 俯仰（繞 Y）
   err[1] = uy;   // 偏航（繞 Z）
@@ -50,6 +73,8 @@ void ControllerCore::step(double now_s, FinOut& out) {
     out.reason = HoldReason::IMU_INVALID;
     return;
   }
+  // Status #8：第一次進 BOOST_ACTIVE 的第一個合格拍，凍結當下姿態當發射參考
+  if (m_mode == CtlMode::BOOST_ACTIVE && !m_refCaptured) captureLaunchRef(m_state.q_wxyz);
   if (!m_activeMode) {
     out.reason = HoldReason::MODE_INACTIVE;
     return;

@@ -18,6 +18,8 @@ class Controller final : public ControllerComponentBase {
 
   //! 哪些模式可以閉環（SSS _authority：BOOST_ACTIVE、COAST）。公開給測試與審查。
   static bool modeAllowsClosedLoop(const RocketTypes::FlightModeId& mode);
+  //! FlightModeId → core 的模式分類（PAD_IDLE／ARMED = PRE_LAUNCH，會清掉發射參考）。只讀模式。
+  static CtlMode toCtlMode(const RocketTypes::FlightModeId& mode);
 
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
