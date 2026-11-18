@@ -24,6 +24,16 @@ bool Controller::modeAllowsClosedLoop(const RocketTypes::FlightModeId& mode) {
   return mode == RocketTypes::FlightModeId::BOOST_ACTIVE || mode == RocketTypes::FlightModeId::COAST;
 }
 
+CtlMode Controller::toCtlMode(const RocketTypes::FlightModeId& mode) {
+  // Status #8：墊上（PAD_IDLE／ARMED）清發射參考；BOOST_ACTIVE 捕捉；COAST 沿用。
+  if (mode == RocketTypes::FlightModeId::PAD_IDLE || mode == RocketTypes::FlightModeId::ARMED) {
+    return CtlMode::PRE_LAUNCH;
+  }
+  if (mode == RocketTypes::FlightModeId::BOOST_ACTIVE) return CtlMode::BOOST_ACTIVE;
+  if (mode == RocketTypes::FlightModeId::COAST) return CtlMode::COAST;
+  return CtlMode::INACTIVE;
+}
+
 F64 Controller::nowSeconds() {
   const Fw::Time now = this->getTime();
   return static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;
@@ -54,7 +64,8 @@ void Controller::stateIn_handler(FwIndexType, const RocketTypes::StateOut& s) {
 }
 
 void Controller::modeIn_handler(FwIndexType, const RocketTypes::FlightModeId& mode) {
-  m_core.setMode(modeAllowsClosedLoop(mode));
+  // toCtlMode 的 BOOST_ACTIVE／COAST 正好是 modeAllowsClosedLoop 的可閉環集合（主機測試不涵蓋外殼，審查時對照）
+  m_core.setMode(toCtlMode(mode));
 }
 
 void Controller::schedIn_handler(FwIndexType, U32) {
