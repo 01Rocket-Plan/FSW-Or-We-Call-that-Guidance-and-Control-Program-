@@ -17,5 +17,6 @@ register_fprime_module()
 set(UT_SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/test/Esp32CamSimTest.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/test/Esp32CamWrapperLogicTest.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/CamTimingTest.cpp"
 )
 register_fprime_ut()

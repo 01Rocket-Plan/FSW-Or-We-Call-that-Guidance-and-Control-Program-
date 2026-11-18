@@ -129,6 +129,9 @@ module Components {
     @ local 0x13 / abs 0x2013 — last accepted image chunkIndex
     telemetry LastImageChunk: U32
 
+    @ local 0x14 / abs 0x2014 — flush 遇到 SD BUSY（背壓，不算錯誤）的 tick 數
+    telemetry SdBusyCount: U32
+
     # ------------------------------------------------------------------
     # Events — local IDs 0x00.. (absolute = 0x2000 + local; topology may remap)
     # ------------------------------------------------------------------
@@ -138,7 +141,8 @@ module Components {
       severity warning high \
       format "SdLogger queue full drop={} depth={}"
 
-    @ local 0x01 / abs 0x2001 — media / SD error
+    @ local 0x01 / abs 0x2001 — media / SD error。code：1 init、2 紀錄寫入、3 影像寫入、
+    @ 4 BUSY 連續沒進度超過 250 ms（SDHC 寫入逾時，SD Physical Layer Spec §4.6.2；同一段只發一次）
     event SdError(status: SdCardStatus, code: U8) \
       severity warning high \
       format "SdLogger SD error status={} code={}"
@@ -255,6 +259,7 @@ module Components {
     telemetry ImageQueueHwm: U32
     telemetry LastImageFrame: U32
     telemetry LastImageChunk: U32
+    telemetry SdBusyCount: U32
 
     event QueueFullDrop(dropped: U32, queueDepth: U32) \
       severity warning high \
@@ -305,6 +310,9 @@ module Components {
     param CARD_MODEL: SdCardModel default SdCardModel.MICRO_SDHC_UHS_I_16GB
     param CARD_ROLE: SdCardRole default SdCardRole.DS_LOG
     param IMAGE_QUEUE_DEPTH: U32 default 8
+    @ Sim SD 寫入速度 B/s（SdCardSimDevice）。預設 10 000 000 ＝ SD Speed Class 10／UHS U1 最低連續寫入
+    @ 10 MB/s（SD Association；1 MB/s = 1 000 000 B/s）。0 ＝ 不限速。紀錄組可再改
+    param SIM_WRITE_BYTES_PER_S: U32 default 10000000
   }
 
 }

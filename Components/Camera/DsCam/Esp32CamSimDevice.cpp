@@ -55,7 +55,8 @@ void Esp32CamSimDevice::pushFrame(bool selftest) {
   const uint16_t w = selftest ? static_cast<uint16_t>(160) : static_cast<uint16_t>(640);
   const uint16_t h = selftest ? static_cast<uint16_t>(120) : static_cast<uint16_t>(480);
   const uint32_t bytes = selftest ? 24u : 1024u;
-  uint8_t buf[1 + 12];
+  uint8_t buf[kFrameNotifyBytes];
+  static_assert(kFrameNotifyBytes == 1 + 12, "frame notify = type + 12 B header");
   buf[0] = kRspFrame;
   uint32_t idx = m_framesPushed;
   buf[1] = static_cast<uint8_t>(idx & 0xFF);
@@ -99,7 +100,7 @@ void Esp32CamSimDevice::advance() {
   if (m_fault == Esp32CamSimFault::SILENT) {
     return;
   }
-  if (m_capturing && m_fault != Esp32CamSimFault::NO_FRAMES && (m_tickCounter % 5) == 0) {
+  if (m_capturing && m_fault != Esp32CamSimFault::NO_FRAMES && (m_tickCounter % kSimFrameIntervalTicks) == 0) {
     pushFrame(false);
   }
 }

@@ -22,8 +22,33 @@ bool RfDriverSimDevice::init() {
   return true;
 }
 
+uint32_t RfDriverSimDevice::airtimeTicks(uint32_t len) const {
+  const double toa_us = loraTimeOnAir_us(m_modem, len);
+  if (toa_us <= 0.0) return 0u;
+  const double ticks = toa_us / static_cast<double>(m_tickPeriod_us);
+  uint32_t n = static_cast<uint32_t>(ticks);
+  if (static_cast<double>(n) < ticks) ++n;  // ceil
+  return n;
+}
+
 int32_t RfDriverSimDevice::writeFrame(const uint8_t* data, uint32_t len) {
   if (m_fault == RfSimFault::WRITE_FAIL) return -1;
+  if (m_airtimeEnabled) {
+    if (txBusy()) {
+      // 上一包還在空中：SX1278 一次只能發一包（FIFO 共用），這一幀不收
+      ++m_framesRejectedBusy;
+      return 0;
+    }
+    const uint32_t n = airtimeTicks(len);
+    if (n == 0u) {
+      // PL 超出 1..255 或數據機設定無效：真機發不出去
+      ++m_framesRejectedLength;
+      return 0;
+    }
+    // 無線電佔線從這一包送出開始算；sim 掉包＝空中遺失，仍然佔用空中時間
+    m_busyUntilTick = m_ticks + n;
+    m_lastAirtime_us = static_cast<uint32_t>(loraTimeOnAir_us(m_modem, len));
+  }
   if (m_dropRate > 0.0) {
     const double r = static_cast<double>(rng() % 1000000u) / 1000000.0;
     if (r < m_dropRate) {

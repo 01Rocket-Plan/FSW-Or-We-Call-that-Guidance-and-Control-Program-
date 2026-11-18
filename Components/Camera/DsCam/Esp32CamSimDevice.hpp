@@ -11,6 +11,7 @@
 #include "Components/Camera/CamTypes/CamRoleEnumAc.hpp"
 #include "Components/Camera/CamTypes/CamStateEnumAc.hpp"
 #include "Components/Camera/CamTypes/CamStatusSerializableAc.hpp"
+#include "Components/Camera/DsCam/CamTiming.hpp"
 #include "Components/Camera/DsCam/Esp32CamFrame.hpp"
 #include "Components/Camera/DsCam/ICamLink.hpp"
 #include "Components/Camera/DsCam/IGroundPreviewLink.hpp"
@@ -29,6 +30,16 @@ enum class Esp32CamSimFault : uint8_t {
 
 class Esp32CamSimDevice : public ICamLink {
  public:
+  //! Sim 每 5 個 advance() 出一幀；Esp32CamSim 在 sched100Hz 呼叫 advance() → 一個 tick 10 ms
+  static constexpr uint32_t kSimTickUs = 10000;
+  static constexpr uint32_t kSimFrameIntervalTicks = 5;  // 50 ms ＝ 20 fps
+  //! Sim 幀率不得超過 OV2640（ESP32-CAM 模組內建感測器）SVGA 模式最大 30 fps（CamTiming.hpp，OV2640 datasheet p.1）
+  static_assert(static_cast<uint64_t>(kSimFrameIntervalTicks) * kSimTickUs * 1000ull >=
+                    CamTiming::sensorMinFramePeriodNs(CamTiming::kOv2640SvgaMaxFps),
+                "sim frame rate exceeds OV2640 SVGA max frame rate");
+  //! ICamLink 幀通知長度（kRspFrame＋12 B header）
+  static constexpr uint32_t kFrameNotifyBytes = 13;
+
   Esp32CamSimDevice();
 
   void configure(CamModel model, CamRole role);

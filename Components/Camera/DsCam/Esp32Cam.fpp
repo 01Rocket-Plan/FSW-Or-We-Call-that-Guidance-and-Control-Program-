@@ -63,6 +63,9 @@ module Components {
     param I2C_PIN_SDA: U8 default 255
     @ SCL GPIO；255 = placeholder（Anatoly 腳位表）
     param I2C_PIN_SCL: U8 default 255
+    @ ESP32-CAM 模組（內建 OV2640，有硬體 JPEG）韌體 esp32-camera 的 jpeg_quality（0–63，越小畫質越好）。預設 12＝esp32-camera README 範例值。
+    @ 相機組可再改；送到 ESP32-CAM 的 ICamLink 指令待定（CamLinkPacket.md）。見 CamTiming.hpp
+    param JPEG_QUALITY: U8 default 12
 
     time get port timeCaller
     command recv port cmdIn
@@ -104,6 +107,8 @@ module Components {
       format "Esp32CamSim frame {} truncated after {} bytes"
 
     param FRAME_MAX_BYTES: U32 default 65536
+    @ 同 Esp32Cam.JPEG_QUALITY（esp32-camera README 範例 12；0–63）。Sim 不做 JPEG 編碼，只保留參數。相機組可再改
+    param JPEG_QUALITY: U8 default 12
 
     time get port timeCaller
     command recv port cmdIn

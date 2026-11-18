@@ -37,6 +37,7 @@ class SdLoggerIdProbe : public Components::SdLoggerComponentBase {
         kTlmImageQueueHwm = CHANNELID_IMAGEQUEUEHWM,         // abs 0x2011
         kTlmLastImageFrame = CHANNELID_LASTIMAGEFRAME,       // abs 0x2012
         kTlmLastImageChunk = CHANNELID_LASTIMAGECHUNK,       // abs 0x2013
+        kTlmSdBusyCount = CHANNELID_SDBUSYCOUNT,             // abs 0x2014
     };
 
     void schedIn_handler(FwIndexType, U32) override {}
@@ -93,6 +94,7 @@ TEST(SdLoggerDictId, TelemetryLocalOpcodes) {
     EXPECT_EQ(SdLoggerIdProbe::kTlmImageQueueHwm, 0x11);
     EXPECT_EQ(SdLoggerIdProbe::kTlmLastImageFrame, 0x12);
     EXPECT_EQ(SdLoggerIdProbe::kTlmLastImageChunk, 0x13);
+    EXPECT_EQ(SdLoggerIdProbe::kTlmSdBusyCount, 0x14);
 }
 
 TEST(SdLoggerDictId, ModelRoleEnumsPresent) {

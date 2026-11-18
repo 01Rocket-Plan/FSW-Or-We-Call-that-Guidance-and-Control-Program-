@@ -40,6 +40,7 @@
 | 0x2011 | ImageQueueHwm |
 | 0x2012 | LastImageFrame |
 | 0x2013 | LastImageChunk |
+| 0x2014 | SdBusyCount |
 
 ## Image EVR (子Bot2, after Bot1 0x2000–0x2005)
 
@@ -68,3 +69,10 @@ python3 test/dict_id_selftest.py
 # with fprime vendored:
 fprime-util check
 ```
+
+## SdCardSimDevice 寫入速度模型（SSS_Mission_Status #4／#5「SIL 測試發現」：寫多少都當場寫完）
+
+- 每個 `advance()`（＝一個 `schedIn` tick，rg100Hz → 10 ms 視窗）最多寫 `writeBytesPerSec × 10 ms`；額度用完 `append()` 回 false、狀態 `BUSY`，`SdLoggerCore::flush()` 把那筆留在佇列下一 tick 再寫（不 FAULT、不丟）。可透支一筆、下個視窗扣回，長期平均＝設定速度。
+- prm `SIM_WRITE_BYTES_PER_S`（SdLoggerSim）預設 **10 000 000 B/s** ＝ SD Speed Class 10／UHS U1 最低連續寫入 10 MB/s（SD Association Speed Class；性能單位 1 MB/s = 1 000 000 B/s）。repo 只寫卡型 `MICRO_SDHC_UHS_I_16GB`，沒寫速度等級，所以用 UHS-I 卡最低標示等級當保守下限。**紀錄組可再改**（Class 2/4/6 = 2/4/6 MB/s、U3 = 30 MB/s）。0 ＝ 不限速。
+- 單次寫入忙碌：SD 規格只給上限（SDHC 寫入逾時 250 ms，SD Physical Layer Simplified Spec §4.6.2），沒有典型值，所以不編典型延遲；`injectBusyWindows(25)` 可注入 250 ms 最壞情況做測試。典型值待冷測量。
+- BUSY 是背壓、不是錯誤（`SdLoggerCore::flush()`）：遇到 BUSY 不發 `SdError`、`SdCardCore` 不記錯誤，只把遙測 `SdBusyCount`（0x2014）+1，這一 tick 直接結束（影像佇列也等下一 tick）。連續「BUSY 且一筆都沒寫進去」超過 25 tick（＝ 250 ms SDHC 寫入逾時 ÷ 10 ms schedIn；`setBusyTimeoutTicks()`）才發**一次** `SdError(BUSY, code=4)`，卡又寫得進去才重新計算。只數 tick、不讀系統時間。CARD_MISSING／IO_ERROR 照舊是錯誤（FAULT）。**紀錄組可再改**。
