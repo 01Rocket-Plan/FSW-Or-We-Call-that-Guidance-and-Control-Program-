@@ -116,13 +116,14 @@
 | 0x11 | **0x2011** | `ImageQueueHwm` | U32 | 影像分塊佇列高水位（子Bot2） |
 | 0x12 | **0x2012** | `LastImageFrame` | U32 | 最近接受 frameNumber（子Bot2） |
 | 0x13 | **0x2013** | `LastImageChunk` | U32 | 最近接受 chunkIndex（子Bot2） |
+| 0x14 | **0x2014** | `SdBusyCount` | U32 | flush 遇到 SD BUSY（背壓，不算錯誤）的 tick 數（相機組 Arthur；紀錄組可再改） |
 
 ### Events
 
 | Local | Absolute | Name | Severity | 欄位 |
 |------:|----------|------|----------|------|
 | 0x00 | **0x2000** | `QueueFullDrop` | warning high | `dropped: U32`, `queueDepth: U32` |
-| 0x01 | **0x2001** | `SdError` | warning high | `status: SdCardStatus`, `code: U8` |
+| 0x01 | **0x2001** | `SdError` | warning high | `status: SdCardStatus`, `code: U8`（1 init、2 紀錄寫入、3 影像寫入、4 BUSY 連續沒進度 > 250 ms，只發一次） |
 | 0x02 | **0x2002** | `EnterReady` | activity high | — |
 | 0x03 | **0x2003** | `EnterFault` | warning high | `reason: U8` |
 | 0x04 | **0x2004** | `SeqGap` | warning high | `expected: U32`, `got: U32`（upstream seq discontinuity） |
@@ -161,7 +162,7 @@ FPP 硬體型號／角色：`SdCardModel.MICRO_SDHC_UHS_I_16GB`（媒體卡，Ed
 | Handshake 列 | 12 |
 | §9 EVENTS 映射列 | 17 |
 | HWM 列（含占位） | 6 |
-| **SdLogger 具體遙測 ID** | **20**（0x2000–0x2013；含 Bot2 0x2008–0x200C 與影像 0x200D–0x2013） |
+| **SdLogger 具體遙測 ID** | **21**（0x2000–0x2014；含 Bot2 0x2008–0x200C、影像 0x200D–0x2013、SdBusyCount 0x2014） |
 | **SdLogger 具體事件 ID** | **11**（local 0x00–0x0A；abs 0x2000–0x200A；含影像 0x2006–0x2009、佇列上限 0x200A） |
 
 ---

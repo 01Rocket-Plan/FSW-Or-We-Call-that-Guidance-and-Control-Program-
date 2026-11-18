@@ -43,7 +43,8 @@ bool SdCardCore::writeRecord(const SdRecordHeader& hdr, const uint8_t* payload, 
   // Buffer returns to pool after append attempt (sync path is separate)
   if (m_poolInUse) --m_poolInUse;
   if (!ok) {
-    ++m_errors;
+    // BUSY 是背壓（寫入額度用完），不算媒體錯誤；SdLoggerCore 另記 SdBusyCount
+    if (m_media.status() != SdMediaStatus::BUSY) ++m_errors;
     return false;
   }
   ++m_writes;

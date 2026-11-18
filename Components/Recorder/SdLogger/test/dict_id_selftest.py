@@ -13,7 +13,7 @@ req_tlm = [
     "SdErrorCount", "SdStatus", "LastSeq", "LastT_s",
     "HsState", "LoggerSeq", "ProducerSeq", "CardModel", "CardRole",
     "ImageChunkCount", "ImageDropCount", "ImageFrameCount", "ImageBytesWritten",
-    "ImageQueueHwm", "LastImageFrame", "LastImageChunk",
+    "ImageQueueHwm", "LastImageFrame", "LastImageChunk", "SdBusyCount",
 ]
 req_ev = [
     "QueueFullDrop", "SdError", "EnterReady", "EnterFault", "SeqGap", "TimeNonMonotonic",

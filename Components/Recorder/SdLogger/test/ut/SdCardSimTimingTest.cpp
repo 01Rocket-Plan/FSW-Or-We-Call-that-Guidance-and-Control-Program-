@@ -102,13 +102,17 @@ class NullSink : public ISdLoggerSink {
   void onImageChunkGap(uint32_t, uint32_t, uint32_t) override {}
   void onImageTruncatedSeen(uint32_t, uint32_t) override {}
   void onQueueDepthClamped(uint8_t, uint32_t, uint32_t) override {}
-  void onSdError(SdMediaStatus s, uint8_t) override {
+  void onSdError(SdMediaStatus s, uint8_t code) override {
+    ++errors;
     if (s == SdMediaStatus::BUSY) ++busy;
+    lastCode = code;
   }
   void onEnterReady() override {}
   void onEnterFault(uint8_t) override { ++faults; }
   uint32_t busy = 0;
+  uint32_t errors = 0;
   uint32_t faults = 0;
+  uint8_t lastCode = 0;
 };
 }  // namespace
 
@@ -131,6 +135,92 @@ TEST(SdCardSimTiming, LoggerKeepsChunkQueuedWhileBusy) {
   }
   EXPECT_EQ(log.imageChunkCount(), 4u);
   EXPECT_EQ(log.imageDropCount(), 0u);
-  EXPECT_GT(sink.busy, 0u);
+  EXPECT_GT(log.sdBusyCount(), 0u);  // BUSY 有發生，記在遙測
+  EXPECT_EQ(sink.errors, 0u);        // 但不發 SdError（背壓不是錯誤）
+  EXPECT_EQ(log.sdErrorCount(), 0u);
   EXPECT_EQ(sink.faults, 0u);
+}
+
+TEST(SdCardSimTiming, SlowCardNoEventFlood) {
+  // 慢卡 1 s：紀錄＋影像兩個佇列持續塞滿，每 tick 都會遇到 BUSY，但每 tick 都有進度 → 0 個 SdError
+  SdCardSimDevice dev;
+  dev.setWriteBytesPerSec(204800);  // 2048 B / 10 ms，小於每 tick 的輸入量
+  SdCardCore card(dev);
+  NullSink sink;
+  SdLoggerCore log(card, sink);
+  ASSERT_TRUE(log.start());
+  static uint8_t chunk[2048];
+  PackedRecord r{};
+  r.channelId = 1;
+  r.len = 32;
+  uint32_t seq = 0;
+  for (uint32_t tick = 0; tick < 100; ++tick) {
+    for (int k = 0; k < 4; ++k) {
+      r.producerSeq = seq++;
+      r.t_s = 0.01 * tick;
+      (void)log.ingest(r);
+    }
+    (void)log.ingestImageChunk(tick, 0, 1, chunk, sizeof(chunk), 0.01 * tick);
+    log.flush();
+    dev.advance();
+  }
+  EXPECT_GE(log.sdBusyCount(), 90u);  // 幾乎每 tick 都 BUSY
+  EXPECT_LE(log.sdBusyCount(), 100u);  // 每 tick 最多 +1
+  EXPECT_EQ(sink.errors, 0u);          // 舊行為是每 tick 1～2 個 SdError
+  EXPECT_EQ(log.sdErrorCount(), 0u);
+  EXPECT_EQ(sink.faults, 0u);
+  EXPECT_EQ(log.state(), LoggerDrvState::READY);
+}
+
+TEST(SdCardSimTiming, StuckBusyEmitsOneEventAfter250ms) {
+  // 卡完全卡住 50 個視窗（500 ms）：第 26 個沒進度的 tick（> 250 ms）發一次 SdError(BUSY, 4)，之後不再發
+  SdCardSimDevice dev;
+  SdCardCore card(dev);
+  NullSink sink;
+  SdLoggerCore log(card, sink);
+  ASSERT_TRUE(log.start());
+  EXPECT_EQ(log.busyTimeoutTicks(), 25u);
+  PackedRecord r{};
+  r.channelId = 1;
+  r.len = 16;
+  ASSERT_TRUE(log.ingest(r));
+  dev.injectBusyWindows(50);
+  for (uint32_t tick = 1; tick <= 50; ++tick) {
+    log.flush();
+    dev.advance();
+    EXPECT_EQ(sink.errors, tick <= 25u ? 0u : 1u) << "tick " << tick;
+  }
+  EXPECT_EQ(sink.busy, 1u);
+  EXPECT_EQ(sink.lastCode, +SdLoggerCore::kSdErrBusyTimeout);  // C++14：+ 避免 ODR-use
+  EXPECT_EQ(log.sdBusyCount(), 50u);
+  EXPECT_EQ(sink.faults, 0u);
+  // 卡恢復：寫進去、計數歸零；再卡住要重新數 25 tick 才會再發
+  log.flush();
+  EXPECT_EQ(log.writeCount(), 1u);
+  EXPECT_EQ(log.busyStallTicks(), 0u);
+  ASSERT_TRUE(log.ingest(r));
+  dev.injectBusyWindows(30);
+  for (uint32_t tick = 1; tick <= 26; ++tick) {
+    log.flush();
+    dev.advance();
+  }
+  EXPECT_EQ(sink.errors, 2u);
+}
+
+TEST(SdCardSimTiming, CardMissingStillAnError) {
+  SdCardSimDevice dev;
+  SdCardCore card(dev);
+  NullSink sink;
+  SdLoggerCore log(card, sink);
+  ASSERT_TRUE(log.start());
+  PackedRecord r{};
+  r.channelId = 1;
+  r.len = 16;
+  ASSERT_TRUE(log.ingest(r));
+  dev.setFault(SdSimFaultKind::CARD_MISSING);
+  log.flush();
+  EXPECT_EQ(sink.errors, 1u);
+  EXPECT_EQ(log.sdErrorCount(), 1u);
+  EXPECT_EQ(sink.faults, 1u);
+  EXPECT_EQ(log.sdBusyCount(), 0u);
 }

@@ -158,7 +158,23 @@ bool SdLoggerCore::ingestImageChunk(uint32_t frameNumber, uint32_t chunkIndex, u
   return true;
 }
 
+void SdLoggerCore::onBusy(bool progressed) {
+  ++m_sdBusyCount;
+  if (progressed) {
+    // 這一 tick 有寫進去，只是額度用完：正常背壓
+    m_busyStallTicks = 0;
+    m_busyEventSent = false;
+    return;
+  }
+  ++m_busyStallTicks;
+  if (m_busyStallTicks > m_busyTimeoutTicks && !m_busyEventSent) {
+    m_busyEventSent = true;  // 同一段卡住只發一次
+    m_sink.onSdError(SdMediaStatus::BUSY, kSdErrBusyTimeout);
+  }
+}
+
 void SdLoggerCore::flush() {
+  bool progressed = false;
   while (!m_q.empty()) {
     const PackedRecord& rec = m_q.front();
     SdRecordHeader hdr;
@@ -167,6 +183,10 @@ void SdLoggerCore::flush() {
     hdr.producerSeq = rec.producerSeq;
     hdr.t_s = rec.t_s;
     if (!m_card.writeRecord(hdr, rec.bytes, rec.len)) {
+      if (m_card.status() == SdMediaStatus::BUSY) {
+        onBusy(progressed);
+        return;  // 背壓：這一 tick 不再寫（影像也不寫），不發 SdError
+      }
       m_sink.onSdError(m_card.status(), 2);
       if (m_card.status() == SdMediaStatus::CARD_MISSING || m_card.status() == SdMediaStatus::IO_ERROR) {
         setState(LoggerDrvState::FAULT, 2);
@@ -175,6 +195,7 @@ void SdLoggerCore::flush() {
     }
     ++m_loggerSeq;
     m_q.pop();
+    progressed = true;
   }
 
   while (!m_iq.empty()) {
@@ -193,6 +214,10 @@ void SdLoggerCore::flush() {
     hdr.producerSeq = rec.frameNumber;
     hdr.t_s = rec.t_s;
     if (!m_card.writeRecord(hdr, payload, payloadLen)) {
+      if (m_card.status() == SdMediaStatus::BUSY) {
+        onBusy(progressed);
+        return;  // 背壓：同上
+      }
       m_sink.onSdError(m_card.status(), 3);
       if (m_card.status() == SdMediaStatus::CARD_MISSING || m_card.status() == SdMediaStatus::IO_ERROR) {
         setState(LoggerDrvState::FAULT, 3);
@@ -203,8 +228,12 @@ void SdLoggerCore::flush() {
     ++m_imageChunkCount;
     m_imageBytesWritten += rec.len;
     m_iq.pop();
+    progressed = true;
   }
 
+  // 整個 flush 沒遇到 BUSY：卡不忙，重新計算
+  m_busyStallTicks = 0;
+  m_busyEventSent = false;
   (void)m_card.sync();
 }
 

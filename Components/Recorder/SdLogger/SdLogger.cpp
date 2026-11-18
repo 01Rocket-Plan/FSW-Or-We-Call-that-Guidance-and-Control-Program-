@@ -55,6 +55,7 @@ void SdLogger::writeTlm() {
   this->tlmWrite_RecordQueueHwm(m_core.queueHwm());
   this->tlmWrite_SdWritePoolHwm(m_core.writePoolHwm());
   this->tlmWrite_SdErrorCount(m_core.sdErrorCount());
+  this->tlmWrite_SdBusyCount(m_core.sdBusyCount());
   this->tlmWrite_SdStatus(toFppStatus(m_core.sdStatus()));
   this->tlmWrite_LastSeq(m_core.lastProducerSeq());
   this->tlmWrite_LastT_s(m_core.lastT_s());

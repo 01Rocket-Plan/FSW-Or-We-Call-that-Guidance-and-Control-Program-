@@ -101,6 +101,20 @@ class SdLoggerCore {
   uint32_t lastProducerSeq() const { return m_lastProducerSeq; }
   double lastT_s() const { return m_lastT_s; }
   uint32_t sdErrorCount() const { return m_card.errorCount(); }
+
+  //! SD 回 BUSY 是背壓、不是錯誤：flush() 遇到 BUSY 只記 SdBusyCount、這一 tick 不再寫，下一 tick 再試。
+  //! 連續「BUSY 且一筆都沒寫進去」超過 busyTimeoutTicks 個 flush 才發一次 SdError(BUSY, kSdErrBusyTimeout)，
+  //! 直到卡又寫得進去才重新計算。預設 25 tick ＝ 250 ms（SDHC 寫入逾時，SD Physical Layer Simplified
+  //! Specification §4.6.2）÷ 10 ms（schedIn 接 rg100Hz）。只數 tick，不讀系統時間。紀錄組可再改。
+  static constexpr uint32_t kDefaultBusyTimeoutTicks = 25;
+  //! SdError code：1＝init、2＝紀錄寫入、3＝影像寫入、4＝BUSY 超過寫入逾時
+  static constexpr uint8_t kSdErrBusyTimeout = 4;
+  void setBusyTimeoutTicks(uint32_t n) { m_busyTimeoutTicks = n; }
+  uint32_t busyTimeoutTicks() const { return m_busyTimeoutTicks; }
+  //! flush() 遇到 BUSY 的次數（每 tick 最多 +1）
+  uint32_t sdBusyCount() const { return m_sdBusyCount; }
+  //! 目前連續沒有進度的 BUSY tick 數
+  uint32_t busyStallTicks() const { return m_busyStallTicks; }
   uint32_t writePoolHwm() const { return m_card.writePoolHwm(); }
   SdMediaStatus sdStatus() const { return m_card.status(); }
 
@@ -118,6 +132,7 @@ class SdLoggerCore {
   bool checkSeq(uint16_t channelId, uint32_t producerSeq);
   bool checkTime(double t_s);
   void checkImageGaps(uint32_t frameNumber, uint32_t chunkIndex, uint8_t flags);
+  void onBusy(bool progressed);
 
   SdCardCore& m_card;
   ISdLoggerSink& m_sink;
@@ -148,6 +163,12 @@ class SdLoggerCore {
   uint32_t m_imageBytesWritten = 0;
   uint32_t m_lastImageFrame = 0;
   uint32_t m_lastImageChunk = 0;
+
+  // BUSY 背壓
+  uint32_t m_busyTimeoutTicks = kDefaultBusyTimeoutTicks;
+  uint32_t m_sdBusyCount = 0;
+  uint32_t m_busyStallTicks = 0;
+  bool m_busyEventSent = false;
 };
 
 }  // namespace Components
