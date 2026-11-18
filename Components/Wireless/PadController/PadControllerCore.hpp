@@ -42,7 +42,7 @@
 // 規則來源：gate C15（點火只走地面 → 架、硬體鑰匙）、E1（待點火約 30 s 持續評估）、
 // E2（BIT 硬擋）、E6（全綠才解鎖）、F9／H2（hold-down：先點、確認推力、再鬆；
 // 沒鬆時異常就保持鎖死；鬆了就不能再夾回去）、H4（實體鑰匙）、H6（架歪不准點）、
-// SSS 狀態機「點火前發射台安檢」（seated、迴路、許可為 AND、兩道分開的人工指令、
+// 需求：點火前發射台安檢（seated、迴路、許可為 AND、兩道分開的人工指令、
 // 一旦撤銷要重走整個解保險流程、點火後 T 秒沒離台 → 安全狀態且不自動重試）。
 //
 // 一次開機最多點火一次（ignitionUsed）。之後任何 ARM 都拒絕，要重新上電由人處理。
@@ -97,6 +97,13 @@ enum class PadReason : std::uint8_t {
 //! 時間比較的容差：吸收浮點累加誤差和排程抖動（1 kHz 一拍 1 ms 的 5%＝0.05 ms），不改變門檻本身的意義。
 constexpr double kTimeEps_s = 0.00005;
 
+//! 傾角比較的容差（1e-6 rad ≈ 5.7e-5°）。存在的原因是吸收捨入誤差：
+//!   - 預設值 minTilt_rad＝0.0349066、maxTilt_rad＝0.1396263 是 2°／8° 捨入到 7 位小數的值
+//!     （2° 真值 0.03490659 比預設下限小、8° 真值 0.13962634 比預設上限大，不加容差剛好 2.0°／8.0° 會變紅）；
+//!   - 傾角讀值經 F32（PadIoSample.tilt_rad）傳入的捨入。
+//! 只為了讓剛好 2.0°／8.0° 算在窗內（含邊界），不改變門檻本身的意義。
+constexpr double kTiltEps_rad = 1e-6;
+
 //! 門檻是無線組自訂的假設值（Edward 2026-11-13：「你們自己訂一個合理數值即可」），飛前以 HIL／100 m 資料修正。
 struct PadParams {
   double countdown_s = 30.0;          // E1：待點火臨界狀態約 30 s（T−30 → T−0）
@@ -131,7 +138,11 @@ struct PadParams {
   double clampOpenTimeout_s = 0.1;
   double groundLinkTimeout_s = 1.0;   // 多久沒收到簽名幀 → 地面鏈路紅
   double umbilicalTimeout_s = 0.5;    // 多久沒收到箭體狀態 → 臍帶鏈路紅
-  double maxTilt_rad = 0.0872665;     // E6：離垂線 5°（＝仰角 85°），單位 rad
+  // 架傾角窗（離垂線，單位 rad；Status #11）：標稱發射角 5°（仰角 85°）± 3° → 2°～8°（含邊界）才給 IL_TILT_OK。
+  // 留 ±3° 是因為架子安裝誤差、傾角感測器雜訊和風會讓讀值在標稱值附近晃；只有上限 5° 時標稱架就卡在門檻上。
+  // 太直（< 2°）也不給 ARM：代表架沒擺到標稱發射角（或傾角計讀值異常）。
+  double minTilt_rad = 0.0349066;     // 2°
+  double maxTilt_rad = 0.1396263;     // 8°
   double padVmin_V = 11.0;            // 架側 12 V 繼電器電源下限
 };
 
@@ -173,6 +184,7 @@ class PadControllerCore {
   const PadParams& params() const { return m_p; }
   bool paramsOk() const { return m_paramsOk; }
   //! 參數檢查：時間參數有限且不為負、thrustConfirm_s／liftoffTimeout_s＞0，
+  //! 傾角窗 minTilt_rad／maxTilt_rad 有限、不為負且 minTilt_rad ≤ maxTilt_rad，
   //! 且 thrustConfirm_s＋releaseMargin_s＋clampActuatorLatency_s ≤ releaseDeadline_s。
   static bool paramsValid(const PadParams& p);
 

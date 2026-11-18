@@ -36,6 +36,9 @@ bool PadControllerCore::paramsValid(const PadParams& p) {
   }
   if (!(p.thrustConfirm_s > 0.0) || !(p.liftoffTimeout_s > 0.0)) return false;
   if (!std::isfinite(p.clampOpenTimeout_s) || !std::isfinite(p.liftoffLoadMin_N)) return false;
+  // 傾角窗：有限、不為負、下限 ≤ 上限（Status #11）。
+  if (!std::isfinite(p.minTilt_rad) || !std::isfinite(p.maxTilt_rad)) return false;
+  if (p.minTilt_rad < 0.0 || p.minTilt_rad > p.maxTilt_rad) return false;
   // 鬆夾持整段時序（確認＋裕度＋夾持動作）必須在期限內。
   return p.thrustConfirm_s + p.releaseMargin_s + p.clampActuatorLatency_s <=
          p.releaseDeadline_s + kTimeEps_s;
@@ -77,7 +80,10 @@ std::uint16_t PadControllerCore::computeInterlocks(const PadInputs& in, double n
   if (in.seated) il |= IL_SEATED;
   if (in.continuity) il |= IL_CONTINUITY;
   if (in.keyOn) il |= IL_KEY_ON;
-  if (in.tilt_rad >= 0.0 && in.tilt_rad <= m_p.maxTilt_rad) il |= IL_TILT_OK;  // NaN → 紅
+  // 傾角窗 minTilt_rad ≤ tilt ≤ maxTilt_rad（含邊界，容差 kTiltEps_rad）；太直、太斜、NaN 都是紅（Status #11）
+  if (in.tilt_rad + kTiltEps_rad >= m_p.minTilt_rad && in.tilt_rad <= m_p.maxTilt_rad + kTiltEps_rad) {
+    il |= IL_TILT_OK;
+  }
   if (!in.railJam) il |= IL_RAIL_FREE;
   if (in.padV_V >= m_p.padVmin_V) il |= IL_PAD_POWER_OK;
   if (groundFresh) il |= IL_GROUND_LINK_OK;

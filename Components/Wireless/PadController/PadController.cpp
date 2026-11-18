@@ -56,6 +56,7 @@ void PadController::loadParams() {
   p.umbilicalTimeout_s = this->paramGet_umbilicalTimeout_s(v);
   p.maxTilt_rad = this->paramGet_maxTilt_rad(v);
   p.padVmin_V = this->paramGet_padVmin_V(v);
+  p.minTilt_rad = this->paramGet_minTilt_rad(v);
   (void)m_core.configure(p);  // 不合理 → onBadParams 事件，之後 ARM 以 BAD_PARAMS 拒絕
 }
 
