@@ -50,6 +50,7 @@ void SdLoggerSim::loadParams() {
   m_card.setPoolSize(this->paramGet_SD_WRITE_POOL_SIZE(v));
   m_model = this->paramGet_CARD_MODEL(v);
   m_role = this->paramGet_CARD_ROLE(v);
+  m_dev.setWriteBytesPerSec(this->paramGet_SIM_WRITE_BYTES_PER_S(v));
 }
 
 void SdLoggerSim::parameterUpdated(FwPrmIdType) { loadParams(); }
@@ -81,6 +82,7 @@ void SdLoggerSim::writeTlm() {
 void SdLoggerSim::ingestPacked(const PackedRecord& rec) { (void)m_core.ingest(rec); }
 
 void SdLoggerSim::schedIn_handler(FwIndexType, U32) {
+  m_dev.advance();  // 一個 schedIn（rg100Hz）＝ 一個 SD 寫入視窗（SdCardSimDevice.hpp）
   if (m_core.running()) m_core.flush();
   if (++m_tlmDiv >= 10) {
     m_tlmDiv = 0;

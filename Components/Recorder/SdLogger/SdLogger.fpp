@@ -305,6 +305,9 @@ module Components {
     param CARD_MODEL: SdCardModel default SdCardModel.MICRO_SDHC_UHS_I_16GB
     param CARD_ROLE: SdCardRole default SdCardRole.DS_LOG
     param IMAGE_QUEUE_DEPTH: U32 default 8
+    @ Sim SD 寫入速度 B/s（SdCardSimDevice）。預設 10 000 000 ＝ SD Speed Class 10／UHS U1 最低連續寫入
+    @ 10 MB/s（SD Association；1 MB/s = 1 000 000 B/s）。0 ＝ 不限速。紀錄組可再改
+    param SIM_WRITE_BYTES_PER_S: U32 default 10000000
   }
 
 }

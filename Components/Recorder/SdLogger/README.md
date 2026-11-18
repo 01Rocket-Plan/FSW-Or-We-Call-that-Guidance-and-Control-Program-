@@ -68,3 +68,10 @@ python3 test/dict_id_selftest.py
 # with fprime vendored:
 fprime-util check
 ```
+
+## SdCardSimDevice 寫入速度模型（SSS_Mission_Status #4／#5「SIL 測試發現」：寫多少都當場寫完）
+
+- 每個 `advance()`（＝一個 `schedIn` tick，rg100Hz → 10 ms 視窗）最多寫 `writeBytesPerSec × 10 ms`；額度用完 `append()` 回 false、狀態 `BUSY`，`SdLoggerCore::flush()` 把那筆留在佇列下一 tick 再寫（不 FAULT、不丟）。可透支一筆、下個視窗扣回，長期平均＝設定速度。
+- prm `SIM_WRITE_BYTES_PER_S`（SdLoggerSim）預設 **10 000 000 B/s** ＝ SD Speed Class 10／UHS U1 最低連續寫入 10 MB/s（SD Association Speed Class；性能單位 1 MB/s = 1 000 000 B/s）。repo 只寫卡型 `MICRO_SDHC_UHS_I_16GB`，沒寫速度等級，所以用 UHS-I 卡最低標示等級當保守下限。**紀錄組可再改**（Class 2/4/6 = 2/4/6 MB/s、U3 = 30 MB/s）。0 ＝ 不限速。
+- 單次寫入忙碌：SD 規格只給上限（SDHC 寫入逾時 250 ms，SD Physical Layer Simplified Spec §4.6.2），沒有典型值，所以不編典型延遲；`injectBusyWindows(25)` 可注入 250 ms 最壞情況做測試。典型值待冷測量。
+- 注意：遇到 `BUSY` 時 `SdLoggerCore` 會呼叫 `onSdError(BUSY, …)`（發 `SdError` 事件）。預設 10 MB/s 下 SIL 的影像量（1024 B／50 ms）遠低於額度，不會觸發；慢卡設定下會每 tick 發一次，要不要改成不算錯誤由紀錄組決定。
