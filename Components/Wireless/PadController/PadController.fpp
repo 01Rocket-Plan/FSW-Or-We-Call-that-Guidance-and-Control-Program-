@@ -62,10 +62,14 @@ module Components {
     param groundLinkTimeout_s: F64 default 1.0
     @ 多久沒收到箭體狀態 → 臍帶鏈路紅
     param umbilicalTimeout_s: F64 default 0.5
-    @ 架傾角上限（E6：離垂線 5° ＝ 仰角 85°）
-    param maxTilt_rad: F64 default 0.0872665
+    @ 架傾角窗上限（Status #11：標稱 5°±3°，離垂線 8°）；2°～8° 含邊界才給 IL_TILT_OK
+    param maxTilt_rad: F64 default 0.1396263
     @ 架側電源下限
     param padVmin_V: F64 default 11.0
+    @ 架傾角窗下限（Status #11：標稱 5°±3°，離垂線 2°）。太直（< 2°）也不給 IL_TILT_OK、不能 ARM。
+    @ 留 ±3° 是因為架子安裝誤差、傾角感測器雜訊、風；與 PadParams 預設一致。
+    @ 放在參數清單最後，既有參數的自動 ID 不變
+    param minTilt_rad: F64 default 0.0349066
 
     telemetry State: Components.PadState
     telemetry LastReason: Components.PadReason

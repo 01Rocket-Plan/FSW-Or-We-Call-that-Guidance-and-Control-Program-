@@ -76,6 +76,8 @@ struct LoopUart : IUmbilicalUart {
 
 constexpr std::uint8_t kBoot = 7;
 constexpr std::uint16_t kBitAllOk = kRocketBitHardMask | BIT_SD_OK | BIT_TLM_OK;
+constexpr double kPi = 3.14159265358979323846;
+double degToRad(double deg) { return deg * (kPi / 180.0); }
 
 PadInputs greenInputs() {
   PadInputs in;
@@ -83,7 +85,7 @@ PadInputs greenInputs() {
   in.continuity = true;
   in.keyOn = true;
   in.railJam = false;
-  in.tilt_rad = 0.01;
+  in.tilt_rad = degToRad(5.0);  // 標稱發射角：離垂線 5°（仰角 85°），在 2°～8° 窗內（Status #11）
   in.padV_V = 12.4;
   in.load_N = 20.0;  // 箭靜置在架上（假設約 2 kg）
   return in;
@@ -345,6 +347,7 @@ void testArmRejectedWhenAnyRed() {
       {[](Rig& r) { r.in.continuity = false; }, PadReason::NO_CONTINUITY},
       {[](Rig& r) { r.in.keyOn = false; }, PadReason::KEY_OFF},
       {[](Rig& r) { r.in.tilt_rad = 0.2; }, PadReason::TILT},
+      {[](Rig& r) { r.in.tilt_rad = 0.0; }, PadReason::TILT},  // 太直也不給 ARM（Status #11）
       {[](Rig& r) { r.in.railJam = true; }, PadReason::RAIL_JAM},
       {[](Rig& r) { r.in.padV_V = 9.0; }, PadReason::PAD_POWER},
       {[](Rig& r) { r.uart.connected = false; }, PadReason::ROCKET_LINK_LOST},
@@ -768,6 +771,84 @@ void testBadParamsRefuseArm() {
   CHECK(r.pad.lastReason() == PadReason::BAD_PARAMS);
 }
 
+// 架傾角窗 5°±3°（Status #11）：2°～8° 含邊界才給 IL_TILT_OK、才能 ARM；太直、太斜、NaN 都紅。
+// 傾角參數不合理（下限 > 上限、負值、NaN）→ paramsValid＝false、ARM 以 BAD_PARAMS 拒絕。
+void testTiltWindow() {
+  struct Case {
+    double deg;
+    bool green;
+  } cases[] = {
+      {0.0, false}, {1.9, false}, {2.0, true}, {5.0, true}, {5.2, true}, {8.0, true}, {8.1, false},
+  };
+  for (const Case& c : cases) {
+    Rig r;
+    r.in.tilt_rad = degToRad(c.deg);
+    r.warmUp();
+    CHECK(((r.pad.interlocks() & IL_TILT_OK) != 0) == c.green);
+    if (c.green) {
+      CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+      CHECK(r.pad.state() == PadState::ARMED);
+    } else {
+      CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::REJECTED);
+      CHECK(r.pad.state() == PadState::SAFE);
+      CHECK(r.pad.lastReason() == PadReason::TILT);
+    }
+  }
+  // 也照 F32 讀值（PadIoSample.tilt_rad 是 F32）檢查邊界
+  {
+    Rig r;
+    r.in.tilt_rad = static_cast<double>(static_cast<float>(degToRad(2.0)));
+    r.warmUp();
+    CHECK((r.pad.interlocks() & IL_TILT_OK) != 0);
+    r.in.tilt_rad = static_cast<double>(static_cast<float>(degToRad(8.0)));
+    r.run(0.01);
+    CHECK((r.pad.interlocks() & IL_TILT_OK) != 0);
+  }
+  // NaN → 紅
+  {
+    Rig r;
+    r.in.tilt_rad = std::numeric_limits<double>::quiet_NaN();
+    r.warmUp();
+    CHECK((r.pad.interlocks() & IL_TILT_OK) == 0);
+    CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::REJECTED);
+    CHECK(r.pad.lastReason() == PadReason::TILT);
+  }
+  // 倒數中傾角跑出窗外（太直）→ 終止回 SAFE／TILT
+  {
+    Rig r;
+    r.warmUp();
+    CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::ACCEPTED);
+    CHECK(r.send(PadCmdOp::LAUNCH) == PadCmdResult::ACCEPTED);
+    CHECK(r.pad.state() == PadState::COUNTDOWN);
+    r.in.tilt_rad = degToRad(1.0);
+    r.run(0.01);
+    CHECK(r.pad.state() == PadState::SAFE);
+    CHECK(r.pad.lastReason() == PadReason::TILT);
+  }
+  // 預設值與參數檢查
+  {
+    const PadParams d;
+    CHECK(std::fabs(d.minTilt_rad - degToRad(2.0)) < 1e-6);
+    CHECK(std::fabs(d.maxTilt_rad - degToRad(8.0)) < 1e-6);
+    PadParams bads[4];
+    bads[0].minTilt_rad = 0.2;  // 下限 > 上限
+    bads[1].minTilt_rad = -0.01;
+    bads[2].maxTilt_rad = std::numeric_limits<double>::quiet_NaN();
+    bads[3].minTilt_rad = std::numeric_limits<double>::infinity();
+    for (const PadParams& b : bads) {
+      CHECK(!PadControllerCore::paramsValid(b));
+      Rig r;
+      CHECK(!r.pad.configure(b));
+      r.warmUp();
+      CHECK(r.send(PadCmdOp::ARM) == PadCmdResult::REJECTED);
+      CHECK(r.ev.lastCmdReason == PadReason::BAD_PARAMS);
+    }
+    PadParams eq;  // 下限＝上限 合理
+    eq.minTilt_rad = eq.maxTilt_rad;
+    CHECK(PadControllerCore::paramsValid(eq));
+  }
+}
+
 void releaseNow(Rig& r) {
   reachIgnition(r);
   r.in.thrustOk = true;
@@ -1024,6 +1105,7 @@ static int PadLinkLegacyMain() {
   testReleaseAtConfirmPlusMargin();
   testThrustLostDuringMargin();
   testBadParamsRefuseArm();
+  testTiltWindow();
   testOffRailAloneLiftsOff();
   testUmbilicalLossAloneNotLiftoff();
   testLoadCellLiftoff();
@@ -1034,7 +1116,7 @@ static int PadLinkLegacyMain() {
   testRocketVetoSeenByRocket();
   testUmbilicalLinkRxRules();
   if (g_fail == 0) {
-    std::printf("PadLinkHostTest: all 30 test groups passed\n");
+    std::printf("PadLinkHostTest: all 32 test groups passed\n");
     return 0;
   }
   std::printf("PadLinkHostTest: %d CHECK(s) FAILED\n", g_fail);
