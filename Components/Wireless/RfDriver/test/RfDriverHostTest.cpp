@@ -135,6 +135,9 @@ void test_tx_timeout() {
 
 void test_consec_tx_timeout_fault() {
   RfDriverSimDevice bus;
+  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
+  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
+  bus.setTickPeriodUs(1000000);
   TestSink sink;
   TestTxQueue txq;
   RfDriverCore drv(bus, sink, txq);
@@ -156,10 +159,14 @@ void test_consec_tx_timeout_fault() {
   }
   assert(drv.state() == DrvState::FAULT);
   assert(drv.consecutiveTxTimeouts() >= 3);
+  assert(bus.framesRejectedBusy() == 0u);
 }
 
 void test_sim_drop_rate() {
   RfDriverSimDevice bus;
+  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
+  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
+  bus.setTickPeriodUs(1000000);
   bus.setDropRate(0.5);
   TestSink sink;
   TestTxQueue txq;
@@ -187,6 +194,7 @@ void test_sim_drop_rate() {
   double err = observed - 0.5;
   if (err < 0) err = -err;
   assert(err < 0.05);
+  assert(bus.framesRejectedBusy() == 0u);
 }
 
 void test_interface_and_uplink() {
@@ -209,6 +217,9 @@ void test_interface_and_uplink() {
 
 void test_sent_frames() {
   RfDriverSimDevice bus;
+  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
+  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
+  bus.setTickPeriodUs(1000000);
   TestSink sink;
   TestTxQueue txq;
   RfDriverCore drv(bus, sink, txq);
@@ -230,6 +241,32 @@ void test_sent_frames() {
   }
   assert(drv.sentFrames() == K);
   assert(bus.framesWritten() == K);
+  assert(bus.framesRejectedBusy() == 0u);
+}
+
+// LoRa 空中時間開著（預設）：上一包還在空中時，下一包被 sim 拒收 → RfDriverCore 記 TX_FAIL
+void test_airtime_busy_drops() {
+  RfDriverSimDevice bus;  // 預設 SF7／125 kHz／4:5、10 ms tick；5 B 一包 = 30.976 ms → 4 tick
+  TestSink sink;
+  TestTxQueue txq;
+  RfDriverCore drv(bus, sink, txq);
+  RfParams p;
+  p.txTimeout_s = 100.0;
+  drv.configure(p);
+  drv.start();
+  double t = 0.0;
+  advanceToReady(drv, bus, t);
+  assert(bus.airtimeTicks(5) == 4u);
+  txq.push({1, 2, 3, 4, 5});
+  txq.push({6, 7, 8, 9, 10});
+  bus.advance(); drv.tick(t); t += 0.01;  // 送第 1 包（佔 4 tick）
+  bus.advance(); drv.tick(t); t += 0.01;  // Core：視為完成
+  bus.advance(); drv.tick(t); t += 0.01;  // 第 2 包：還在空中 → 拒收
+  assert(bus.framesWritten() == 1u);
+  assert(bus.framesRejectedBusy() == 1u);
+  assert(drv.txDroppedCount() == 1u);
+  assert(hasEvent(sink.events, RfEvent::TX_FAIL));
+  assert(drv.state() == DrvState::READY);
 }
 
 void test_init_deadline() {
@@ -258,7 +295,8 @@ static int RfDriverLegacyMain() {
   test_interface_and_uplink();
   test_sent_frames();
   test_init_deadline();
-  std::printf("RfDriverHostTest: all 9 tests passed\n");
+  test_airtime_busy_drops();
+  std::printf("RfDriverHostTest: all 10 tests passed\n");
   return 0;
 }
 

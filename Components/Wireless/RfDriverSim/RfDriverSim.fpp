@@ -35,6 +35,24 @@ module Components {
     param latencyTicks: U32 default 0
     param ber: F64 default 0.0
 
+    @ LoRa 空中時間模型（issue #60）。預設＝Semtech SX1276/77/78 datasheet Rev. 4 §6.4 暫存器 reset 值；無線組可再改
+    @ SpreadingFactor 6..12（reset 7；SF6 只能隱式標頭，§4.1.1.2）
+    param loraSf: U8 default 7
+    @ 頻寬 Hz：7800／10400／15600／20800／31250／41700／62500／125000／250000／500000（reset 125 kHz）
+    param loraBw_Hz: U32 default 125000
+    @ CodingRate 1..4 ＝ 4/5..4/8（reset 1 ＝ 4/5）
+    param loraCr: U8 default 1
+    @ PreambleLength（reset 8；實際前導 = PreambleLength + 4.25 符號，§4.1.1.7）
+    param loraPreambleLen: U16 default 8
+    @ 顯式標頭（reset ImplicitHeaderModeOn=0 → true）
+    param loraExplicitHeader: bool default true
+    @ 酬載 CRC（reset RxPayloadCrcOn=0 → false）
+    param loraCrcOn: bool default false
+    @ LowDataRateOptimize：0 關、1 開、2 自動（Tsym > 16 ms 開，§4.1.1.6）
+    param loraLdro: U8 default 2
+    @ 一個 run tick 的 µs；預設 10000（rg100Hz）。RfDriver 掛哪個 rate group 待無線組定
+    param tickPeriod_us: U32 default 10000
+
     telemetry State: RocketTypes.DrvState
     telemetry TxTimeoutCount: U32
     telemetry TxDroppedCount: U32
