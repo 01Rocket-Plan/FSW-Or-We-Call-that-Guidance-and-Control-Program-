@@ -26,7 +26,7 @@ module DsMcu {
     instance comDriver
 
     instance platform
-    instance silImuFeed
+    instance imuDriverSim
     instance estimator
     instance controller
     instance actuatorMgr
@@ -73,7 +73,7 @@ module DsMcu {
 
       # 1 kHz：順序就是資料流順序（README「1 kHz 鏈」）
       rateGroupDriver.CycleOut[Ports_RateGroups.rg1kHz] -> rg1kHz.CycleIn
-      rg1kHz.RateGroupMemberOut[0] -> silImuFeed.schedIn
+      rg1kHz.RateGroupMemberOut[0] -> imuDriverSim.schedIn
       rg1kHz.RateGroupMemberOut[1] -> estimator.schedIn
       rg1kHz.RateGroupMemberOut[2] -> flightMode.schedIn
       rg1kHz.RateGroupMemberOut[3] -> controller.schedIn
@@ -99,7 +99,7 @@ module DsMcu {
     # ------------------------------------------------------------ DS 資料流
     connections DsChain {
       # 感測 → 估態
-      silImuFeed.imuOut -> estimator.imuIn
+      imuDriverSim.imuOut -> estimator.imuIn
       baroDriverSim.baroOut -> estimator.baroIn
 
       # 估態 → 控制、模式

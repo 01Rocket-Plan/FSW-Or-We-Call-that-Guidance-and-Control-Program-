@@ -40,14 +40,16 @@ module DsMcu {
 
   # ---------------------------------------------------------------- MCU 組
   instance platform: Mcu.Platform base id 0x1000
-  @ SIL 佔位 IMU（EnvSensing ImuDriverSim 能用真 F´ 編譯後換掉）
-  instance silImuFeed: Mcu.SilImuFeed base id 0x1080
   instance estimator: Mcu.Estimator base id 0x1100
   instance controller: Mcu.Controller base id 0x1200
   instance actuatorMgr: Mcu.ActuatorMgr base id 0x1300
   instance flightMode: Mcu.FlightMode base id 0x1400
 
   # ---------------------------------------------------------------- 其他組
+  @ 環境感測組 IMU（LSM6DSO 備援分支）：Lsm6dsoDriverSim 佔 ImuDriverSim 的槽位 0x4080，取代 SIL 佔位 silImuFeed。
+  @ 真機換成 Components.Lsm6dsoDriver base id 0x4000（main 是 ICM-20948 的 Components.ImuDriver，同埠同遙測）
+  instance imuDriverSim: Components.Lsm6dsoDriverSim base id 0x4080
+
   @ 環境感測組 BaroDriverSim（BaroDriver 0x4100 + 0x80）
   instance baroDriverSim: Components.BaroDriverSim base id 0x4180
 

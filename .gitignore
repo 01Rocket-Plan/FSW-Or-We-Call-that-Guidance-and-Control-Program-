@@ -19,3 +19,4 @@ Components/EnvSensing/host_test/test_imu_core
 # Wireless host-test binaries
 **/build_whitelist_test
 **/build_linkloss_test
+Components/EnvSensing/host_test/test_lsm6dso_core

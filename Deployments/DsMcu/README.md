@@ -2,6 +2,9 @@
 
 DS 飛控 MCU（獨立板），含控制律。**本版是 Linux SIL**（F´ v4.4.1）；ESP32 版下一個 PR，連線圖相同、只換時鐘與 HAL。
 
+> **本分支 `EnvSensing/Farhad/lsm6dso-alt`（備援，不合 main）：** IMU 換成 ST LSM6DSO（`Components/EnvSensing/Lsm6dsoDriver`），
+> SIL 用 `imuDriverSim: Components.Lsm6dsoDriverSim`（0x4080）取代 `silImuFeed`。開機到 IMU READY 約 0.8 s（LSM6DSO 內建自測）。
+
 ## 怎麼建、怎麼跑
 ```bash
 git submodule update --init lib/fprime          # F´ v4.4.1
@@ -15,7 +18,7 @@ tools/sil/build_mcu_sil.sh --run 3              # 建 DsMcu＋UsMcu，各跑 3 �
 ## 速率群組（基準時鐘 1 ms）
 | 群組 | 成員（依序） |
 |---|---|
-| **rg1kHz** | `silImuFeed` → `estimator` → `flightMode` → `controller` → `actuatorMgr` → `platform`（最後，踢狗） |
+| **rg1kHz** | `imuDriverSim`（LSM6DSO Sim） → `estimator` → `flightMode` → `controller` → `actuatorMgr` → `platform`（最後，踢狗） |
 | rg100Hz | `baroDriverSim` |
 | rg1Hz | tlmSend、fileDownlink、systemResources、comQueue、aggregator、cmdDisp、health、commsBufferManager |
 
@@ -23,7 +26,7 @@ tools/sil/build_mcu_sil.sh --run 3              # 建 DsMcu＋UsMcu，各跑 3 �
 
 ## 資料流
 ```
-silImuFeed ─ImuData──►┐
+imuDriverSim ─ImuData►┐
 baroDriverSim ─Baro──►│ estimator ─State[0]─► controller ─FinCmd─► actuatorMgr ─ServoCmd─► （待接 servoDriver）
                       │           ─State[1]─► flightMode ─Mode[0]─► estimator
                       │                                  ─Mode[1]─► controller
@@ -37,7 +40,7 @@ baroDriverSim ─Baro──►│ estimator ─State[0]─► controller ─FinC
 | rg1kHz／rg100Hz／rg1Hz | Svc.ActiveRateGroup | 0x0100／0x0200／0x0300 |
 | rateGroupDriver、chronoTime、timer、systemResources、comDriver | Svc／Drv | 0x0400–0x0800 |
 | platform | Mcu.Platform | 0x1000 |
-| silImuFeed | Mcu.SilImuFeed（SIL 佔位） | 0x1080 |
+| imuDriverSim | Components.Lsm6dsoDriverSim（備援分支） | 0x4080 |
 | estimator | Mcu.Estimator | 0x1100 |
 | controller | Mcu.Controller | 0x1200 |
 | actuatorMgr | Mcu.ActuatorMgr | 0x1300 |
@@ -54,13 +57,17 @@ ActuatorMgr 尾翼鎖中位 reason=CMD_LOCK        ← Controller 在非主動�
 Platform 開機 reset=POWER_ON
 Estimator 墊上對準完成 tilt_rad=0.000000       ← 約開機後 0.6 s（0.1 s IMU 自檢 + 0.5 s 對準）
 ```
+本分支（LSM6DSO Sim）多一行，對準時間順延到 IMU READY 之後：
+```
+Lsm6dsoDriverSim READY                        ← 約開機後 0.8 s（LSM6DSO 內建自測）
+Estimator 墊上對準完成 tilt_rad=0.000244
+```
 
 ## 還沒接的（等其他組模組能用真 F´ 編譯）
 | 要接的 | 卡在 |
 |---|---|
 | `actuatorMgr.servoCmdOut → servoDriver(Sim)` | Servo 組模組找不到自己的標頭（issue） |
 | `actuatorMgr.sepCmdOut → sepServoDriver(Sim)` | 同上 |
-| `imuDriver(Sim) → estimator.imuIn`（取代 silImuFeed） | `EnvSensingBus.fpp` 沒進 CMake（issue） |
 | `powerMonitor／UvState → actuatorMgr.uvIn、flightMode.uvIn` | PowerMonitor 指令 handler 簽名不合 v4.4.1（issue） |
 | `flightMode.modeOut[2..] → umbilicalLink、sdLogger、tlmSend` | 無線組模組 CMake 未啟用；SdLogger 可以，下一輪接 |
 | `gnssDriver`、`sdLogger`、無線鏈 | 同上 |

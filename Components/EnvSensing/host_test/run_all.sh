@@ -15,6 +15,7 @@ fpp-check \
   "$ES/Bus/EnvSensingBus.fpp" \
   "$ROOT/RocketTypes/RocketTypes.fpp" \
   "$ES/ImuDriver/ImuDriver.fpp" \
+  "$ES/Lsm6dsoDriver/Lsm6dsoDriver.fpp" \
   "$ES/UsMpu6050/UsMpu6050.fpp"
 echo "fpp-check OK"
 echo "== host unit tests =="
@@ -24,3 +25,8 @@ gcc -std=c11 -O2 -Wall -Wextra -o test_imu_core \
   ../ImuDriver/imu_core.c \
   ../UsMpu6050/mpu6050_core.c -lm
 ./test_imu_core
+echo "== LSM6DSO 備援核心（lsm6dso-alt 分支）=="
+gcc -std=c11 -O2 -Wall -Wextra -c -o lsm6dso_core.o ../Lsm6dsoDriver/lsm6dso_core.c
+g++ -std=c++14 -O2 -Wall -Wextra -o test_lsm6dso_core test_lsm6dso_core.cpp lsm6dso_core.o -lm
+rm -f lsm6dso_core.o
+./test_lsm6dso_core
