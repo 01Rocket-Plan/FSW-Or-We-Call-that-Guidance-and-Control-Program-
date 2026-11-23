@@ -1,4 +1,5 @@
 // CamTimingTest：下級相機 DsCam（ESP32-CAM 模組內建 OV2640；上級 UsCam 是 OV7670，不在此測）時序模型。期望值是手算（見註解），出處見 CamTiming.hpp。
+// I2C／SCCB 時間是規格書計算值、未實測（實測待 HIL）；這裡只驗公式與出處數字，不代表真機時間。
 #include "Components/Camera/DsCam/CamTiming.hpp"
 #include "Components/Camera/DsCam/Esp32CamCore.hpp"
 #include "Components/Camera/DsCam/Esp32CamSimDevice.hpp"
