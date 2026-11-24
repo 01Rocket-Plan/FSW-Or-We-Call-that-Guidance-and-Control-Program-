@@ -1,6 +1,6 @@
 // ======================================================================
 // \title  BleDriver.cpp
-// \brief  BLE 數傳驅動 F´ 外殼：每拍 BleLinkCore.service() → RfDriverCore.tick()；只搬資料。
+// \brief  藍牙備用傳輸（BLE）F´ 外殼：每拍 BleLinkCore.service() → RfDriverCore.tick()；只搬資料。
 // ======================================================================
 #include "Components/Wireless/BleDriver/BleDriver.hpp"
 
@@ -35,7 +35,7 @@ F64 BleDriver::nowSeconds() {
 }
 
 // 開機載參數時 parameterUpdated 會逐個被呼叫 → 等 parametersLoaded 一次套；之後 GDS 改單一參數才即時套。
-// 無線設定（功率／PHY／MTU…）在下一次 INIT 才送進 CPU2。
+// 無線設定（功率／PHY／MTU…）在下一次 INIT 才送進 HAL／協定堆疊。
 void BleDriver::parameterUpdated(FwPrmIdType) {
   if (m_paramsLoaded) {
     loadParams();
@@ -49,14 +49,20 @@ void BleDriver::parametersLoaded() {
 void BleDriver::loadParams() {
   Fw::ParamValid v;
   BleRadioConfig c;
+  const BleHwModel model = this->paramGet_model(v);
+  if (model == BleHwModel::STM32WB55CGU6_INTERNAL_BLE) {
+    c.hwModel = BleHwKind::STM32WB55CGU6_INTERNAL_BLE;
+  } else {
+    c.hwModel = BleHwKind::ESP32_INTERNAL_BLE;
+  }
   const I32 pw = this->paramGet_txPower_dBm(v);
-  c.txPower_dBm = static_cast<int8_t>((pw < -128) ? -128 : ((pw > 127) ? 127 : pw));  // 再由 clampBleConfig 夾到 −40..+6
+  c.txPower_dBm = static_cast<int8_t>((pw < -128) ? -128 : ((pw > 127) ? 127 : pw));
   c.phy = (this->paramGet_phy(v) == BlePhy::LE_2M) ? BlePhyMode::LE_2M : BlePhyMode::LE_1M;
   c.attMtu = this->paramGet_attMtu(v);
   c.advInterval_ms = this->paramGet_advInterval_ms(v);
   c.connInterval_ms = this->paramGet_connInterval_ms(v);
   c.supervisionTimeout_ms = this->paramGet_supervisionTimeout_ms(v);
-  m_link.configure(c);  // 夾到 WB55 可接受範圍
+  m_link.configure(c);  // 依型號夾功率；ESP32＋LE_2M 回退 LE_1M
 
   RfParams p;
   p.power_dBm = static_cast<int32_t>(m_link.config().txPower_dBm);
@@ -119,6 +125,10 @@ void BleDriver::dataIn_handler(FwIndexType, Fw::Buffer& data, const ComCfg::Fram
 }
 
 uint32_t BleDriver::popFrame(uint8_t* buf, uint32_t maxLen) {
+  // 上一幀切片還沒送完就不要出佇列，避免擠塞時丟幀、SentFrames 對不上
+  if (m_link.txPending()) {
+    return 0u;
+  }
   if (m_txCount == 0u) {
     return 0u;
   }
@@ -207,6 +217,7 @@ void BleDriver::writeTlm() {
   this->tlmWrite_RxFrames(m_link.rxFrames());
   this->tlmWrite_RxFragErrors(m_link.rxFragErrors());
   this->tlmWrite_RestartCount(m_restartCount);
+  this->tlmWrite_RxOverflowDrops(m_link.rxOverflowDrops());
 }
 
 }  // namespace Components

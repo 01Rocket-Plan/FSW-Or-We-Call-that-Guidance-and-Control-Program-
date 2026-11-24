@@ -1,4 +1,4 @@
-// BleHalSim：STM32WB55 BLE 的 IBleHal 模擬。說明見 BleHalSim.hpp。
+// BleHalSim：藍牙備用傳輸（BLE）的 IBleHal 模擬。說明見 BleHalSim.hpp。
 #include "Components/Wireless/BleDriverSim/BleHalSim.hpp"
 
 namespace Components {

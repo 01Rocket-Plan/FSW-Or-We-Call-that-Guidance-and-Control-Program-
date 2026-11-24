@@ -1,13 +1,13 @@
 // ======================================================================
 // \title  BleHalSim.hpp
 // \author 無線組（Viktor）
-// \brief  STM32WB55 BLE 的 IBleHal 模擬（主機／SIL 用）。不讀任何 truth／飛行狀態。
+// \brief  藍牙備用傳輸（BLE）的 IBleHal 模擬（主機／SIL 用）。不讀任何 truth／飛行狀態。
 //
 //   模擬重點（都是 prm 可調，數字不是實測，是給測試製造情境用）：
-//     - CPU2 堆疊：可注入「啟動失敗」「自測失敗」「堆疊當掉」
+//     - 協定堆疊：可注入「啟動失敗」「自測失敗」「堆疊當掉」
 //     - 連線：中心端連上／斷線由測試或 prm 控制（linkDropEveryTicks／reconnectAfterTicks）
 //     - ATT_MTU：協商後值（預設 247；設 23 可測最小 MTU 的切片）
-//     - CPU2 TX 緩衝：每拍最多收幾個 notification（txSlotsPerTick），滿了 notify 回 false
+//     - HAL／堆疊 TX 緩衝：每拍最多收幾個 notification（txSlotsPerTick），滿了 notify 回 false
 //     - 中心端：收到的 notification 依片頭重組回整幀（peerFrames）；也可模擬中心端寫入片段
 // ======================================================================
 #ifndef WIRELESS_BLEHALSIM_HPP

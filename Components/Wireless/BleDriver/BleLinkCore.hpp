@@ -3,9 +3,10 @@
 // \author 無線組（Viktor）
 // \brief  BLE 傳輸層核心：把 RfDriverCore 的 IRfBus（整幀寫／位元組讀）接到 BLE GATT。
 //
-//   定位：LoRa（RfDriver，0x8400）的「備用傳輸」，硬體＝STM32WB55CGU6 內建 BLE（CPU2／M0+ 跑
-//   ST 無線堆疊，CPU1／M4 跑本程式）。上層（Framer／ComQueue／UplinkAuth）完全不變：
-//     ComQueue → Framer 幀 → RfDriverCore（同一份，不改）→ BleLinkCore（本檔）→ IBleHal → CPU2
+//   定位：LoRa（RfDriver，0x8400）的「藍牙備用傳輸」。主線 MCU 為初代 ESP32（ESP32 DevKit U1，
+//   BLE 4.2）；備用 MCU 為 STM32WB55CGU6（BLE 5.4）。上層（Framer／ComQueue／UplinkAuth）完全不變：
+//     ComQueue → Framer 幀 → RfDriverCore（同一份，不改）→ BleLinkCore（本檔）→ IBleHal
+//       → 平台 BLE 堆疊（ESP-IDF NimBLE／Bluedroid，或 STM32_WPAN／CPU2）
 //
 //   為什麼要切片：Framer 幀上限 255 B（LoRa FIFO 決定），BLE 一個 GATT notification／write 的
 //   資料最多 ATT_MTU − 3 B（MTU 協商前 23 → 20 B）。所以每幀切成多片，每片前面加 1 B 片頭：
@@ -15,10 +16,12 @@
 //   掉線處理（對齊 RfDriver 合約 §4「下行不重傳、丟了就計數」）：
 //     - 沒有連線（中心端不在）→ writeFrame 回 0，RfDriverCore 記 TX_FAIL／TxDroppedCount，
 //       本層另記 noLinkDrops。不阻塞、不排隊等重連。
-//     - CPU2 TX 緩衝滿 → 剩下的片下一拍再送；未送完前新幀回 0（忙，丟）。
+//     - HAL／堆疊 TX 緩衝滿 → 剩下的片下一拍再送；未送完前新幀回 0（忙，丟）。外殼在 popFrame
+//       前先看 txPending()，避免佇列幀被丟掉、SentFrames 對不上。
 //     - 連線中斷 → 送到一半的幀、收到一半的幀都丟掉並計數，不拼接跨連線的資料。
-//     - ready()＝CPU2 堆疊活著（不是「有連線」）：BLE 沒人連是常態，不能讓 RfDriverCore 因此進 FAULT。
-//       堆疊掛掉（CPU2 無回應）才回 false → readyDeadline_s 後 FAULT（與 LoRa 一致）。
+//     - ready()＝協定堆疊活著（不是「有連線」）：BLE 沒人連是常態，不能讓 RfDriverCore 因此進 FAULT。
+//       堆疊掛掉（例如 STM32WB55 的 CPU2 無回應，或 ESP-IDF 主機堆疊無回應）才回 false
+//       → readyDeadline_s 後 FAULT（與 LoRa 一致）。
 //
 //   安全：BLE 鏈路層加密／配對只是選配，上行指令的真正驗證仍是 UplinkAuth（CRC→防重放→HMAC→白名單），
 //   本層不碰也不繞過。本層不含任何金鑰；若之後啟用配對，配對資料只從 NVS／外部設定載入。
@@ -34,12 +37,20 @@
 
 namespace Components {
 
-//! BLE 實體層（對應 HCI LE Set PHY 的 1M／2M；WB55 不支援 LE Coded，見 BLE_FEASIBILITY）
+//! BLE 實體層（對應 HCI LE Set PHY 的 1M／2M）。LE_2M 僅 BLE 5+ 晶片可用；初代 ESP32 僅支援 LE_1M。
+//! 兩者都不支援 LE Coded PHY。
 enum class BlePhyMode : uint8_t { LE_1M = 0, LE_2M = 1 };
+
+//! 與 FPP BleHwModel 數值對齊（避免本檔依賴 F´ 產生檔，讓主機測試可獨立編譯）
+enum class BleHwKind : uint8_t {
+  STM32WB55CGU6_INTERNAL_BLE = 0,
+  ESP32_INTERNAL_BLE = 1,
+};
 
 //! 交給 HAL 的無線設定（全部來自 prmDb；不含金鑰）
 struct BleRadioConfig {
-  int8_t txPower_dBm = 0;          //!< WB55 可設 −40..+6 dBm（datasheet DS11929）；超出由 clamp 處理
+  BleHwKind hwModel = BleHwKind::ESP32_INTERNAL_BLE;  //!< 預設主線 ESP32
+  int8_t txPower_dBm = 0;  //!< 依 hwModel 夾取；HAL 可視板級限制再夾
   BlePhyMode phy = BlePhyMode::LE_1M;
   uint16_t attMtu = 247;           //!< 要求的 ATT_MTU（23..247）；實際值看協商
   uint16_t advInterval_ms = 100;   //!< 沒連線時廣播間隔
@@ -47,22 +58,22 @@ struct BleRadioConfig {
   uint16_t supervisionTimeout_ms = 2000;  //!< 連線監督逾時（超過沒收到封包就斷）
 };
 
-//! STM32WB55 BLE 硬體抽象（CPU1 端）。真機由 MCU 平台用 STM32_WPAN（SHCI／ACI）實作；
-//! 測試用 BleHalSim。全部非阻塞：CPU2 事件回呼只把片段放進 HAL 自己的佇列，這裡用輪詢拿。
+//! BLE 硬體抽象。真機由平台用 ESP-IDF（NimBLE／Bluedroid）或 STM32_WPAN（SHCI／ACI）實作；
+//! 測試用 BleHalSim。全部非阻塞：堆疊事件回呼只把片段放進 HAL 自己的佇列，這裡用輪詢拿。
 class IBleHal {
  public:
   virtual ~IBleHal() = default;
-  //! 啟動 CPU2 堆疊、註冊 GATT 服務（1 個 notify 特徵＋1 個 write-without-response 特徵）、開始廣播
+  //! 啟動協定堆疊、註冊 GATT 服務（1 個 notify 特徵＋1 個 write-without-response 特徵）、開始廣播
   virtual bool stackStart(const BleRadioConfig& cfg) = 0;
-  //! CPU2 堆疊是否活著（IPCC 有回應、沒有 hard fault 回報）
+  //! 協定堆疊是否活著（ESP-IDF：主機堆疊運作中；STM32WB55：CPU2／IPCC 有回應、沒有 hard fault 回報）
   virtual bool stackAlive() = 0;
-  //! 自測：讀 CPU2 堆疊版本／跑 HCI 讀本機位址等無副作用指令
+  //! 自測：讀堆疊版本／本機位址等無副作用指令
   virtual bool selftest() = 0;
   //! 目前是否有中心端連著且已開啟 notification
   virtual bool linkUp() = 0;
   //! 協商後 ATT_MTU（沒連線回 23）
   virtual uint16_t attMtu() = 0;
-  //! 送一個 GATT notification；回 false＝CPU2 TX 緩衝滿（這片沒送出，稍後再試）
+  //! 送一個 GATT notification；回 false＝HAL／堆疊 TX 緩衝滿（這片沒送出，稍後再試）
   virtual bool notify(const uint8_t* data, uint16_t len) = 0;
   //! 取一筆中心端寫入的資料（＝一片）；沒有回 0
   virtual int32_t pollWrite(uint8_t* data, uint16_t maxLen) = 0;
@@ -79,7 +90,16 @@ constexpr uint16_t kBleAttMtuMax = 247u;  //!< 247 → 244 B 資料，剛好塞�
 //! 一幀最大長度（與 RfDriverCore 的 m_frameBuf 一致）
 constexpr uint32_t kBleMaxFrame = 512u;
 
-//! 把設定值夾在 WB55 能接受的範圍（DS11929：TX −40..+6 dBm；ATT_MTU 23..247）
+//! TX 功率範圍（datasheet／TRM；HAL 可視板級限制再夾）
+constexpr int8_t kBleTxPowerMinEsp32_dBm = -12;  //!< 初代 ESP32
+constexpr int8_t kBleTxPowerMaxEsp32_dBm = 9;
+constexpr int8_t kBleTxPowerMinWb55_dBm = -40;  //!< STM32WB55（AN5270／DS11929）
+constexpr int8_t kBleTxPowerMaxWb55_dBm = 6;
+
+//! 把設定值夾在該硬體型號能接受的範圍。
+//!   ESP32（BLE 4.2）：TX −12..+9 dBm；設 LE_2M 時回退 LE_1M（有效 PHY 存進回傳值，並交給 HAL）。
+//!   STM32WB55（BLE 5.4）：TX −40..+6 dBm；允許 LE_1M／LE_2M。
+//!   ATT_MTU 一律 23..247。HAL 可視板級限制再夾功率。
 BleRadioConfig clampBleConfig(const BleRadioConfig& in);
 
 class BleLinkCore final : public IRfBus {

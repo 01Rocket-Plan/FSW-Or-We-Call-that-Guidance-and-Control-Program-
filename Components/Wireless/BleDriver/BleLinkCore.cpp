@@ -4,18 +4,35 @@
 namespace Components {
 
 namespace {
-// AN5270 aci_hal_set_tx_power_level：PA_Level 0x00＝−40 dBm … 0x1F＝+6 dBm；DS11929：最大 +6 dBm
-constexpr int8_t kTxPowerMin_dBm = -40;
-constexpr int8_t kTxPowerMax_dBm = 6;
+void txPowerRange(BleHwKind model, int8_t& lo, int8_t& hi) {
+  if (model == BleHwKind::ESP32_INTERNAL_BLE) {
+    lo = kBleTxPowerMinEsp32_dBm;
+    hi = kBleTxPowerMaxEsp32_dBm;
+  } else {
+    lo = kBleTxPowerMinWb55_dBm;
+    hi = kBleTxPowerMaxWb55_dBm;
+  }
+}
 }  // namespace
 
 BleRadioConfig clampBleConfig(const BleRadioConfig& in) {
   BleRadioConfig c = in;
-  if (c.txPower_dBm < kTxPowerMin_dBm) c.txPower_dBm = kTxPowerMin_dBm;
-  if (c.txPower_dBm > kTxPowerMax_dBm) c.txPower_dBm = kTxPowerMax_dBm;
+  if (c.hwModel != BleHwKind::ESP32_INTERNAL_BLE &&
+      c.hwModel != BleHwKind::STM32WB55CGU6_INTERNAL_BLE) {
+    c.hwModel = BleHwKind::ESP32_INTERNAL_BLE;
+  }
+  int8_t lo = 0;
+  int8_t hi = 0;
+  txPowerRange(c.hwModel, lo, hi);
+  if (c.txPower_dBm < lo) c.txPower_dBm = lo;
+  if (c.txPower_dBm > hi) c.txPower_dBm = hi;
   if (c.attMtu < kBleAttMtuMin) c.attMtu = kBleAttMtuMin;
   if (c.attMtu > kBleAttMtuMax) c.attMtu = kBleAttMtuMax;
   if (c.phy != BlePhyMode::LE_1M && c.phy != BlePhyMode::LE_2M) c.phy = BlePhyMode::LE_1M;
+  // 初代 ESP32 僅 BLE 4.2：不支援 LE_2M／Coded PHY，回退 LE_1M（寫回設定，HAL 拿到的就是有效 PHY）
+  if (c.hwModel == BleHwKind::ESP32_INTERNAL_BLE && c.phy == BlePhyMode::LE_2M) {
+    c.phy = BlePhyMode::LE_1M;
+  }
   return c;
 }
 
@@ -44,7 +61,7 @@ bool BleLinkCore::init() {
 bool BleLinkCore::selftestLoopback() { return m_started && m_hal.stackAlive() && m_hal.selftest(); }
 
 bool BleLinkCore::ready() {
-  // 「有沒有連線」不算 ready 條件（見檔頭）；只看 CPU2 堆疊活著
+  // 「有沒有連線」不算 ready 條件（見檔頭）；只看協定堆疊活著
   return m_started && m_hal.stackAlive();
 }
 
@@ -81,7 +98,7 @@ int32_t BleLinkCore::writeFrame(const uint8_t* data, uint32_t len) {
     return 0;
   }
   if (m_txLen > 0) {
-    ++m_busyDrops;  // 上一幀還沒送完：不排隊（排隊屬 ComQueue），直接丟
+    ++m_busyDrops;  // 上一幀還沒送完：不排隊（排隊屬 ComQueue／外殼 TX 佇列），直接丟
     return 0;
   }
   for (uint32_t i = 0; i < len; ++i) m_txBuf[i] = data[i];
@@ -104,7 +121,7 @@ void BleLinkCore::flushTx() {
     frag[0] = hdr;
     for (uint32_t i = 0; i < n; ++i) frag[1 + i] = m_txBuf[m_txOff + i];
     if (!m_hal.notify(frag, static_cast<uint16_t>(n + 1u))) {
-      return;  // CPU2 緩衝滿：下一拍 service() 再送
+      return;  // HAL／堆疊緩衝滿：下一拍 service() 再送
     }
     ++m_fragmentsSent;
     m_txSeq = static_cast<uint8_t>((m_txSeq + 1u) & kBleFragSeqMask);
@@ -146,6 +163,7 @@ void BleLinkCore::onRxFragment(const uint8_t* d, uint32_t n) {
   m_rxExpectSeq = static_cast<uint8_t>((seq + 1u) & kBleFragSeqMask);
 
   if (m_rxAsmLen + plen > kBleMaxFrame) {
+    ++m_rxOverflowDrops;  // 重組超過最大幀緩衝
     dropPartialRx();
     return;
   }
@@ -172,9 +190,13 @@ void BleLinkCore::pollRx() {
   uint8_t frag[kBleAttMtuMax];
   // 每拍最多處理固定片數，避免單拍時間失控
   for (int k = 0; k < 16; ++k) {
-    const int32_t n = m_hal.pollWrite(frag, static_cast<uint16_t>(sizeof(frag)));
-    if (n <= 0) return;
-    onRxFragment(frag, static_cast<uint32_t>(n));
+    const int32_t raw = m_hal.pollWrite(frag, static_cast<uint16_t>(sizeof(frag)));
+    if (raw <= 0) return;
+    // HAL 若回傳逾限值，夾住再讀，絕不越界
+    const uint32_t n = (static_cast<uint32_t>(raw) > sizeof(frag))
+                           ? static_cast<uint32_t>(sizeof(frag))
+                           : static_cast<uint32_t>(raw);
+    onRxFragment(frag, n);
   }
 }
 

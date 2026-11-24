@@ -1,19 +1,21 @@
 module Components {
 
-  @ BLE 硬體型號 — STM32WB55CGU6 內建 BLE（2.4 GHz；CPU2／Cortex-M0+ 跑 ST 無線堆疊，CPU1 跑本驅動）
-  enum BleHwModel : U8 { STM32WB55CGU6_INTERNAL_BLE = 0 }
+  @ BLE 硬體型號。主線初代 ESP32（ESP32 DevKit U1，內建 BLE 4.2）；備用 STM32WB55CGU6（內建 BLE 5.4）。
+  @ 數值固定：STM32WB55CGU6_INTERNAL_BLE＝0、ESP32_INTERNAL_BLE＝1（不可改既有值）
+  enum BleHwModel : U8 { STM32WB55CGU6_INTERNAL_BLE = 0, ESP32_INTERNAL_BLE = 1 }
 
-  @ BLE 角色：PAD_CHECKOUT_LINK＝發射台／地面檢測近距離鏈路（預設，見 BLE_FEASIBILITY）；
+  @ BLE 角色：PAD_CHECKOUT_LINK＝發射台／地面檢測近距離鏈路（預設）；
   @ AIR_GROUND_LINK＝箭地鏈路（備用，距離需求待評估，主飛行鏈仍為 LoRa RfDriver）
   enum BleHwRole : U8 { PAD_CHECKOUT_LINK = 0, AIR_GROUND_LINK = 1 }
 
-  @ BLE 實體層。STM32WB55 只支援 LE 1M／LE 2M（不支援 LE Coded）
+  @ BLE 實體層。預設 LE_1M。LE_2M 僅 BLE 5+ 晶片可用（例如 STM32WB55）；
+  @ 初代 ESP32 僅支援 LE_1M，設成 LE_2M 會自動回退 LE_1M。兩者都不支援 LE Coded PHY。
   enum BlePhy : U8 { LE_1M = 0, LE_2M = 1 }
 
-  @ BLE 數傳驅動（LoRa RfDriver 的備用傳輸）；Base ID 0x8800（提案，待首席核准）
+  @ 藍牙備用傳輸（BLE）驅動（LoRa RfDriver 的備用；主飛行鏈仍為 LoRa）；Base ID 0x8800
   @ 埠集合與 RfDriver 完全相同 → 拓樸可直接替換 rfDriver 實例；上層 Framer／ComQueue／UplinkAuth 不變
   @ 狀態機沿用 RfDriverCore（OFF→INIT→SELFTEST→READY／FAULT），BLE 切片／重組／掉線在 BleLinkCore
-  @ 硬體存取經 IBleHal（MCU 平台用 STM32_WPAN 實作；未接 HAL 時 INIT 失敗 → FAULT）
+  @ 硬體存取經 IBleHal（平台用 ESP-IDF NimBLE／Bluedroid 或 STM32_WPAN 實作；未接 HAL 時 INIT 失敗 → FAULT）
   passive component BleDriver {
 
     sync input port dataIn: Svc.ComDataWithContext
@@ -33,14 +35,14 @@ module Components {
     command reg port cmdRegOut
     command resp port cmdResponseOut
 
-    @ 硬體型號 — STM32WB55CGU6 內建 BLE
-    param model: BleHwModel default BleHwModel.STM32WB55CGU6_INTERNAL_BLE
+    @ 硬體型號 — 預設主線 ESP32 內建 BLE
+    param model: BleHwModel default BleHwModel.ESP32_INTERNAL_BLE
     @ 角色 — 預設發射台／地面檢測鏈路
     param role: BleHwRole default BleHwRole.PAD_CHECKOUT_LINK
 
-    @ 發射功率 dBm；WB55 可設 −40..+6（AN5270 aci_hal_set_tx_power_level），超出會被夾住
+    @ 發射功率 dBm；依硬體型號夾取（ESP32 −12..+9、STM32WB55 −40..+6）。HAL 可視板級限制再夾。
     param txPower_dBm: I32 default 0
-    @ 實體層；LE_1M 靈敏度較好（datasheet 只給 1M 的 −96 dBm），LE_2M 吞吐較高
+    @ 實體層；預設 LE_1M。LE_2M 僅 BLE 5+ 可用；初代 ESP32 設成 LE_2M 時自動回退 LE_1M
     param phy: BlePhy default BlePhy.LE_1M
     @ 要求的 ATT_MTU（23..247）；247 → 每個 notification 244 B
     param attMtu: U16 default 247
@@ -76,6 +78,7 @@ module Components {
     telemetry RxFrames: U32
     telemetry RxFragErrors: U32
     telemetry RestartCount: U32
+    telemetry RxOverflowDrops: U32
 
     event RfState(fromState: RocketTypes.DrvState, toState: RocketTypes.DrvState) \
       severity activity high format "BleDriver {} -> {}"

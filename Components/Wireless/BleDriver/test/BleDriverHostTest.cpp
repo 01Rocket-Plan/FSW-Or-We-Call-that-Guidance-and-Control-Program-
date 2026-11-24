@@ -1,5 +1,6 @@
 // BleDriverHostTest：RfDriverCore（原封不動）＋BleLinkCore＋BleHalSim。
-// 驗證：握手、沒連線不 FAULT、切片／重組（MTU 247 與 23）、TX 緩衝滿、斷線中途、上行重組、堆疊故障。
+// 驗證：握手、沒連線不 FAULT、切片／重組、TX 回壓不丟幀、斷線中途、上行重組、堆疊故障、
+//       依硬體型號夾功率、ESP32 LE_2M 回退、pollRx 夾住逾限 n、RX overflow。
 #include "Components/Wireless/BleDriver/BleLinkCore.hpp"
 #include "Components/Wireless/BleDriverSim/BleHalSim.hpp"
 #include "Components/Wireless/Framer/FramerCore.hpp"
@@ -40,9 +41,12 @@ class Sink : public IRfSink {
   bool comReady = false;
 };
 
+// 對齊 BleDriver::popFrame：鏈路仍在送上一幀時不要出佇列
 class Txq : public IRfTxQueue {
  public:
+  BleLinkCore* link = nullptr;
   uint32_t popFrame(uint8_t* buf, uint32_t maxLen) override {
+    if (link != nullptr && link->txPending()) return 0;
     if (frames.empty()) return 0;
     std::vector<uint8_t> f = frames.front();
     frames.erase(frames.begin());
@@ -67,6 +71,7 @@ struct Rig {
   RfDriverCore drv{link, sink, txq};
   double t = 0.0;
   explicit Rig(const BleRadioConfig& c = BleRadioConfig{}) {
+    txq.link = &link;
     link.configure(c);
     drv.configure(RfParams{});
     drv.start();
@@ -90,21 +95,76 @@ bool equalLast(const BleHalSim& hal, const std::vector<uint8_t>& f) {
 }
 
 void test_config_clamp() {
+  // 預設＝ESP32：−12..+9 dBm
   BleRadioConfig c;
+  CHECK(c.hwModel == BleHwKind::ESP32_INTERNAL_BLE);
   c.txPower_dBm = 20;
   c.attMtu = 600;
   BleRadioConfig o = clampBleConfig(c);
-  CHECK(o.txPower_dBm == 6);
+  CHECK(o.txPower_dBm == kBleTxPowerMaxEsp32_dBm);
   CHECK(o.attMtu == 247);
   c.txPower_dBm = -100;
   c.attMtu = 5;
   o = clampBleConfig(c);
-  CHECK(o.txPower_dBm == -40);
+  CHECK(o.txPower_dBm == kBleTxPowerMinEsp32_dBm);
   CHECK(o.attMtu == 23);
-  Rig r(c);
+
+  // STM32WB55：−40..+6 dBm
+  c = BleRadioConfig{};
+  c.hwModel = BleHwKind::STM32WB55CGU6_INTERNAL_BLE;
+  c.txPower_dBm = 20;
+  o = clampBleConfig(c);
+  CHECK(o.txPower_dBm == kBleTxPowerMaxWb55_dBm);
+  c.txPower_dBm = -100;
+  o = clampBleConfig(c);
+  CHECK(o.txPower_dBm == kBleTxPowerMinWb55_dBm);
+  // 邊界：+6、−40 原樣；ESP32 的 +9 在 WB55 上要夾到 +6
+  c.txPower_dBm = 6;
+  o = clampBleConfig(c);
+  CHECK(o.txPower_dBm == 6);
+  c.txPower_dBm = 9;
+  o = clampBleConfig(c);
+  CHECK(o.txPower_dBm == kBleTxPowerMaxWb55_dBm);
+
+  // HAL 拿到的是夾過的值（WB55 −40）
+  BleRadioConfig init = BleRadioConfig{};
+  init.hwModel = BleHwKind::STM32WB55CGU6_INTERNAL_BLE;
+  init.txPower_dBm = -100;
+  Rig r(init);
   r.step(3);
   CHECK(r.hal.startCalls() == 1u);
-  CHECK(r.hal.lastConfig().txPower_dBm == -40);  // HAL 拿到的是夾過的值
+  CHECK(r.hal.lastConfig().txPower_dBm == kBleTxPowerMinWb55_dBm);
+  CHECK(r.hal.lastConfig().hwModel == BleHwKind::STM32WB55CGU6_INTERNAL_BLE);
+}
+
+void test_phy_fallback() {
+  // ESP32 設 LE_2M → 回退 LE_1M（寫回設定，HAL 拿到 LE_1M）
+  BleRadioConfig c;
+  c.hwModel = BleHwKind::ESP32_INTERNAL_BLE;
+  c.phy = BlePhyMode::LE_2M;
+  BleRadioConfig o = clampBleConfig(c);
+  CHECK(o.phy == BlePhyMode::LE_1M);
+  CHECK(o.hwModel == BleHwKind::ESP32_INTERNAL_BLE);
+
+  Rig esp(c);
+  esp.step(3);
+  CHECK(esp.hal.lastConfig().phy == BlePhyMode::LE_1M);
+  CHECK(esp.link.config().phy == BlePhyMode::LE_1M);
+
+  // WB55 保持 LE_2M
+  c.hwModel = BleHwKind::STM32WB55CGU6_INTERNAL_BLE;
+  c.phy = BlePhyMode::LE_2M;
+  o = clampBleConfig(c);
+  CHECK(o.phy == BlePhyMode::LE_2M);
+  Rig wb(c);
+  wb.step(3);
+  CHECK(wb.hal.lastConfig().phy == BlePhyMode::LE_2M);
+  CHECK(wb.link.config().phy == BlePhyMode::LE_2M);
+
+  // ESP32 設 LE_1M 維持不變
+  c.hwModel = BleHwKind::ESP32_INTERNAL_BLE;
+  c.phy = BlePhyMode::LE_1M;
+  CHECK(clampBleConfig(c).phy == BlePhyMode::LE_1M);
 }
 
 void test_ready_without_link_never_faults() {
@@ -145,10 +205,9 @@ void test_frag_mtu23_and_tx_full() {
   r.hal.setLinkUp(true);
   r.step(5);
   CHECK(r.link.fragPayload() == 19u);
-  // 14 片、CPU2 一拍只收 4 片 → 跨 4 拍；RfDriverCore 第 3 拍拿下一幀時上一幀還沒送完 → 忙，丟
+  // 14 片、HAL 一拍只收 4 片 → 跨 4 拍續送
   const std::vector<uint8_t> f = pattern(255, 9);
   r.txq.frames.push_back(f);
-  r.txq.frames.push_back(pattern(30, 1));  // 第一幀還沒送完 → 忙，丟
   r.step(1);
   CHECK(r.link.txPending());
   CHECK(r.hal.notifyRejectedFull() >= 1u);
@@ -157,7 +216,35 @@ void test_frag_mtu23_and_tx_full() {
   CHECK(r.hal.peerFrames() == 1u);
   CHECK(r.hal.peerFragments() == 14u);
   CHECK(equalLast(r.hal, f));
-  CHECK(r.link.busyDrops() == 1u);
+  CHECK(r.drv.sentFrames() == 1u);
+  CHECK(r.hal.peerFragErrors() == 0u);
+}
+
+void test_tx_busy_does_not_drop_or_overcount() {
+  BleRadioConfig c;
+  Rig r(c);
+  r.hal.setNegotiatedMtu(23);
+  r.hal.setTxSlotsPerTick(4);
+  r.hal.setLinkUp(true);
+  r.step(5);
+  const std::vector<uint8_t> f1 = pattern(255, 9);
+  const std::vector<uint8_t> f2 = pattern(30, 1);
+  r.txq.frames.push_back(f1);
+  r.txq.frames.push_back(f2);
+  r.step(1);
+  CHECK(r.link.txPending());
+  CHECK(r.hal.notifyRejectedFull() >= 1u);
+  CHECK(r.txq.frames.size() == 1u);  // 第二幀仍在佇列，沒被 pop 丟掉
+  CHECK(r.link.busyDrops() == 0u);
+  CHECK(r.drv.sentFrames() == 0u);
+  r.step(20);
+  CHECK(!r.link.txPending());
+  CHECK(r.txq.frames.empty());
+  CHECK(r.link.busyDrops() == 0u);
+  CHECK(r.hal.peerFrames() == 2u);
+  CHECK(r.drv.sentFrames() == 2u);  // 兩幀各計一次，沒有多計
+  CHECK(r.drv.txDroppedCount() == 0u);
+  CHECK(equalLast(r.hal, f2));
   CHECK(r.hal.peerFragErrors() == 0u);
 }
 
@@ -270,7 +357,7 @@ void test_stack_faults() {
     r.hal.setLinkUp(true);
     r.step(5);
     CHECK(r.drv.state() == DrvState::READY);
-    r.hal.setFault(BleSimFault::STACK_DEAD);  // CPU2 當掉 → readyDeadline_s 後 FAULT（與 LoRa 一致）
+    r.hal.setFault(BleSimFault::STACK_DEAD);  // 堆疊當掉 → readyDeadline_s 後 FAULT（與 LoRa 一致）
     r.step(100);
     CHECK(r.drv.state() == DrvState::READY);
     r.step(500);
@@ -291,6 +378,72 @@ void test_stack_faults() {
   }
 }
 
+void test_pollrx_clamps_oversize_n() {
+  // HAL 填滿 maxLen 後回傳更大的 n：BleLinkCore 必須夾住，不越界讀
+  class OversizeHal final : public IBleHal {
+   public:
+    int polled = 0;
+    bool stackStart(const BleRadioConfig&) override { return true; }
+    bool stackAlive() override { return true; }
+    bool selftest() override { return true; }
+    bool linkUp() override { return true; }
+    uint16_t attMtu() override { return kBleAttMtuMax; }
+    bool notify(const uint8_t*, uint16_t) override { return true; }
+    int32_t pollWrite(uint8_t* data, uint16_t maxLen) override {
+      if (polled++ > 0) return 0;
+      if (data == nullptr || maxLen < 2u) return 0;
+      data[0] = static_cast<uint8_t>(kBleFragFirst | kBleFragLast | 0u);
+      data[1] = 0xA5;
+      for (uint16_t i = 2; i < maxLen; ++i) data[i] = 0;
+      return static_cast<int32_t>(maxLen) + 16;  // 故意大於 sizeof(frag)
+    }
+  } hal;
+
+  BleLinkCore link(hal);
+  link.configure(BleRadioConfig{});
+  CHECK(link.init());
+  CHECK(hal.linkUp());
+  link.service();
+  CHECK(link.rxFrames() == 1u);
+  uint8_t buf[kBleAttMtuMax];
+  const int32_t n = link.readBytes(buf, sizeof(buf));
+  CHECK(n == static_cast<int32_t>(kBleAttMtuMax - 1u));  // 夾到 sizeof(frag) 後扣 1 B 片頭
+  CHECK(n > 0 && buf[0] == 0xA5);
+}
+
+void test_rx_overflow_counts() {
+  Rig r;
+  r.hal.setLinkUp(true);
+  r.step(5);
+  const uint16_t pay = r.link.fragPayload();  // 243 @ MTU 247
+  CHECK(pay >= 30u);
+
+  // 重組超過 kBleMaxFrame（512）：243+243+30＝516
+  auto push = [&](uint8_t hdr, uint32_t plen, uint8_t seed) {
+    std::vector<uint8_t> f(1u + plen);
+    f[0] = hdr;
+    for (uint32_t i = 0; i < plen; ++i) f[1u + i] = static_cast<uint8_t>(seed + i);
+    CHECK(r.hal.peerWriteFragment(f.data(), static_cast<uint16_t>(f.size())));
+  };
+  push(static_cast<uint8_t>(kBleFragFirst | 0u), pay, 1);
+  push(static_cast<uint8_t>(1u), pay, 2);
+  push(static_cast<uint8_t>(kBleFragLast | 2u), 30u, 3);
+  r.step(1);
+  CHECK(r.link.rxOverflowDrops() >= 1u);
+  CHECK(r.link.rxFrames() == 0u);
+  CHECK(r.sink.uplink.empty());
+  const uint32_t ov1 = r.link.rxOverflowDrops();
+
+  // FIFO 滿（容量 1024）：兩幀 512 B 裝滿，第三幀完整到達卻放不下
+  const auto big = pattern(kBleMaxFrame, 7);
+  CHECK(r.hal.peerWriteFrame(big.data(), static_cast<uint32_t>(big.size()), pay));
+  CHECK(r.hal.peerWriteFrame(big.data(), static_cast<uint32_t>(big.size()), pay));
+  const auto small = pattern(20, 11);
+  CHECK(r.hal.peerWriteFrame(small.data(), static_cast<uint32_t>(small.size()), pay));
+  r.step(1);
+  CHECK(r.link.rxOverflowDrops() == ov1 + 1u);
+  CHECK(r.link.rxFrames() == 2u);
+}
 
 // Framer 幀原封不動走 BLE：下行 TLM 滿載幀（255 B，MTU 23 → 14 片）＋上行 CMD 幀；CRC 在對端仍對得上
 void test_framer_frames_end_to_end() {
@@ -349,14 +502,18 @@ int BleDriverLegacyMain() {
     void (*fn)();
   } tests[] = {
       {"config_clamp", test_config_clamp},
+      {"phy_fallback", test_phy_fallback},
       {"ready_without_link_never_faults", test_ready_without_link_never_faults},
       {"frag_mtu247", test_frag_mtu247},
       {"frag_mtu23_and_tx_full", test_frag_mtu23_and_tx_full},
+      {"tx_busy_does_not_drop_or_overcount", test_tx_busy_does_not_drop_or_overcount},
       {"link_loss_mid_frame_and_reconnect", test_link_loss_mid_frame_and_reconnect},
       {"auto_link_flap_counts", test_auto_link_flap_counts},
       {"uplink_reassembly", test_uplink_reassembly},
       {"uplink_gap_and_missing_last", test_uplink_gap_and_missing_last},
       {"stack_faults", test_stack_faults},
+      {"pollrx_clamps_oversize_n", test_pollrx_clamps_oversize_n},
+      {"rx_overflow_counts", test_rx_overflow_counts},
       {"framer_frames_end_to_end", test_framer_frames_end_to_end},
   };
   for (const T& t : tests) {

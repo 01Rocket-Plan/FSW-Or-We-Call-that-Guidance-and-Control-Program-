@@ -1,5 +1,7 @@
-# BleDriver — Base ID 0x8800（提案，待首席核准）。Hardware model STM32WB55CGU6_INTERNAL_BLE。
-# LoRa RfDriver（0x8400）的備用傳輸：埠集合與 RfDriver 相同，拓樸換實例即可；RfDriverCore 原檔共用、不改。
+# BleDriver — 藍牙備用傳輸（BLE），Base ID 0x8800。Sim 為 BleDriverSim 0x8880。
+# 埠集合與 RfDriver（0x8400，LoRa 主鏈）相同，拓樸換實例即可；RfDriverCore 原檔共用、不改。
+# 硬體型號：ESP32_INTERNAL_BLE（預設，初代 ESP32／BLE 4.2）或 STM32WB55CGU6_INTERNAL_BLE（BLE 5.4）。
+# IBleHal 後端由平台實作：ESP-IDF NimBLE／Bluedroid，或 STM32_WPAN。
 # 目前不放進任何部署拓樸（主鏈仍是 LoRa）；選用時在部署的 instances.fpp 把 rfDriver 換成 bleDriver。
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/BleDriver.fpp"

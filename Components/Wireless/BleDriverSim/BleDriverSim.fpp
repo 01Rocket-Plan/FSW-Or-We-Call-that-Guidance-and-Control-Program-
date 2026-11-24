@@ -1,8 +1,8 @@
 module Components {
 
-  @ BLE 數傳 Sim；Base ID 0x8880（＝0x8800+0x80；提案，待首席核准）
+  @ 藍牙備用傳輸（BLE）Sim；Base ID 0x8880（＝0x8800+0x80）
   @ 埠集合與 BleDriver／RfDriver 相同，可替換拓樸實例；不宣告硬體型號／角色。
-  @ 不得讀取任何 truth／飛行狀態；連線／斷線／MTU／CPU2 緩衝由 prm 注入（BleHalSim）。
+  @ 不得讀取任何 truth／飛行狀態；連線／斷線／MTU／HAL 緩衝由 prm 注入（BleHalSim）。
   passive component BleDriverSim {
 
     sync input port dataIn: Svc.ComDataWithContext
@@ -30,7 +30,7 @@ module Components {
 
     @ 模擬：協商後 ATT_MTU（23..247）
     param simAttMtu: U16 default 247
-    @ 模擬：CPU2 每拍最多收幾個 notification（滿了 notify 失敗、下一拍續送）
+    @ 模擬：HAL／堆疊每拍最多收幾個 notification（滿了 notify 失敗、下一拍續送）
     param simTxSlotsPerTick: U32 default 8
     @ 模擬：連上後每 N 拍自動斷一次（0＝不斷）
     param simLinkDropEveryTicks: U32 default 0
