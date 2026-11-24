@@ -43,6 +43,9 @@ TSLB=0x04（YUYV 順序）、COM3=0x04（DCW）、COM14=0x11、SCALING_*（PCLK_
 （HSTART／HSTOP／VSTRT／VSTOP，本表沒寫、用晶片預設）是照 Linux 驅動抄的，還沒上機實拍；冷測時對規格書＋拍一張確認
 畫面是 176×144、沒有錯位。YUYV 的 Y 位置（偶數位元組）也在冷測時確認。
 
+**SCCB 時序未建模、待 HIL。** 本驅動沒有 OV7670 的 SCCB 時脈或傳輸時間數字；`../DsCam/CamTiming.hpp` 的 SCCB 數字是
+ESP32-CAM 模組內 OV2640 的，不適用 OV7670。
+
 ## 狀態機（不變）
 `OFF →(POWER_ON) INIT →(表寫完) SELFTEST →(ID 對＋收到測試幀) READY`；任一步錯 → `FAULT`。
 FAULT 後 1 Hz 每 `FAULT_RECOVER_K` 拍重跑 INIT，最多 `FAULT_RECOVER_R` 次，之後 latch，只有 `RESET` 能清。

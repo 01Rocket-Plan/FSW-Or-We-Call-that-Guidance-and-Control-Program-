@@ -3,6 +3,13 @@
 //   - 下級相機 DsCam ＝ ESP32-CAM 模組；OV2640 是這個模組內建的感測器 → 本檔只用 OV2640 的規格。
 //   - 上級（主）相機 UsCam ＝ OV7670（Components/Camera/Ov7670Driver，PR #55），沒有硬體 JPEG，不適用本檔。
 //   - OV3640 只是停在 fork 分支的備援，不在 main，不適用本檔。
+// 解析度（Edward 2026-11-24 決議）：DsCam 完整錄影維持 640×480 JPEG。
+//   - 「144p 灰階 1 fps」是上級 UsCam（OV7670，PR #55，Ov7670Driver.fpp:3），不是 DsCam。
+//   - 「144P（256×144）1～3 FPS」是 DsCam 的地面預覽 IGroundPreviewLink（CamLinkPacket.md），
+//     不是錄影；預覽尚未接線，本檔不模擬。
+// ⚠ 本檔所有 I2C／SCCB 時間都是「規格書計算值，未實測」；實測待 HIL（相機板上機量 SCL 波形）。
+//   OV2640 的 SCCB 數字只適用 ESP32-CAM 模組內部（ESP32↔OV2640）；上級 OV7670 的 SCCB 時序未建模、
+//   不給數字（待 HIL）。
 // 純 constexpr：不配置記憶體、不讀系統時間、不 sleep。數字全部有出處；相機組可再改。
 //
 // 出處：
@@ -34,7 +41,7 @@
 namespace Components {
 namespace CamTiming {
 
-// ---- I2C／SCCB 位元框架 ----
+// ---- I2C／SCCB 位元框架（規格書計算值，未實測；實測待 HIL）----
 //! [UM10204 §3.1.6] 8 資料位元＋1 ACK；[SCCB] 8 資料位元＋1 Don't-Care
 constexpr uint32_t kBusClocksPerByte = 9;
 //! [UM10204 §3.1.10] 一筆交易開頭的位址位元組數（7-bit 位址＋R/W）
@@ -46,7 +53,7 @@ constexpr uint32_t kSccbWritePhases = 3;
 //! 飛控↔ESP32-CAM ICamLink 的 I2C 時脈：repo 既有預設（Esp32CamCore::kDefaultI2cClockHz、
 //! Esp32Cam.fpp I2C_CLOCK_HZ）＝ 400 kHz Fast-mode 上限 [UM10204]
 constexpr uint32_t kCamLinkI2cClockHz = 400000;
-//! ESP32-CAM↔OV2640 SCCB 時脈：[ESPCAM] Kconfig SCCB_CLK_FREQ 預設 100 kHz（相機組可再改）
+//! ESP32-CAM 模組內部 ESP32↔OV2640 SCCB 時脈（只適用 DsCam；OV7670 未建模）：[ESPCAM] Kconfig SCCB_CLK_FREQ 預設 100 kHz（相機組可再改）
 constexpr uint32_t kSccbClockHzDefault = 100000;
 //! [OV2640 Table 9] SCCB 最大時脈 400 kHz
 constexpr uint32_t kOv2640SccbClockHzMax = 400000;

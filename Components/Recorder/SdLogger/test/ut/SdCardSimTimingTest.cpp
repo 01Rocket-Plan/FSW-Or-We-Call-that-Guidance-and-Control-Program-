@@ -4,6 +4,7 @@
 #include "Components/Recorder/SdLogger/SdCardSimDevice.hpp"
 #include "Components/Recorder/SdLogger/SdLoggerCore.hpp"
 #include <gtest/gtest.h>
+#include <cstdint>
 #include <cstring>
 
 using namespace Components;
@@ -223,4 +224,30 @@ TEST(SdCardSimTiming, CardMissingStillAnError) {
   EXPECT_EQ(log.sdErrorCount(), 1u);
   EXPECT_EQ(sink.faults, 1u);
   EXPECT_EQ(log.sdBusyCount(), 0u);
+}
+
+// Edward 提供的數字：每 10 ms 10 萬 B（＝ 10 000 000 B/s，同 SD Class 10／U1）。規格值、非實測。
+// 預設設定下：每個 10 ms 視窗剛好寫進 100 000 B，多 1 B 就 BUSY；100 個視窗（1 s）剛好 10 000 000 B。
+TEST(SdCardSimTiming, EdwardFigure100kBPer10ms) {
+  SdCardSimDevice dev;
+  ASSERT_TRUE(dev.open());
+  static uint8_t rec[1000];  // 整除視窗額度 → 不透支，總量要剛好相等
+  std::memset(rec, 0xA5, sizeof(rec));
+  uint8_t one = 0;
+  uint64_t perWindowMax = 0;
+  uint64_t perWindowMin = UINT64_MAX;
+  for (uint32_t w = 0; w < 100; ++w) {
+    const size_t before = dev.bytesWritten();
+    while (dev.append(rec, sizeof(rec))) {
+    }
+    EXPECT_FALSE(dev.append(&one, 1)) << w;  // 額度用完：多 1 B 也不行
+    EXPECT_EQ(dev.status(), SdMediaStatus::BUSY);
+    const uint64_t got = dev.bytesWritten() - before;
+    perWindowMax = (got > perWindowMax) ? got : perWindowMax;
+    perWindowMin = (got < perWindowMin) ? got : perWindowMin;
+    dev.advance();
+  }
+  EXPECT_EQ(perWindowMin, 100000u);
+  EXPECT_EQ(perWindowMax, 100000u);
+  EXPECT_EQ(dev.bytesWritten(), 10000000u);
 }

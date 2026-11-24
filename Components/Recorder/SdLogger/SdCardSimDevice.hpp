@@ -14,6 +14,9 @@
 //     Repo 只寫卡型 MICRO_SDHC_UHS_I_16GB（SdLogger.fpp），沒寫速度等級；Class 10／U1 是 UHS-I 卡的
 //     最低標示等級，所以用它當保守下限。紀錄組可再改（Class 2/4/6 = 2/4/6 MB/s，U3 = 30 MB/s，
 //     V6/V10/V30/V60/V90 = 6/10/30/60/90 MB/s）。
+//     ＝ 每 10 ms 視窗 100 000 B，和 Edward 提供的數字（每 10 ms 10 萬 B）一致；紀錄組接受此值（2026-11-24）。
+//     ⚠ 這是規格值、不是實測：卡（Edward 的 Micro SDHC UHS-I 16GB）從未量過；ESP32 用 SPI 模式寫 SD
+//     可能遠低於此。待真卡實測：固定區塊大小、連續寫入、記錄每次寫入時間與 BUSY 持續時間。
 //   - windowUs = 10 000 µs：Deployments/DsCam、UsCam 拓樸把 sdLogger.schedIn 接在 rg100Hz。
 //   - 單次寫入的忙碌時間：規格只給上限（SDHC 寫入逾時 250 ms，SD Physical Layer Simplified
 //     Specification §4.6.2 Read, Write and Erase Timeout Conditions；CSD Version 2.0 的 R2W_FACTOR 欄位說明「host … should use 250 ms for write timeout」），沒有典型值 → 不編典型延遲；用 injectBusyWindows() 注入最壞情況
