@@ -124,9 +124,9 @@ void test_tx_timeout() {
   advanceToReady(drv, bus, t);
   txq.push({0x01, 0x02, 0x03, 0x04});
   bus.advance();
-  drv.tick(t);  // start TX
-  // jump past timeout without completing
-  t += 0.010;
+  drv.tick(t);  // start TX（4 B 預設參數 = 30.976 ms → 佔 4 tick）
+  // 只過 1 tick、時間卻跳過「空中時間 + txTimeout_s」→ 逾時（issue #60：逾時從空中時間之後算）
+  t += 1.0;
   bus.advance();
   drv.tick(t);
   assert(drv.txTimeoutCount() >= 1);
@@ -135,8 +135,8 @@ void test_tx_timeout() {
 
 void test_consec_tx_timeout_fault() {
   RfDriverSimDevice bus;
-  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
-  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
+  // sim 一個 tick 設成 1 s：每包在 sim 只佔 1 tick，下一包前就空出來（不會撞佔線）。
+  // Core 用預設 10 ms tick（1 B = 25.856 ms → 3 tick）：只過 1 tick 但時間跳 1 s → 逾時
   bus.setTickPeriodUs(1000000);
   TestSink sink;
   TestTxQueue txq;
@@ -152,7 +152,7 @@ void test_consec_tx_timeout_fault() {
     txq.push({0xAA});
     bus.advance();
     drv.tick(t);
-    t += 0.010;  // exceed timeout
+    t += 1.0;  // 超過「空中時間 + txTimeout_s」
     bus.advance();
     drv.tick(t);
     t += 0.001;
@@ -164,15 +164,16 @@ void test_consec_tx_timeout_fault() {
 
 void test_sim_drop_rate() {
   RfDriverSimDevice bus;
-  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
-  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
-  bus.setTickPeriodUs(1000000);
+  // Core 與 sim 同一份參數，一個 tick 設成 1 s（≥ 這裡任何一包的空中時間）：每包佔 1 tick；
+  // 本測試驗的是計數／掉包，空中時間行為另見 test_airtime_*
   bus.setDropRate(0.5);
   TestSink sink;
   TestTxQueue txq;
   RfDriverCore drv(bus, sink, txq);
   RfParams p;
   p.txTimeout_s = 100.0;
+  p.tickPeriod_us = 1000000;
+  bus.configureFrom(p);
   drv.configure(p);
   drv.start();
   double t = 0.0;
@@ -217,14 +218,14 @@ void test_interface_and_uplink() {
 
 void test_sent_frames() {
   RfDriverSimDevice bus;
-  // 空中時間模型開著，但一個 tick 設成 1 s（≥ 這裡任何一包的空中時間），每包佔 1 tick、下一包前就送完；
-  // 本測試驗的是計數／掉包，佔線行為另見 test_airtime_busy_drops
-  bus.setTickPeriodUs(1000000);
+  // Core 與 sim 同一份參數，一個 tick 設成 1 s：每包佔 1 tick（空中時間行為另見 test_airtime_*）
   TestSink sink;
   TestTxQueue txq;
   RfDriverCore drv(bus, sink, txq);
   RfParams p;
   p.txTimeout_s = 100.0;
+  p.tickPeriod_us = 1000000;
+  bus.configureFrom(p);
   drv.configure(p);
   drv.start();
   double t = 0.0;
@@ -244,14 +245,15 @@ void test_sent_frames() {
   assert(bus.framesRejectedBusy() == 0u);
 }
 
-// LoRa 空中時間開著（預設）：上一包還在空中時，下一包被 sim 拒收 → RfDriverCore 記 TX_FAIL
-void test_airtime_busy_drops() {
-  RfDriverSimDevice bus;  // 預設 SF7／125 kHz／4:5、10 ms tick；5 B 一包 = 30.976 ms → 4 tick
+// LoRa 空中時間（issue #60）：Core 等這一包的空中時間（4 tick）才送下一包 → sim 不會拒收
+void test_airtime_core_waits() {
+  RfDriverSimDevice bus;  // 預設 SF7／125 kHz／4:5／CRC 開、10 ms tick；5 B 一包 = 30.976 ms → 4 tick
   TestSink sink;
   TestTxQueue txq;
   RfDriverCore drv(bus, sink, txq);
   RfParams p;
   p.txTimeout_s = 100.0;
+  bus.configureFrom(p);
   drv.configure(p);
   drv.start();
   double t = 0.0;
@@ -259,14 +261,34 @@ void test_airtime_busy_drops() {
   assert(bus.airtimeTicks(5) == 4u);
   txq.push({1, 2, 3, 4, 5});
   txq.push({6, 7, 8, 9, 10});
-  bus.advance(); drv.tick(t); t += 0.01;  // 送第 1 包（佔 4 tick）
-  bus.advance(); drv.tick(t); t += 0.01;  // Core：視為完成
-  bus.advance(); drv.tick(t); t += 0.01;  // 第 2 包：還在空中 → 拒收
-  assert(bus.framesWritten() == 1u);
-  assert(bus.framesRejectedBusy() == 1u);
-  assert(drv.txDroppedCount() == 1u);
-  assert(hasEvent(sink.events, RfEvent::TX_FAIL));
+  bus.advance(); drv.tick(t); t += 0.01;  // tick 0：送第 1 包
+  assert(drv.lastTxAirtimeTicks() == 4u);
+  for (int k = 1; k < 4; ++k) {          // tick 1..3：還在空中
+    bus.advance(); drv.tick(t); t += 0.01;
+    assert(drv.txInFlight());
+    assert(drv.sentFrames() == 0u);
+    assert(!sink.lastComReady);
+  }
+  bus.advance(); drv.tick(t); t += 0.01;  // tick 4：第 1 包完成，同一 tick 送第 2 包
+  assert(drv.sentFrames() == 1u);
+  assert(bus.framesWritten() == 2u);
+  assert(bus.framesRejectedBusy() == 0u);
+  assert(drv.txDroppedCount() == 0u);
+  assert(!hasEvent(sink.events, RfEvent::TX_FAIL));
   assert(drv.state() == DrvState::READY);
+}
+
+// 無效 LoRa 組合（SF6＋顯式標頭）→ start() 直接 FAULT
+void test_invalid_lora_params_fault() {
+  RfDriverSimDevice bus;
+  TestSink sink;
+  TestTxQueue txq;
+  RfDriverCore drv(bus, sink, txq);
+  RfParams p;
+  p.spreadingFactor = 6;
+  drv.configure(p);
+  drv.start();
+  assert(drv.state() == DrvState::FAULT);
 }
 
 void test_init_deadline() {
@@ -295,8 +317,9 @@ static int RfDriverLegacyMain() {
   test_interface_and_uplink();
   test_sent_frames();
   test_init_deadline();
-  test_airtime_busy_drops();
-  std::printf("RfDriverHostTest: all 10 tests passed\n");
+  test_airtime_core_waits();
+  test_invalid_lora_params_fault();
+  std::printf("RfDriverHostTest: all 11 tests passed\n");
   return 0;
 }
 

@@ -15,6 +15,7 @@ $CXX -std=c++14 -DHOST_TEST_MAIN -I"$ROOT" -Wall -Wextra -Wpedantic \
   "$W/BleDriver/BleLinkCore.cpp" \
   "$W/BleDriverSim/BleHalSim.cpp" \
   "$W/RfDriver/RfDriverCore.cpp" \
+  "$W/RfDriver/LoraTimeOnAir.cpp" \
   "$W/Framer/FramerCore.cpp" \
   -o /tmp/bledriver_host_test
 /tmp/bledriver_host_test

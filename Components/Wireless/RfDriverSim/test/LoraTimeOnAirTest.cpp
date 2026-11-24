@@ -12,14 +12,15 @@ namespace {
 constexpr double kTol_us = 1e-6;
 }
 
-TEST(LoraTimeOnAir, ResetDefaultsMatchDatasheetRegisterTable) {
+TEST(LoraTimeOnAir, ProjectDefaults) {
+  // 預設：SF7／125 kHz／4:5（Edward 定案）；前導 8／顯式標頭／CRC 開（待 Edward 定）
   const LoraModemConfig c{};
   EXPECT_EQ(c.sf, 7u);
   EXPECT_EQ(c.bw_Hz, 125000u);
   EXPECT_EQ(c.cr, 1u);
   EXPECT_EQ(c.preambleLen, 8u);
   EXPECT_TRUE(c.explicitHeader);
-  EXPECT_FALSE(c.crcOn);
+  EXPECT_TRUE(c.crcOn);
   EXPECT_TRUE(loraConfigValid(c));
   EXPECT_EQ(loraLowDataRateOptimize(c), 0u);  // Tsym 1.024 ms < 16 ms
 }
@@ -36,7 +37,8 @@ TEST(LoraTimeOnAir, SymbolTime) {
 TEST(LoraTimeOnAir, Sf7Bw125Cr45_255B_CrcOff) {
   // num = 8·255 − 28 + 28 + 0 − 0 = 2040；den = 28；ceil(72.86) = 73；npayload = 8 + 73·5 = 373
   // T = (8 + 4.25 + 373) · 1024 µs = 394 496 µs
-  const LoraModemConfig c{};
+  LoraModemConfig c{};
+  c.crcOn = false;
   EXPECT_EQ(loraPayloadSymbols(c, 255), 373u);
   EXPECT_NEAR(loraTimeOnAir_us(c, 255), 394496.0, kTol_us);
 }
@@ -103,6 +105,7 @@ TEST(LoraTimeOnAir, Sf12Bw125_13B_CrcOn) {
 TEST(LoraTimeOnAir, CodingRateAndImplicitHeader) {
   // CR 4/8：num = 2040，ceil = 73，npayload = 8 + 73·8 = 592；T = (12.25 + 592)·1024 = 618 752 µs
   LoraModemConfig c{};
+  c.crcOn = false;
   c.cr = 4;
   EXPECT_EQ(loraPayloadSymbols(c, 255), 592u);
   EXPECT_NEAR(loraTimeOnAir_us(c, 255), 618752.0, kTol_us);
@@ -135,13 +138,13 @@ TEST(LoraTimeOnAir, RejectsInvalid) {
 }
 
 TEST(RfDriverSimDevice, AirtimeOccupiesChannel255B) {
-  // 預設 10 ms tick：394.496 ms → ceil(39.4496) = 40 tick
+  // 預設（CRC 開）10 ms tick：399.616 ms → ceil(39.9616) = 40 tick
   RfDriverSimDevice dev;
   ASSERT_TRUE(dev.init());
   EXPECT_EQ(dev.airtimeTicks(255), 40u);
   uint8_t buf[255] = {};
   EXPECT_EQ(dev.writeFrame(buf, 255), 255);
-  EXPECT_EQ(dev.lastAirtimeUs(), 394496u);
+  EXPECT_EQ(dev.lastAirtimeUs(), 399616u);
   EXPECT_TRUE(dev.ready());  // ready() 不表示佔線（見 RfDriverSimDevice.hpp）
   for (uint32_t i = 1; i < 40; ++i) {
     dev.advance();
@@ -158,7 +161,7 @@ TEST(RfDriverSimDevice, AirtimeOccupiesChannel255B) {
 TEST(RfDriverSimDevice, TickPeriodAndParamsChangeAirtime) {
   RfDriverSimDevice dev;
   dev.setTickPeriodUs(1000);  // 1 kHz 只是換算用，不代表要掛 1 kHz
-  EXPECT_EQ(dev.airtimeTicks(255), 395u);  // ceil(394.496)
+  EXPECT_EQ(dev.airtimeTicks(255), 400u);  // ceil(399.616)
   LoraModemConfig c{};
   c.sf = 12;
   c.crcOn = true;

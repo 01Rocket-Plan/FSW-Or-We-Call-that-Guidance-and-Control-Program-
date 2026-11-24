@@ -11,7 +11,7 @@ echo "== RfDriver host =="
 $CXX -std=c++17 -DHOST_TEST_MAIN -I"$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" -Wall -Wextra -I"$RF" -I"$RS" \
   "$RF/test/RfDriverHostTest.cpp" \
   "$RF/RfDriverCore.cpp" \
-  "$RS/LoraTimeOnAir.cpp" \
+  "$RF/LoraTimeOnAir.cpp" \
   "$RS/RfDriverSimDevice.cpp" \
   -o /tmp/rfdriver_host_test
 /tmp/rfdriver_host_test

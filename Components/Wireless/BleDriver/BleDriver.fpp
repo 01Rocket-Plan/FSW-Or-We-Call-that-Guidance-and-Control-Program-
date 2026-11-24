@@ -54,6 +54,8 @@ module Components {
     param supervisionTimeout_ms: U16 default 2000
 
     @ 以下與 RfDriver 同義（給 RfDriverCore）
+    @ TX 逾時：預期送完之後再多等的秒數（與 RfDriver 同義）。BLE 由 BleLinkCore 回報送完、
+    @ 不套 LoRa 空中時間，預期送完時間視為 0 → 送出後 txTimeout_s 內最後一片沒被 HAL 收下就算逾時（逾時時清掉這一幀）
     param txTimeout_s: F64 default 1.0
     param initDeadline_s: F64 default 2.0
     param selftestDeadline_s: F64 default 2.0

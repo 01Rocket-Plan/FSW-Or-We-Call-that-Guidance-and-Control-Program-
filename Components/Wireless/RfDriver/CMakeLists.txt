@@ -4,11 +4,15 @@
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/RfDriver.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/RfDriverCore.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/LoraTimeOnAir.cpp"
 )
 set(MOD_DEPS RocketTypes Components_Wireless_Ports)
 register_fprime_module()
 
 # 單元測試（真 F´ UT＋gtest；原 host 測試搬進來）
-set(UT_SOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/test/RfDriverHostTest.cpp")
+set(UT_SOURCE_FILES
+  "${CMAKE_CURRENT_LIST_DIR}/test/RfDriverHostTest.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/test/RfAirtimeTest.cpp"
+)
 set(UT_MOD_DEPS Components_Wireless_RfDriverSim)
 register_fprime_ut()

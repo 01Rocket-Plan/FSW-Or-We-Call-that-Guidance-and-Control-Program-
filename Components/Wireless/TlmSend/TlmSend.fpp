@@ -5,7 +5,8 @@ module Components {
   passive component TlmSend {
 
     sync input port run: Svc.Sched
-    output port pktOut: Svc.ComDataWithContext
+    @ 依優先層輸出：pktOut[0..3] ＝ P1..P4，拓樸接 comQueue.comIn[1..4]（context.comQueueIndex＝層號）
+    output port pktOut: [4] Svc.ComDataWithContext
 
     time get port timeCaller
     param get port prmGetOut

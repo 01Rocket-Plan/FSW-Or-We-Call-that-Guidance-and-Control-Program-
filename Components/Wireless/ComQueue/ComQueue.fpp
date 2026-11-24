@@ -1,7 +1,8 @@
 module Components {
 
   @ 下行優先層（P0 最高；分層表見 README，Edward 2026-11-08 定案）
-  enum ComPriority : U8 {
+  @ （FPP 名用 ComQueuePriority，避免跟 C++ Core 的 Components::ComPriority 撞名）
+  enum ComQueuePriority : U8 {
     @ 關鍵事件＋GNSS fix：模式轉移、指令被拒、ABORT 回覆、SEP 分離、開傘、IMU 失效、低壓卸載；
     @ GNSS fix 只留最新一筆（新 fix 覆蓋未送出的舊 fix）
     P0 = 0
@@ -61,7 +62,7 @@ module Components {
     telemetry DropCountTotal: U32
     telemetry HighWater: U8
 
-    event QueueFullDrop(pri: ComPriority, dropCount: U32) \
+    event QueueFullDrop(pri: ComQueuePriority, dropCount: U32) \
       severity warning low \
       format "comQueue full drop pri={} count={}"
 

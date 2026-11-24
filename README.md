@@ -32,13 +32,13 @@
 
 | 部署 | 1 kHz | 100 Hz | 1 Hz | 看哪裡 |
 |---|---|---|---|---|
-| DsMcu | silImuFeed → estimator → flightMode → controller → actuatorMgr → platform（照資料流排） | baroDriverSim | F´ 標準服務（tlmSend、fileDownlink、comQueue、cmdDisp、health…） | [`topology.fpp`](Deployments/DsMcu/Top/topology.fpp#L71)、[`DsMcuTopology.cpp`](Deployments/DsMcu/Top/DsMcuTopology.cpp#L11) |
+| DsMcu | silImuFeed → estimator → flightMode → controller → actuatorMgr → platform（照資料流排） | baroDriverSim → tlmSend → comQueue → rfDriverSim（無線下行鏈） | F´ 標準服務（CdhCore.tlmSend、fileDownlink、ComCcsds.comQueue、cmdDisp、health…） | [`topology.fpp`](Deployments/DsMcu/Top/topology.fpp#L76)、[`DsMcuTopology.cpp`](Deployments/DsMcu/Top/DsMcuTopology.cpp#L11) |
 | UsMcu | flightMode → platform | （空；usMpu6050／usDht22 尚未接線） | F´ 標準服務 | [`topology.fpp`](Deployments/UsMcu/Top/topology.fpp#L62) |
 | PadMcu | padController | — | F´ 標準服務 | [`topology.fpp`](Deployments/PadMcu/Top/topology.fpp#L59) |
 | DsCam | — | dsCam.sched100Hz、sdLogger | dsCam.sched1Hz、F´ 標準服務 | [`topology.fpp`](Deployments/DsCam/Top/topology.fpp#L59) |
 | UsCam | — | usCam.sched100Hz、sdLogger | usCam.sched1Hz、F´ 標準服務 | [`topology.fpp`](Deployments/UsCam/Top/topology.fpp#L59) |
 
-元件 README 裡預定、但尚未接線的速率：ImuDriver 1 kHz、GnssDriver rg100Hz、TlmSend 在 rg100Hz 用 `rateDiv=10`（P1 約 10 Hz）、UmbilicalLink 10 Hz。DsMcu 尚未接線的連線列在 [`topology.fpp` 的 DsChain 註解](Deployments/DsMcu/Top/topology.fpp#L100)。
+元件 README 裡預定、但尚未接線的速率：ImuDriver 1 kHz、GnssDriver rg100Hz、UmbilicalLink 10 Hz（TlmSend 已在 DsMcu rg100Hz，P1 `rateDiv=10` 約 10 Hz）。DsMcu 尚未接線的連線列在 [`topology.fpp` 的 DsChain 註解](Deployments/DsMcu/Top/topology.fpp#L108)。
 
 ### 飛控（MCU）
 | 看什麼 | 路徑 | 說明 |
@@ -79,11 +79,12 @@
 | 下行優先級 P0～P4 | [`ComQueue/README.md` 分層表](Components/Wireless/ComQueue/README.md)、[`ComQueueCore.hpp` `ComPriority`](Components/Wireless/ComQueue/ComQueueCore.hpp#L14)、[`ComQueueCore.cpp`](Components/Wireless/ComQueue/ComQueueCore.cpp) | 同層先進先出、跨層嚴格優先、滿了丟新幀並計數 |
 | 遙測取樣 → 封包 | [`Components/Wireless/TlmSend/`](Components/Wireless/TlmSend/README.md) | 每 APID 的 `rateDiv` |
 | 空中幀格式 | [`Components/Wireless/Framer/`](Components/Wireless/Framer/README.md) | 同步字、長度、標頭、CRC-32；單幀最大酬載 225 B |
-| LoRa 射頻驅動（收發） | [`RfDriverCore.hpp`](Components/Wireless/RfDriver/RfDriverCore.hpp)（接收 `stepRx()`）、[`RfDriverSim/`](Components/Wireless/RfDriverSim/README.md) | Sim 有 LoRa 空中時間模型（[`LoraTimeOnAir.cpp`](Components/Wireless/RfDriverSim/LoraTimeOnAir.cpp)） |
+| LoRa 射頻驅動（收發） | [`RfDriverCore.hpp`](Components/Wireless/RfDriver/RfDriverCore.hpp)（接收 `stepRx()`）、[`RfDriverSim/`](Components/Wireless/RfDriverSim/README.md) | TX 照 LoRa 空中時間才算送完（Core 與 Sim 共用 [`LoraTimeOnAir.cpp`](Components/Wireless/RfDriver/LoraTimeOnAir.cpp)；SF7／125 kHz／4:5） |
+| 藍牙備用傳輸（BLE，ESP32／STM32WB55） | [`Components/Wireless/BleDriver/`](Components/Wireless/BleDriver/README.md)（[`BleLinkCore.hpp`](Components/Wireless/BleDriver/BleLinkCore.hpp)）、[`BleDriverSim/`](Components/Wireless/BleDriverSim/README.md) | 共用 `RfDriverCore`；切片／重組、掉線丟幀；TX 完成由 BleLinkCore 回報，不用 LoRa 空中時間；未放進部署拓樸 |
 | 上行指令驗證、防重放、白名單 | [`Components/Wireless/UplinkAuth/`](Components/Wireless/UplinkAuth/README.md)、[`whitelist/WhitelistGate.hpp`](Components/Wireless/UplinkAuth/whitelist/WhitelistGate.hpp) | ABORT 等上行指令要先過驗證，才會進 FlightMode（`abortValid`） |
 | 地面站接收端：缺口／失聯判斷 | [`tools/GDS/LinkLossView.hpp`](tools/GDS/LinkLossView.hpp)、[`README`](tools/GDS/README.md) | 依 `seq` 算缺口；超過 `lossOfSignal_s`（預設 3 s）沒收到合法幀就標 LOS |
 
-注意：上面這條自家鏈路（TlmSend → ComQueue → Framer → RfDriver、UplinkAuth）**尚未接線**。目前五份 SIL 部署的上下行是 F´ 標準的 `ComCcsds` 子拓樸，經 `Drv.TcpClient`（`comDriver`）連 F´ GDS，見各部署 `topology.fpp` 的 `connections Communications`。程式裡沒有獨立的「地面接收時間窗」排程；跟接收時限有關的是 `lossOfSignal_s`（地面工具）、`groundLinkTimeout_s`／`umbilicalTimeout_s`（發射台）。
+注意：DsMcu 的自家無線**下行**鏈 `tlmSend → comQueue → framer → rfDriverSim` 已接在 rg100Hz（[`topology.fpp` 的 WirelessDownlink](Deployments/DsMcu/Top/topology.fpp#L140)）；**上行**（UplinkAuth）與 P0 事件來源**仍未接線**。目前五份 SIL 部署的上下行是 F´ 標準的 `ComCcsds` 子拓樸，經 `Drv.TcpClient`（`comDriver`）連 F´ GDS，見各部署 `topology.fpp` 的 `connections Communications`。程式裡沒有獨立的「地面接收時間窗」排程；跟接收時限有關的是 `lossOfSignal_s`（地面工具）、`groundLinkTimeout_s`／`umbilicalTimeout_s`（發射台）。
 
 ### 感測、GNSS、相機、紀錄、電源
 | 看什麼 | 路徑 | 說明 |

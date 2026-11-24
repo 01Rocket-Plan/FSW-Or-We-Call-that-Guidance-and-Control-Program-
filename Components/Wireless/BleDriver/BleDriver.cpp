@@ -27,7 +27,10 @@ BleDriver::BleDriver(const char* compName)
       m_txRd(0),
       m_txCount(0),
       m_queueDrops(0),
-      m_rxBuf{} {}
+      m_rxBuf{} {
+  // BLE 不用 LoRa 空中時間：最後一片被 HAL 收下才算送完、斷線作廢直接丟、逾時時清掉半幀（Issue #60）
+  m_core.setTxDoneSource(&m_link);
+}
 
 F64 BleDriver::nowSeconds() {
   const Fw::Time now = this->getTime();

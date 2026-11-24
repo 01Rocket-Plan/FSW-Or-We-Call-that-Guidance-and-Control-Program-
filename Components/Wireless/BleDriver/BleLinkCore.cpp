@@ -49,6 +49,8 @@ bool BleLinkCore::init() {
   // 重新 INIT（RfDriverCore FAULT 後由外殼 start() 再來）也要清乾淨
   m_txLen = 0;
   m_txOff = 0;
+  m_txDoneFlag = false;
+  m_txAbortedFlag = false;
   m_rxInFrame = false;
   m_rxAsmLen = 0;
   m_rxFifoRd = 0;
@@ -77,6 +79,7 @@ void BleLinkCore::onLinkChange(bool up) {
   ++m_linkDownCount;
   if (m_txLen > 0) {
     ++m_txAbortedOnLinkLoss;  // 送一半的幀不跨連線續送
+    m_txAbortedFlag = true;   // 告訴 RfDriverCore：這幀丟了，不用等逾時
     m_txLen = 0;
     m_txOff = 0;
   }
@@ -102,6 +105,8 @@ int32_t BleLinkCore::writeFrame(const uint8_t* data, uint32_t len) {
     return 0;
   }
   for (uint32_t i = 0; i < len; ++i) m_txBuf[i] = data[i];
+  m_txDoneFlag = false;  // 新的一幀：清掉上一幀沒被讀走的旗標
+  m_txAbortedFlag = false;
   m_txLen = len;
   m_txOff = 0;
   flushTx();
@@ -128,8 +133,31 @@ void BleLinkCore::flushTx() {
     m_txOff += n;
   }
   ++m_framesFullySent;
+  m_txDoneFlag = true;
   m_txLen = 0;
   m_txOff = 0;
+}
+
+bool BleLinkCore::takeTxDone() {
+  const bool f = m_txDoneFlag;
+  m_txDoneFlag = false;
+  return f;
+}
+
+void BleLinkCore::abortTx() {
+  if (m_txLen > 0) {
+    ++m_txAbortedOnTimeout;  // 剩下的片不送；對端看到沒有 LAST 的半幀，下一個 FIRST 會丟掉它
+    m_txLen = 0;
+    m_txOff = 0;
+  }
+  m_txDoneFlag = false;
+  m_txAbortedFlag = false;
+}
+
+bool BleLinkCore::takeTxAborted() {
+  const bool f = m_txAbortedFlag;
+  m_txAbortedFlag = false;
+  return f;
 }
 
 void BleLinkCore::dropPartialRx() {

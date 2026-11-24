@@ -16,8 +16,8 @@ tools/sil/build_mcu_sil.sh --run 3              # 建 DsMcu＋UsMcu，各跑 3 �
 | 群組 | 成員（依序） |
 |---|---|
 | **rg1kHz** | `silImuFeed` → `estimator` → `flightMode` → `controller` → `actuatorMgr` → `platform`（最後，踢狗） |
-| rg100Hz | `baroDriverSim` |
-| rg1Hz | tlmSend、fileDownlink、systemResources、comQueue、aggregator、cmdDisp、health、commsBufferManager |
+| rg100Hz（Core 0） | `baroDriverSim` → `tlmSend` → `comQueue` → `rfDriverSim`（無線下行鏈，Issue #60） |
+| rg1Hz | `CdhCore.tlmSend`、`FileHandling.fileDownlink`、systemResources、`ComCcsds.comQueue`、`ComCcsds.aggregator`、`CdhCore.cmdDisp`、`CdhCore.health`、`ComCcsds.commsBufferManager`（這裡的 comQueue 是 F´ ComCcsds 子拓樸的實例，不是 rg100Hz 無線下行鏈的 `comQueue`；tlmSend 同理是 CdhCore 的） |
 
 1 kHz 的順序就是資料流：IMU 先出樣本 → 估態 → 模式（用這拍的估態）→ 控制（用這拍的模式）→ 作動 → 踢狗。
 
@@ -29,7 +29,18 @@ baroDriverSim ─Baro──►│ estimator ─State[0]─► controller ─FinC
                       │                                  ─Mode[1]─► controller
                       │                                  ─SepCmd──► actuatorMgr ─SepCmd──► （待接 sepServoDriver）
                       │                                  ─閂鎖／phase─► nvFlags（RAM 後端）
+
+無線下行鏈（rg100Hz／Core 0，全部 passive，Issue #60）：
+tlmSend ─pktOut[0..3]（P1..P4）─► comQueue.comIn[1..4] ─buffOut─► framer ─framedOut─► rfDriverSim.dataIn
+                                       ▲                                                   │
+                                       └──────────── comStatusOut（忙碌／就緒）─────────────┘
 ```
+
+無線鏈說明：
+- tlmSend → comQueue → framer 之間傳的是 LogicalPacket（`Components/Wireless/Ports/LogicalPacket.hpp`，板內格式），framer 才組成 §2 空中幀。
+- rfDriverSim 收下一幀就回報忙碌，Core 送完才回報就緒；comQueue 忙碌時不吐幀，每拍最多 `maxPktsPerRun` 幀。
+- SIL 用 `rfDriverSim`（0x8480，埠集合跟 `rfDriver` 0x8400 相同）；ESP32 部署換真機 `rfDriver`，連線不變。
+- tlmSend 的頻道輸入（tlmIn）還沒有：目前各 APID 送 4 B 佔位酬載（tlmSend 拍數），只為讓鏈路在 SIL 有幀在跑。
 
 ## 實例與 Base ID
 | 實例 | 元件 | Base ID |
@@ -44,6 +55,10 @@ baroDriverSim ─Baro──►│ estimator ─State[0]─► controller ─FinC
 | flightMode | Mcu.FlightMode（role DS） | 0x1400 |
 | baroDriverSim | Components.BaroDriverSim | 0x4180 |
 | nvFlags | Components.NvFlags（RamNvStore） | 0x6100 |
+| tlmSend | Components.TlmSend | 0x8000 |
+| framer | Components.Framer | 0x8100 |
+| comQueue | Components.ComQueue | 0x8200 |
+| rfDriverSim | Components.RfDriverSim（SIL；真機 RfDriver 0x8400） | 0x8480 |
 | CdhCore／ComCcsds／FileHandling | F´ 子拓樸 | 0x01000000／0x02000000／0x05000000 |
 
 ## SIL 實跑結果（3 s）
@@ -62,5 +77,7 @@ Estimator 墊上對準完成 tilt_rad=0.000000       ← 約開機後 0.6 s（0.
 | `actuatorMgr.sepCmdOut → sepServoDriver(Sim)` | 同上 |
 | `imuDriver(Sim) → estimator.imuIn`（取代 silImuFeed） | `EnvSensingBus.fpp` 沒進 CMake（issue） |
 | `powerMonitor／UvState → actuatorMgr.uvIn、flightMode.uvIn` | PowerMonitor 指令 handler 簽名不合 v4.4.1（issue） |
-| `flightMode.modeOut[2..] → umbilicalLink、sdLogger、tlmSend` | 無線組模組 CMake 未啟用；SdLogger 可以，下一輪接 |
-| `gnssDriver`、`sdLogger`、無線鏈 | 同上 |
+| `flightMode.modeOut[2..] → umbilicalLink、sdLogger` | UmbilicalLink 外殼還沒寫；SdLogger 可以，下一輪接 |
+| tlmSend 頻道輸入（tlmIn）、`comQueue.comIn[0]` ← P0 事件來源 | tlmSend 還沒有 tlmIn 埠；P0 事件來源（flightMode／uplinkAuth…）還沒有輸出埠 |
+| 上行：`rfDriverSim.dataOut → deframer → uplinkAuth` | deframer 還沒有、UplinkAuth 外殼還沒寫 |
+| `gnssDriver`、`sdLogger` | 各組模組還沒接進 DsMcu（下一輪） |
