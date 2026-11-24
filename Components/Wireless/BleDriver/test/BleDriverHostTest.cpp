@@ -73,6 +73,7 @@ struct Rig {
   explicit Rig(const BleRadioConfig& c = BleRadioConfig{}) {
     txq.link = &link;
     link.configure(c);
+    drv.setTxDoneSource(&link);  // 同 BleDriver 外殼：BLE 不用 LoRa 空中時間（Issue #60）
     drv.configure(RfParams{});
     drv.start();
   }
@@ -248,6 +249,64 @@ void test_tx_busy_does_not_drop_or_overcount() {
   CHECK(r.hal.peerFragErrors() == 0u);
 }
 
+void test_tx_done_timeout_and_big_frame() {
+  // BLE 不套 LoRa 255 B 上限：400 B 照送（MTU 247 → 2 片）
+  {
+    Rig r;
+    r.hal.setLinkUp(true);
+    r.step(5);
+    const std::vector<uint8_t> f = pattern(400, 2);
+    r.txq.frames.push_back(f);
+    r.step(2);
+    CHECK(r.hal.peerFrames() == 1u);
+    CHECK(equalLast(r.hal, f));
+    CHECK(r.drv.sentFrames() == 1u);
+    CHECK(r.drv.lastTxAirtimeUs() == 0u);  // 沒有用 LoRa 空中時間
+  }
+  // txTimeout_s＝預期送完（BLE 為 0）之後再等的秒數：傳輸層一直不收 → 送出後 1 s 逾時
+  {
+    Rig r;
+    r.hal.setLinkUp(true);
+    r.step(5);
+    r.hal.setTxSlotsPerTick(0);
+    r.txq.frames.push_back(pattern(40, 3));
+    r.step(100);  // 送出後 0.99 s
+    CHECK(r.drv.txTimeoutCount() == 0u);
+    CHECK(r.drv.txInFlight());
+    r.step(2);    // 超過 1.0 s
+    CHECK(r.drv.txTimeoutCount() == 1u);
+    CHECK(r.sink.has(RfEvent::TX_TIMEOUT));
+  }
+}
+
+// Issue #60 合併前必修：RfDriverCore 判 TX_TIMEOUT 時要通知傳輸層放棄未送完的幀，
+// 否則 BleLinkCore 一直 txPending()、popFrame 永遠被擋，連續逾時到不了 FAULT。
+void test_tx_timeout_clears_frame_and_faults() {
+  Rig r;
+  r.hal.setLinkUp(true);
+  r.step(5);
+  CHECK(r.drv.state() == DrvState::READY);
+  r.hal.setTxSlotsPerTick(0);  // 一直連著，但每次 notify 都失敗（傳輸緩衝永遠滿）
+  for (int k = 0; k < 5; ++k) r.txq.frames.push_back(pattern(40, static_cast<uint8_t>(k)));
+  // 第 1 次逾時：送出後 txTimeout_s（1 s）→ 這一幀被清掉，下一幀可以出佇列
+  r.step(102);
+  CHECK(r.drv.txTimeoutCount() == 1u);
+  CHECK(r.link.txAbortedOnTimeout() == 1u);
+  CHECK(r.drv.state() == DrvState::READY);
+  r.step(1);  // 同一拍或下一拍就拿到下一幀
+  CHECK(r.txq.frames.size() == 3u);
+  CHECK(r.link.txPending());
+  // 再兩次逾時 → 連續 3 次（txTimeoutLimit 預設 3）→ FAULT
+  r.step(250);
+  CHECK(r.drv.txTimeoutCount() == 3u);
+  CHECK(r.link.txAbortedOnTimeout() == 3u);
+  CHECK(r.drv.state() == DrvState::FAULT);
+  CHECK(r.sink.has(RfEvent::TX_TIMEOUT));
+  CHECK(!r.link.txPending());  // FAULT 時也不留半幀
+  CHECK(r.hal.peerFrames() == 0u);
+  CHECK(r.link.linkUp());      // 連線一直都在：是逾時造成 FAULT，不是斷線
+}
+
 void test_link_loss_mid_frame_and_reconnect() {
   Rig r;
   r.hal.setNegotiatedMtu(23);
@@ -264,6 +323,12 @@ void test_link_loss_mid_frame_and_reconnect() {
   CHECK(r.link.linkDownCount() == 1u);
   CHECK(r.hal.peerFrames() == 0u);  // 半幀不交給中心端
   CHECK(r.drv.state() == DrvState::READY);
+  // Issue #60：BleLinkCore 回報作廢 → Core 記丟幀（TX_FAIL），不算送出、也不用等 txTimeout_s
+  CHECK(!r.drv.txInFlight());
+  CHECK(r.drv.sentFrames() == 0u);
+  CHECK(r.drv.txDroppedCount() == 1u);
+  CHECK(r.drv.txTimeoutCount() == 0u);
+  CHECK(r.sink.has(RfEvent::TX_FAIL));
   // 重連後新幀正常
   r.hal.setTxSlotsPerTick(8);
   r.hal.setLinkUp(true);
@@ -274,6 +339,7 @@ void test_link_loss_mid_frame_and_reconnect() {
   CHECK(r.hal.peerFrames() == 1u);
   CHECK(equalLast(r.hal, f));
   CHECK(r.link.linkUpCount() == 2u);
+  CHECK(r.drv.sentFrames() == 1u);
 }
 
 void test_auto_link_flap_counts() {
@@ -507,6 +573,8 @@ int BleDriverLegacyMain() {
       {"frag_mtu247", test_frag_mtu247},
       {"frag_mtu23_and_tx_full", test_frag_mtu23_and_tx_full},
       {"tx_busy_does_not_drop_or_overcount", test_tx_busy_does_not_drop_or_overcount},
+      {"tx_done_timeout_and_big_frame", test_tx_done_timeout_and_big_frame},
+      {"tx_timeout_clears_frame_and_faults", test_tx_timeout_clears_frame_and_faults},
       {"link_loss_mid_frame_and_reconnect", test_link_loss_mid_frame_and_reconnect},
       {"auto_link_flap_counts", test_auto_link_flap_counts},
       {"uplink_reassembly", test_uplink_reassembly},

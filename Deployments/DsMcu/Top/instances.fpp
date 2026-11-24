@@ -51,6 +51,17 @@ module DsMcu {
   @ 環境感測組 BaroDriverSim（BaroDriver 0x4100 + 0x80）
   instance baroDriverSim: Components.BaroDriverSim base id 0x4180
 
+  # ---------------------------------------------------------------- 無線組下行鏈（Issue #60）
+  # 全部 passive，run 掛 rg100Hz（合約 v0.1 §1：鏈路跑 Core 0、rg100Hz）。
+  @ 遙測排程：pktOut[0..3] ＝ P1..P4 → comQueue.comIn[1..4]
+  instance tlmSend: Components.TlmSend base id 0x8000
+  @ 空中幀組幀（§2；單幀上限 255 B）
+  instance framer: Components.Framer base id 0x8100
+  @ P0..P4 下行優先佇列（guarded comIn）
+  instance comQueue: Components.ComQueue base id 0x8200
+  @ SIL 用 RfDriverSim（RfDriver 0x8400 + 0x80，埠集合相同）；真機 RfDriver 在 ESP32 部署換上
+  instance rfDriverSim: Components.RfDriverSim base id 0x8480
+
   @ 電源組 NvFlags；SIL 用 RAM 後端（ESP32 換 NVS 後端）
   instance nvFlags: Components.NvFlags base id 0x6100 \
   {

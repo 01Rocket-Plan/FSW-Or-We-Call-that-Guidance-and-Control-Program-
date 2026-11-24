@@ -102,7 +102,8 @@ constexpr int8_t kBleTxPowerMaxWb55_dBm = 6;
 //!   ATT_MTU 一律 23..247。HAL 可視板級限制再夾功率。
 BleRadioConfig clampBleConfig(const BleRadioConfig& in);
 
-class BleLinkCore final : public IRfBus {
+//! 同時是 RfDriverCore 的 IRfTxDoneSource：BLE 不用 LoRa 空中時間，最後一片被 HAL 收下才算送完（Issue #60）
+class BleLinkCore final : public IRfBus, public IRfTxDoneSource {
  public:
   explicit BleLinkCore(IBleHal& hal);
 
@@ -115,6 +116,16 @@ class BleLinkCore final : public IRfBus {
   int32_t readBytes(uint8_t* data, uint32_t maxLen) override;
   bool selftestLoopback() override;
   bool ready() override;
+
+  // ---- IRfTxDoneSource（RfDriverCore 呼叫；BleDriver 外殼用 setTxDoneSource 接上）
+  //! 最後一片已被 HAL 收下（read-and-clear）
+  bool takeTxDone() override;
+  //! 送到一半斷線、整幀作廢（read-and-clear）
+  bool takeTxAborted() override;
+  //! RfDriverCore 判 TX_TIMEOUT：清掉還沒送完的幀（剩下的片不再送），計 txAbortedOnTimeout
+  void abortTx() override;
+  //! BLE 不套 LoRa 的 255 B／空中時間
+  bool usesLoraAirtime() const override { return false; }
 
   //! 每拍呼叫一次（BleDriver 外殼在 RfDriverCore.tick 之前呼叫）：
   //! 追蹤連線變化、續送未送完的片、收片重組。
@@ -136,6 +147,8 @@ class BleLinkCore final : public IRfBus {
   uint32_t rxFragErrors() const { return m_rxFragErrors; }
   uint32_t rxOverflowDrops() const { return m_rxOverflowDrops; }
   bool txPending() const { return m_txLen > 0; }
+  //! RfDriverCore 判逾時而放棄的幀數（Issue #60）
+  uint32_t txAbortedOnTimeout() const { return m_txAbortedOnTimeout; }
 
  private:
   void flushTx();
@@ -154,6 +167,8 @@ class BleLinkCore final : public IRfBus {
   uint32_t m_txLen = 0;
   uint32_t m_txOff = 0;
   uint8_t m_txSeq = 0;
+  bool m_txDoneFlag = false;     // 一幀送完（給 takeTxDone）
+  bool m_txAbortedFlag = false;  // 一幀因斷線作廢（給 takeTxAborted）
 
   // RX：重組中的幀＋已完成幀的位元組 FIFO（給 readBytes）
   uint8_t m_rxAsm[kBleMaxFrame]{};
@@ -170,6 +185,7 @@ class BleLinkCore final : public IRfBus {
   uint32_t m_noLinkDrops = 0;
   uint32_t m_busyDrops = 0;
   uint32_t m_txAbortedOnLinkLoss = 0;
+  uint32_t m_txAbortedOnTimeout = 0;
   uint32_t m_fragmentsSent = 0;
   uint32_t m_framesFullySent = 0;
   uint32_t m_rxFrames = 0;

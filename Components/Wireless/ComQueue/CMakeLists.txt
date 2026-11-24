@@ -1,9 +1,9 @@
 # ComQueue — Base ID 0x8200。Core host-testable.
-# TODO(無線組)：F´ 外殼 ComQueue.hpp／.cpp（繼承 ComQueueComponentBase、呼叫 Core）— PR #31 合併後補（issue #37-3）。
-# 外殼還沒寫之前，模組照樣用真 F´ 建：FPP 自動碼＋Core 都會編譯，只是還不能放進拓樸。
+# F´ 外殼 ComQueue.hpp／.cpp（繼承 ComQueueComponentBase、呼叫 Core）；DsMcu 拓樸 rg100Hz（Issue #60）。
 set(SOURCE_FILES
   "${CMAKE_CURRENT_LIST_DIR}/ComQueue.fpp"
   "${CMAKE_CURRENT_LIST_DIR}/ComQueueCore.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/ComQueue.cpp"
 )
 register_fprime_module()
 

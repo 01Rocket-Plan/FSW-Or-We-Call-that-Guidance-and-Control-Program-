@@ -32,25 +32,27 @@ module Components {
     param txTimeoutLimit: U32 default 3
 
     param dropRate: F64 default 0.0
+    @ 上行送達延遲（tick）：上行位元組要過幾個 run tick 才讀得到
     param latencyTicks: U32 default 0
     param ber: F64 default 0.0
 
-    @ LoRa 空中時間模型（issue #60）。預設＝Semtech SX1276/77/78 datasheet Rev. 4 §6.4 暫存器 reset 值；無線組可再改
-    @ SpreadingFactor 6..12（reset 7；SF6 只能隱式標頭，§4.1.1.2）
+    @ LoRa 空中時間模型（issue #60）。預設值與 RfDriver 相同：SF7／125 kHz／4:5 已定案（Edward），前導／標頭／CRC 待 Edward 定
+    @ 注意：頻段仍在評估（433 MHz 法規問題），定案後可能換頻段／硬體
+    @ SpreadingFactor 6..12（SF6 只能隱式標頭，Semtech §4.1.1.2）
     param loraSf: U8 default 7
-    @ 頻寬 Hz：7800／10400／15600／20800／31250／41700／62500／125000／250000／500000（reset 125 kHz）
+    @ 頻寬 Hz：7800／10400／15600／20800／31250／41700／62500／125000／250000／500000
     param loraBw_Hz: U32 default 125000
-    @ CodingRate 1..4 ＝ 4/5..4/8（reset 1 ＝ 4/5）
+    @ CodingRate 1..4 ＝ 4/5..4/8
     param loraCr: U8 default 1
-    @ PreambleLength（reset 8；實際前導 = PreambleLength + 4.25 符號，§4.1.1.7）
+    @ PreambleLength（實際前導 = PreambleLength + 4.25 符號，§4.1.1.7）
     param loraPreambleLen: U16 default 8
-    @ 顯式標頭（reset ImplicitHeaderModeOn=0 → true）
+    @ 顯式標頭
     param loraExplicitHeader: bool default true
-    @ 酬載 CRC（reset RxPayloadCrcOn=0 → false）
-    param loraCrcOn: bool default false
+    @ 酬載 CRC（預設開，與 RfDriver 一致）
+    param loraCrcOn: bool default true
     @ LowDataRateOptimize：0 關、1 開、2 自動（Tsym > 16 ms 開，§4.1.1.6）
     param loraLdro: U8 default 2
-    @ 一個 run tick 的 µs；預設 10000（rg100Hz）。RfDriver 掛哪個 rate group 待無線組定
+    @ 一個 run tick 的 µs；預設 10000（DsMcu 接在 rg100Hz，Issue #60 第 4 項）。改 rate group 要一起改
     param tickPeriod_us: U32 default 10000
 
     telemetry State: RocketTypes.DrvState

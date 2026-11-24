@@ -4,7 +4,8 @@
 // Rev. 4 §4.1.1.7）算出這一包要佔幾個 tick；佔線期間再呼叫 writeFrame 回 0（無線電忙、該幀不收），
 // RfDriverCore 會記成 TX_FAIL／TxDroppedCount。ready() 不受佔線影響（RfDriverCore 在 READY 狀態
 // ready()==false 超過 readyDeadline_s 會進 FAULT，所以不能拿 ready() 表示佔線）。
-// 「TX 完成改成等空中時間、不要下一 tick 就完成」是 RfDriverCore 的事（issue #60 第 2 項，無線組）。
+// RfDriverCore 也用同一個公式數 tick 才算送完（沒有 TxDone IRQ 時），兩邊參數一致（configureFrom）就不會撞到佔線。
+// latencyTicks：上行（地面→箭）位元組 pushUplink 之後要再過 latencyTicks 個 advance() 才讀得到。
 #ifndef WIRELESS_RFDRIVERSIMDEVICE_HPP
 #define WIRELESS_RFDRIVERSIMDEVICE_HPP
 
@@ -27,13 +28,17 @@ class RfDriverSimDevice : public IRfBus {
   RfDriverSimDevice();
 
   void setDropRate(double r) { m_dropRate = r; }
+  //! 上行送達延遲（tick）：pushUplink 的位元組要過 n 個 advance() 才讀得到
   void setLatencyTicks(uint32_t n) { m_latencyTicks = n; }
+  uint32_t latencyTicks() const { return m_latencyTicks; }
   void setBer(double b) { m_ber = b; }
   void setFault(RfSimFault f) { m_fault = f; }
   //! LoRa 數據機設定（SF／BW／CR／前導碼／標頭／CRC／LDRO）；預設＝SX1278 reset 值，無線組可再改
   void setModem(const LoraModemConfig& c) { m_modem = c; }
+  //! 跟 RfDriverCore 用同一份 RfParams：數據機設定＋tick 週期
+  void configureFrom(const RfParams& p);
   const LoraModemConfig& modem() const { return m_modem; }
-  //! 一個 advance() 代表多少 µs。預設 10000（rg100Hz）；RfDriver 掛哪個 rate group 還沒定（issue #60 第 4 項）
+  //! 一個 advance() 代表多少 µs。預設 10000（DsMcu 接在 rg100Hz，issue #60 第 4 項）；改 rate group 要一起改
   void setTickPeriodUs(uint32_t us) { m_tickPeriod_us = (us == 0u) ? 1u : us; }
   uint32_t tickPeriodUs() const { return m_tickPeriod_us; }
   //! 關掉空中時間模型（只給只驗掉包／計數的舊測試用；預設開）
@@ -72,6 +77,17 @@ class RfDriverSimDevice : public IRfBus {
   uint32_t m_rng = 0x12345678u;
 
   uint8_t m_uplinkBuf[kUplinkCap]{};
+  // latencyTicks：每次 pushUplink 記一段（累計位元組數、可讀 tick）；段數滿了就併進最後一段（只會更晚，不會提早）
+  struct UplinkSeg {
+    uint32_t endTotal;   // 這段結束時的累計推入位元組數
+    uint32_t readyTick;  // 這段可讀的 tick
+  };
+  static constexpr uint32_t kUplinkSegs = 16;
+  UplinkSeg m_uplinkSeg[kUplinkSegs]{};
+  uint32_t m_uplinkSegRd = 0;
+  uint32_t m_uplinkSegCount = 0;
+  uint32_t m_uplinkPushedTotal = 0;
+  uint32_t m_uplinkReadTotal = 0;
   uint32_t m_uplinkCount = 0;
   uint32_t m_uplinkRd = 0;
 

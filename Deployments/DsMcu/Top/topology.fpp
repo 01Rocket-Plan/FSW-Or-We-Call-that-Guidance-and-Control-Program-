@@ -34,6 +34,11 @@ module DsMcu {
     instance baroDriverSim
     instance nvFlags
 
+    instance tlmSend
+    instance comQueue
+    instance framer
+    instance rfDriverSim
+
     # ------------------------------------------------------------ 樣板連線
     command connections instance CdhCore.cmdDisp
     event connections instance CdhCore.events
@@ -80,9 +85,12 @@ module DsMcu {
       rg1kHz.RateGroupMemberOut[4] -> actuatorMgr.schedIn
       rg1kHz.RateGroupMemberOut[5] -> platform.schedIn
 
-      # 100 Hz
+      # 100 Hz（Core 0）：氣壓；無線下行鏈照資料流順序 tlmSend → comQueue → rfDriverSim（Issue #60）
       rateGroupDriver.CycleOut[Ports_RateGroups.rg100Hz] -> rg100Hz.CycleIn
       rg100Hz.RateGroupMemberOut[0] -> baroDriverSim.schedIn
+      rg100Hz.RateGroupMemberOut[1] -> tlmSend.run
+      rg100Hz.RateGroupMemberOut[2] -> comQueue.run
+      rg100Hz.RateGroupMemberOut[3] -> rfDriverSim.run
 
       # 1 Hz
       rateGroupDriver.CycleOut[Ports_RateGroups.rg1Hz] -> rg1Hz.CycleIn
@@ -124,8 +132,25 @@ module DsMcu {
       #   actuatorMgr.servoCmdOut → servoDriverSim.cmdIn
       #   actuatorMgr.sepCmdOut   → sepServoDriverSim.cmdIn
       #   powerMonitor UvState    → actuatorMgr.uvIn／flightMode.uvIn
-      #   flightMode.modeOut[2..] → umbilicalLink／sdLogger／tlmSend
+      #   flightMode.modeOut[2..] → umbilicalLink／sdLogger（tlmSend 的頻道輸入 tlmIn 埠還沒有，見 WirelessDownlink）
       #   umbilicalLink.padStatusOut → flightMode.padStatusIn（FM-03 架安檢；UmbilicalLink 外殼還沒寫，#37-3）
+    }
+
+    # ------------------------------------------------------------ 無線下行鏈（Issue #60）
+    connections WirelessDownlink {
+      # tlmSend 依優先層輸出 → comQueue 對應層（P0 留給關鍵事件來源）
+      tlmSend.pktOut[0] -> comQueue.comIn[1]
+      tlmSend.pktOut[1] -> comQueue.comIn[2]
+      tlmSend.pktOut[2] -> comQueue.comIn[3]
+      tlmSend.pktOut[3] -> comQueue.comIn[4]
+
+      # comQueue → framer → rfDriverSim；rfDriverSim 忙碌／就緒回 comQueue
+      comQueue.buffOut -> framer.comIn
+      framer.framedOut -> rfDriverSim.dataIn
+      rfDriverSim.comStatusOut -> comQueue.comStatusIn
+
+      # 待接：rfDriverSim.dataOut → deframer → uplinkAuth（上行）；comQueue.comIn[0] ← P0 事件來源；
+      #       tlmSend 的頻道輸入（tlmIn，合約 §9）；rfDriverSim.healthOut → 健康監看
     }
 
   }

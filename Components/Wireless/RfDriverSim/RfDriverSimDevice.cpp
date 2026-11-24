@@ -22,13 +22,13 @@ bool RfDriverSimDevice::init() {
   return true;
 }
 
+void RfDriverSimDevice::configureFrom(const RfParams& p) {
+  m_modem = loraConfigFromRfParams(p);
+  setTickPeriodUs(p.tickPeriod_us);
+}
+
 uint32_t RfDriverSimDevice::airtimeTicks(uint32_t len) const {
-  const double toa_us = loraTimeOnAir_us(m_modem, len);
-  if (toa_us <= 0.0) return 0u;
-  const double ticks = toa_us / static_cast<double>(m_tickPeriod_us);
-  uint32_t n = static_cast<uint32_t>(ticks);
-  if (static_cast<double>(n) < ticks) ++n;  // ceil
-  return n;
+  return loraAirtimeTicks(m_modem, len, m_tickPeriod_us);  // ceil(ToA / tickPeriod)，整數運算
 }
 
 int32_t RfDriverSimDevice::writeFrame(const uint8_t* data, uint32_t len) {
@@ -46,8 +46,9 @@ int32_t RfDriverSimDevice::writeFrame(const uint8_t* data, uint32_t len) {
       return 0;
     }
     // 無線電佔線從這一包送出開始算；sim 掉包＝空中遺失，仍然佔用空中時間
-    m_busyUntilTick = m_ticks + n;
-    m_lastAirtime_us = static_cast<uint32_t>(loraTimeOnAir_us(m_modem, len));
+    m_busyUntilTick = (n > 0xFFFFFFFFu - m_ticks) ? 0xFFFFFFFFu : m_ticks + n;  // 飽和加法
+    const uint64_t toa = loraTimeOnAirUs(m_modem, len);
+    m_lastAirtime_us = (toa > 0xFFFFFFFFull) ? 0xFFFFFFFFu : static_cast<uint32_t>(toa);
   }
   if (m_dropRate > 0.0) {
     const double r = static_cast<double>(rng() % 1000000u) / 1000000.0;
@@ -65,19 +66,32 @@ int32_t RfDriverSimDevice::writeFrame(const uint8_t* data, uint32_t len) {
   }
   if (corrupted) ++m_framesCorrupted;
   (void)data;
-  (void)m_latencyTicks;  // 延遲由上層 tick 節奏體現；此處僅保留參數
   ++m_framesWritten;
   return static_cast<int32_t>(len);
 }
 
 int32_t RfDriverSimDevice::readBytes(uint8_t* data, uint32_t maxLen) {
-  if (m_uplinkCount == 0) return 0;
-  const uint32_t n = m_uplinkCount < maxLen ? m_uplinkCount : maxLen;
+  // 丟掉已經讀完的段；找出目前可讀到哪個累計位元組（latencyTicks）
+  while (m_uplinkSegCount > 0 &&
+         (m_uplinkSeg[m_uplinkSegRd].endTotal - m_uplinkReadTotal) == 0u) {
+    m_uplinkSegRd = (m_uplinkSegRd + 1u) % kUplinkSegs;
+    --m_uplinkSegCount;
+  }
+  uint32_t readable = 0;  // 從 m_uplinkReadTotal 起算可讀的位元組數
+  for (uint32_t k = 0; k < m_uplinkSegCount; ++k) {
+    const UplinkSeg& seg = m_uplinkSeg[(m_uplinkSegRd + k) % kUplinkSegs];
+    if (seg.readyTick > m_ticks) break;
+    readable = seg.endTotal - m_uplinkReadTotal;  // 無號差：累計值繞回也正確
+  }
+  if (readable > m_uplinkCount) readable = m_uplinkCount;
+  if (readable == 0) return 0;
+  const uint32_t n = readable < maxLen ? readable : maxLen;
   for (uint32_t i = 0; i < n; ++i) {
     data[i] = m_uplinkBuf[(m_uplinkRd + i) % kUplinkCap];
   }
   m_uplinkRd = (m_uplinkRd + n) % kUplinkCap;
   m_uplinkCount -= n;
+  m_uplinkReadTotal += n;
   return static_cast<int32_t>(n);
 }
 
@@ -92,12 +106,29 @@ bool RfDriverSimDevice::ready() {
 }
 
 void RfDriverSimDevice::pushUplink(const uint8_t* data, uint32_t len) {
+  uint32_t accepted = 0;
   for (uint32_t i = 0; i < len; ++i) {
     if (m_uplinkCount >= kUplinkCap) break;
     const uint32_t wr = (m_uplinkRd + m_uplinkCount) % kUplinkCap;
     m_uplinkBuf[wr] = data[i];
     ++m_uplinkCount;
+    ++accepted;
   }
+  if (accepted == 0) return;
+  m_uplinkPushedTotal += accepted;
+  // 飽和加法：避免 m_ticks + latency 溢位
+  const uint32_t ready = (m_latencyTicks > 0xFFFFFFFFu - m_ticks) ? 0xFFFFFFFFu : m_ticks + m_latencyTicks;
+  if (m_uplinkSegCount == kUplinkSegs) {
+    // 段數滿：併進最後一段（可讀時間取較晚者，不會讓位元組提早送達）
+    UplinkSeg& last = m_uplinkSeg[(m_uplinkSegRd + m_uplinkSegCount - 1u) % kUplinkSegs];
+    last.endTotal = m_uplinkPushedTotal;
+    if (ready > last.readyTick) last.readyTick = ready;
+    return;
+  }
+  UplinkSeg& seg = m_uplinkSeg[(m_uplinkSegRd + m_uplinkSegCount) % kUplinkSegs];
+  seg.endTotal = m_uplinkPushedTotal;
+  seg.readyTick = ready;
+  ++m_uplinkSegCount;
 }
 
 }  // namespace Components
