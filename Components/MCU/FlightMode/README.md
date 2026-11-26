@@ -24,9 +24,9 @@
 | FM-09 | LIFTOFF → BOOST_PASSIVE | `tick` L286–288 | ✅ |
 | FM-10 | BOOST_PASSIVE → BOOST_ACTIVE | `tick` L289–293 | ✅ |
 | FM-11 | 燃盡 → COAST | `_maybe_coast` L374–391 | ✅ |
-| FM-12 | 分離 | `_maybe_sep` L393–410 | ✅ **進 COAST 後 4 s 分離**（Edward 2026-11-14 暫定；0.8 s 抑制窗保留；`sep_ok` 恆 false） |
+| FM-12 | 分離 | `_maybe_sep` L393–410 | ✅ **進 COAST 後 3 s 分離**（Edward 授權，Issue #73；原 4 s；0.8 s 抑制窗保留；`sep_ok` 恆 false） |
 | FM-13 | SEPARATED → LS_DESCENT／SEP_FAIL | `tick` L298–307 | ✅ |
-| FM-14 | 下級開傘（分離後 3.1 s，accel_high 抑制） | `_maybe_chute_ds` L412–427 | ✅ |
+| FM-14 | 下級開傘（分離後 1.1 s，accel_high 抑制） | `_maybe_chute_ds` L412–427 | ✅（Edward 授權，Issue #73；原 3.1 s） |
 | FM-15 | LS_CHUTE → LS_LANDED | `tick` L310–315 | ✅ |
 | FM-16 | SEP_FAIL 側傘 | `tick` L316–317 | ✅ |
 | FM-17 | ABORT 後續 | `tick` L318–326 | ✅ |
@@ -43,9 +43,9 @@
 1. 架 ARMED → 箭 ARMED；架點火（或倒數剩 ≤ 0.15 s）→ 閂 FIRE
 2. 加速度 > 5 m/s² 持續 20 ms → LIFTOFF → 下一拍 BOOST_PASSIVE → BOOST_ACTIVE
 3. 燃盡（< −5 m/s² 持續 20 ms）→ COAST
-4. **COAST + 4 s → 下令分離（三顆舵機）→ SEPARATED**
+4. **COAST + 3 s → 下令分離（三顆舵機）→ SEPARATED**
 5. 分離開關斷 → LS_DESCENT；**5 s 內沒斷 → SEP_FAIL**（開側傘、禁上級傘）
-6. 分離下令 + 3.1 s → 開傘 → LS_CHUTE
+6. 分離下令 + 1.1 s → 開傘 → LS_CHUTE
 7. 著地接觸，或離台 50 s → LS_LANDED
 
 D12 或已驗證中止 → ABORT：立刻分離＋開傘各一次；之後開關斷 → LS_DESCENT，5 s 沒斷 → SEP_FAIL。
@@ -109,9 +109,9 @@ SSS 的上級從級間鏈路收「下級已下令分離」、下令時刻、禁�
 | `n_burnout_s` | 0.020 | FM-11 |
 | `t_burnout_min_s`／`t_burnout_max_s` | 0.40／8.0 | FM-11 |
 | `t_sep_inhibit_s` | 0.80 | FM-12 |
-| `t_sep_backup_s` | **4.0** | FM-12 |
+| `t_sep_backup_s` | **3.0** | FM-12（Issue #73） |
 | `t_sep_fail_s` | 5.0 | FM-13、17 |
-| `t_chute_ds_s` | 3.1 | FM-14 |
+| `t_chute_ds_s` | 1.1 | FM-14（Issue #73） |
 | `t_chute_us_s` | 3.2 | FM-18 |
 | `t_land_max_s` | 50.0 | FM-15 |
 | `tilt_abort_rad` | 30° | FM-06 |
@@ -147,10 +147,10 @@ SSS 的上級從級間鏈路收「下級已下令分離」、下令時刻、禁�
 - 舵權 `FmOutputs.authority`（SSS `_authority`）：core 已算，Controller 目前用模式自己判斷，還沒接
 
 ## 測試
-`./run_host_tests.sh` → `test/FlightModeCoreTest.cpp`，21 組（SSS `test_flight_mode.py` 的 CP-* 移植＋repo 差異；開關、著地用模擬值）：
+`./run_host_tests.sh` → `test/FlightModeCoreTest.cpp`，22 組（SSS `test_flight_mode.py` 的 CP-* 移植＋repo 差異；開關、著地用模擬值）：
 
 CP-INTERLOCK、CP-HANGFIRE（計時／架回報）、CP-FINAL-COUNT（倒數最後一幀＋臍帶拔脫）、
-CP-NOMINAL（ARMED → 4 s 分離 → 3.1 s 開傘 → 落地）、CP-INHIBIT-SEP、CP-BACKUP-SEP、CP-NO-EARLY-SEP、
+CP-PARAM-DEFAULTS、CP-NOMINAL（ARMED → 3 s 分離 → 1.1 s 開傘 → 落地）、CP-INHIBIT-SEP、CP-BACKUP-SEP、CP-NO-EARLY-SEP、
 CP-ABORT-D12、CP-ABORT-TIPOFF、CP-WATCHDOG、CP-CMD-WHITELIST、CP-PAD-ABORT、CP-ILLEGAL-TRANS、CP-CHUTE-DS、
 CP-IMU-STALE、CP-PAD-SAFE、CP-SEP-FAIL、CP-FALSE-SEP、CP-ABORT-FOLLOW、CP-LAND-MAX、CP-US。
 

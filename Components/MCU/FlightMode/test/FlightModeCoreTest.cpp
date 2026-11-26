@@ -195,9 +195,18 @@ static void cpFinalCountdown() {
   }
 }
 
+// ---------------------------------------------------------------- Issue #73：預設計時常數（Edward 授權改值，上級維持 3.2）
+static void cpParamDefaults() {
+  std::printf("CP-PARAM-DEFAULTS（t_sep_backup_s／t_chute_ds_s／t_chute_us_s）\n");
+  const FmParams p;
+  CHECK(std::fabs(p.t_sep_backup_s - 3.0f) < 1e-6f, "t_sep_backup_s 預設 3.0");
+  CHECK(std::fabs(p.t_chute_ds_s - 1.1f) < 1e-6f, "t_chute_ds_s 預設 1.1");
+  CHECK(std::fabs(p.t_chute_us_s - 3.2f) < 1e-6f, "t_chute_us_s 維持 3.2");
+}
+
 // ---------------------------------------------------------------- 標稱剖面 FM-07→12
 static void cpNominal() {
-  std::printf("CP-NOMINAL（ARMED → 點火 → 助推 → 滑翔 → 4 s 分離 → 開傘 → 落地）\n");
+  std::printf("CP-NOMINAL（ARMED → 點火 → 助推 → 滑翔 → 3 s 分離 → 開傘 → 落地）\n");
   Sim s;
   toArmed(s);
   s.pad(FmPad::COUNTDOWN, 0, 1.0f);
@@ -230,9 +239,9 @@ static void cpNominal() {
   CHECK(tCoast > 0, "有 COAST");
   CHECK(s.nSep == 1, "分離恰一次");
   CHECK(s.lastMask == kFmSepMaskAll, "mask＝三顆 0x07");
-  CHECK(std::fabs((s.tSep) - (tCoast - 1e-3) - 4.0) <= 2e-3, "進 COAST 後 4 s 分離");
+  CHECK(std::fabs((s.tSep) - (tCoast - 1e-3) - 3.0) <= 2e-3, "進 COAST 後 3 s 分離");
   CHECK(tDescent > s.tSep, "開關斷 → LS_DESCENT");
-  CHECK(s.nChuteDs == 1 && std::fabs(s.tChuteDs - s.tSep - 3.1) <= 2e-3, "分離下令後 3.1 s 開傘、只一次");
+  CHECK(s.nChuteDs == 1 && std::fabs(s.tChuteDs - s.tSep - 1.1) <= 2e-3, "分離下令後 1.1 s 開傘、只一次");
   CHECK(s.nSide == 0, "標稱不是側傘");
   CHECK(tLanded > 0 && s.ds() == FmMode::LS_LANDED, "著地 → LS_LANDED");
   CHECK(!s.c.state().us_chute_inhibit, "標稱不禁上級傘");
@@ -257,15 +266,17 @@ static void cpInhibitSep() {
 }
 
 static void cpBackupSep() {
-  std::printf("CP-BACKUP-SEP（4 s）\n");
+  std::printf("CP-BACKUP-SEP（3 s）\n");
   Sim s;
   FmState st;
   st.ds = FmMode::COAST;
   st.t_coast_s = 0.0;
   s.c.setStateForTest(st);
   s.in.accel_u_mps2 = -9.8f;
-  s.step(10005);
-  CHECK(s.nSep == 1 && std::fabs(s.tSep - 4.0) <= 2e-3, "COAST 後 4 s 分離");
+  s.step(2999);
+  CHECK(s.nSep == 0, "3 s 前不分離");
+  s.step(10);
+  CHECK(s.nSep == 1 && std::fabs(s.tSep - 3.0) <= 2e-3, "COAST 後 3 s 分離");
 }
 
 static void cpNoEarlySep() {
@@ -320,7 +331,7 @@ static void cpWatchdog() {
   FmState st;
   st.ds = FmMode::COAST;
   st.t_liftoff_s = 0.0;
-  st.t_coast_s = 19.9;  // 4 s 分離還沒到
+  st.t_coast_s = 19.9;  // 3 s 分離還沒到
   s.c.setStateForTest(st);
   s.t = 19.95;
   s.step(60);
@@ -394,8 +405,10 @@ static void cpChuteDs() {
     st.t_sep_cmd_s = 0.0;
     st.sep_fired = true;
     s.c.setStateForTest(st);
-    s.step(3200);
-    CHECK(s.nChuteDs == 1 && s.nSide == 1 && std::fabs(s.tChuteDs - 3.1) <= 2e-3, "SEP_FAIL 3.1 s 側傘");
+    s.step(1099);
+    CHECK(s.nChuteDs == 0, "1.1 s 前不開側傘");
+    s.step(10);
+    CHECK(s.nChuteDs == 1 && s.nSide == 1 && std::fabs(s.tChuteDs - 1.1) <= 2e-3, "SEP_FAIL 1.1 s 側傘");
     CHECK(s.ds() == FmMode::SEP_FAIL && s.n(FmEvent::SIDE_CHUTE) == 1, "模式留在 SEP_FAIL");
   }
 }
@@ -445,11 +458,11 @@ static void cpSepFail() {
   st.t_liftoff_s = -1.0;
   s.c.setStateForTest(st);
   s.in.accel_u_mps2 = -9.8f;
-  s.step(10000);  // 4 s 分離＋5 s 逾時＋裕度
+  s.step(10000);  // 3 s 分離＋5 s 逾時＋裕度
   CHECK(s.nSep == 1, "分離下令一次");
   CHECK(s.ds() == FmMode::SEP_FAIL && s.n(FmEvent::SEP_FAIL) == 1, "5 s 開關仍通 → SEP_FAIL");
   CHECK(s.nChuteDs == 1 && s.nSide == 1, "SEP_FAIL 開側傘");
-  CHECK(std::fabs(s.tChuteDs - (s.tSep + 5.0)) <= 2e-3, "側傘在 SEP_FAIL 當拍（已過 3.1 s）");
+  CHECK(std::fabs(s.tChuteDs - (s.tSep + 5.0)) <= 2e-3, "側傘在 SEP_FAIL 當拍（已過 1.1 s）");
   CHECK(s.c.state().us_chute_inhibit, "禁上級傘");
 }
 
@@ -538,6 +551,7 @@ int main() {
   cpInterlock();
   cpHangfire();
   cpFinalCountdown();
+  cpParamDefaults();
   cpNominal();
   cpInhibitSep();
   cpBackupSep();
@@ -560,6 +574,6 @@ int main() {
     std::printf("FlightModeCore: FAIL (%d)\n", g_fail);
     return 1;
   }
-  std::printf("FlightModeCore: PASS（21 組）\n");
+  std::printf("FlightModeCore: PASS（22 組）\n");
   return 0;
 }
