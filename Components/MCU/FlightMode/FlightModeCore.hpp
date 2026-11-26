@@ -76,9 +76,9 @@ struct FmParams {
   float t_burnout_min_s = 0.40f;   //!< FM-11 離台後最短窗（防假燃盡）
   float t_burnout_max_s = 8.0f;    //!< FM-11 離台後最長窗
   float t_sep_inhibit_s = 0.80f;   //!< FM-12 進 COAST 後分離抑制窗
-  float t_sep_backup_s = 4.0f;     //!< FM-12 進 COAST 後 4 s 分離（Edward 2026-11-14 暫定主路徑）
+  float t_sep_backup_s = 3.0f;     //!< FM-12 進 COAST 後 3 s 分離（Edward 授權，Issue #73；原 4 s）
   float t_sep_fail_s = 5.0f;       //!< FM-13／17 下令後開關仍通 → SEP_FAIL
-  float t_chute_ds_s = 3.1f;       //!< FM-14 分離下令後下級開傘
+  float t_chute_ds_s = 1.1f;       //!< FM-14 分離下令後下級開傘（Edward 授權，Issue #73；原 3.1 s）
   float t_chute_us_s = 3.2f;       //!< FM-18 上級開傘
   float t_land_max_s = 50.0f;      //!< FM-15 著陸備援（離台起算）
   float tilt_abort_rad = 0.5235988f;   //!< FM-06 30°

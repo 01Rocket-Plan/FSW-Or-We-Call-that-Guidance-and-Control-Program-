@@ -308,8 +308,8 @@ void FlightModeCore::maybeCoast(const FmInputs& in, double t, FmOutputs& out) {
   }
 }
 
-// [FM-12] 分離。Edward 2026-11-14：暫定「進 COAST 後計時 4 s 分離」。
-// SSS 結構保留：抑制窗 0.8 s ∧（sep_ok ∨ 4 s）；sep_ok 門檻未定（gates D14），輸入恆 false → 實際就是 4 s。
+// [FM-12] 分離。Edward 授權（Issue #73）：進 COAST 後計時 3 s 分離（原 4 s）。
+// 結構保留：抑制窗 t_sep_inhibit_s ∧（sep_ok ∨ t_sep_backup_s）；sep_ok 門檻未定，輸入恆 false → 實際就是 t_sep_backup_s。
 void FlightModeCore::maybeSep(const FmInputs& in, double t, FmOutputs& out) {
   if (m_s.sep_fired || m_s.t_coast_s < 0) return;
   const double waited = t - m_s.t_coast_s;
