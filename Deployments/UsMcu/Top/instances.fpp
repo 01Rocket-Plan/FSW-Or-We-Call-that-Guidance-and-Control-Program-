@@ -14,7 +14,7 @@ module UsMcu {
     stack size Default.STACK_SIZE \
     priority 50
 
-  @ 100 Hz：預留給 UsMpu6050／UsDht22（目前沒有成員）
+  @ 100 Hz：usMpu6050 → sdLogger.flush
   instance rg100Hz: Svc.ActiveRateGroup base id 0x0200 \
     queue size Default.QUEUE_SIZE \
     stack size Default.STACK_SIZE \
@@ -36,6 +36,16 @@ module UsMcu {
   # ---------------------------------------------------------------- MCU 組（US 不含控制律）
   instance platform: Mcu.Platform base id 0x1000
   instance flightMode: Mcu.FlightMode base id 0x1400
+
+  # ---------------------------------------------------------------- 環境感測／紀錄（SIL 用 Sim；真機換本尊：UsMpu6050 0x4200、UsDht22 0x4300、SdLogger 0x2000）
+  @ US MPU6050（僅記錄）。Base ID 0x4280 ＝ 0x4200 + 0x80
+  instance usMpu6050: Components.UsMpu6050Sim base id 0x4280
+
+  @ US DHT22（僅記錄）。Base ID 0x4380 ＝ 0x4300 + 0x80
+  instance usDht22: Components.UsDht22Sim base id 0x4380
+
+  @ 上級 SD 紀錄器（SIL：SdCardSimDevice）。Base ID 0x2080 ＝ 0x2000 + 0x80
+  instance sdLogger: Components.SdLoggerSim base id 0x2080
 
   # ---------------------------------------------------------------- 其他組
   instance nvFlags: Components.NvFlags base id 0x6100 \

@@ -26,6 +26,9 @@ module UsMcu {
 
     instance platform
     instance flightMode
+    instance usMpu6050
+    instance usDht22
+    instance sdLogger
     instance nvFlags
 
     command connections instance CdhCore.cmdDisp
@@ -67,6 +70,8 @@ module UsMcu {
       rg1kHz.RateGroupMemberOut[1] -> platform.schedIn
 
       rateGroupDriver.CycleOut[Ports_RateGroups.rg100Hz] -> rg100Hz.CycleIn
+      rg100Hz.RateGroupMemberOut[0] -> usMpu6050.schedIn
+      rg100Hz.RateGroupMemberOut[1] -> sdLogger.schedIn
 
       rateGroupDriver.CycleOut[Ports_RateGroups.rg1Hz] -> rg1Hz.CycleIn
       rg1Hz.RateGroupMemberOut[0] -> CdhCore.tlmSend.Run
@@ -77,6 +82,7 @@ module UsMcu {
       rg1Hz.RateGroupMemberOut[5] -> CdhCore.cmdDisp.run
       rg1Hz.RateGroupMemberOut[6] -> CdhCore.$health.Run
       rg1Hz.RateGroupMemberOut[7] -> ComCcsds.commsBufferManager.schedIn
+      rg1Hz.RateGroupMemberOut[8] -> usDht22.schedIn
     }
 
     connections UsChain {
@@ -85,9 +91,13 @@ module UsMcu {
       flightMode.phaseSetOut -> nvFlags.phaseSet
 
       # 待接（見 README「還沒接的」）：
-      #   usMpu6050／usDht22 → rg100Hz、sdLogger
       #   gimbalServoDriver（0x3200）
       #   上級開傘驅動（FM-IN-7）
+    }
+
+    connections UsRecord {
+      usMpu6050.mpuOut -> sdLogger.mpu6050In
+      usDht22.humTempOut -> sdLogger.humTempIn
     }
 
   }
