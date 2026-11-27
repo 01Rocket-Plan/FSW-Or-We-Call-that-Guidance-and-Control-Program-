@@ -3,3 +3,4 @@
 set -e; R=$(cd "$(dirname "$0")/../.." && pwd); CXX=${CXX:-c++}; H=$(dirname "$0")
 $CXX -std=c++14 -I"$R" $H/BaroDriver/test/BaroHostTest.cpp $H/BaroDriver/Bme680Core.cpp $H/BaroDriver/Bme680SimDevice.cpp -o /tmp/baro_host_test && /tmp/baro_host_test
 $CXX -std=c++14 -I"$R" $H/UsDht22/test/Dht22HostTest.cpp $H/UsDht22/Dht22Core.cpp $H/UsDht22/Dht22SimIo.cpp -o /tmp/dht_host_test && /tmp/dht_host_test
+$CXX -std=c++14 -I"$R" $H/UsMpu6050/test/MpuSimDeviceHostTest.cpp $H/UsMpu6050/mpu6050_core.c -lm -o /tmp/mpu_sim_host_test && /tmp/mpu_sim_host_test

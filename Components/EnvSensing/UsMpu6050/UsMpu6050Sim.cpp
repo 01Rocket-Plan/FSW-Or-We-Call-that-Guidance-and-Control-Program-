@@ -7,7 +7,7 @@ static RocketTypes::DrvState toFpp(ImuDrvState s) {
 }
 
 UsMpu6050Sim::UsMpu6050Sim(const char* compName)
-    : UsMpu6050SimComponentBase(compName), m_core(nullptr), m_tlmDiv(0) {
+    : UsMpu6050SimComponentBase(compName), m_core(nullptr), m_tlmDiv(0), m_lastLoggedState(IMU_DRV_OFF) {
   m_core = mpu_core_create(m_dev.busOps());
 }
 
@@ -51,10 +51,19 @@ void UsMpu6050Sim::schedIn_handler(FwIndexType, U32) {
   MpuSampleOut out;
   mpu_core_tick(m_core, t_s, &out);
   const ImuDrvState st = mpu_core_state(m_core);
-  if (st == IMU_DRV_FAULT) {
-    this->log_WARNING_HI_EnterFault(static_cast<U8>(mpu_core_fault(m_core)));
+  if (st != m_lastLoggedState) {
+    if (st == IMU_DRV_READY) {
+      this->log_ACTIVITY_HI_EnterReady();
+    }
+    if (st == IMU_DRV_FAULT) {
+      this->log_WARNING_HI_EnterFault(static_cast<U8>(mpu_core_fault(m_core)));
+    }
+    m_lastLoggedState = st;
   }
-  emitSample(out);
+  // 只送有效樣本：自測／FAULT 期間 seq 停在 0 或最後一筆，送出去會讓 sdLogger 刷 SeqGap
+  if (out.valid) {
+    emitSample(out);
+  }
   if (++m_tlmDiv >= 1000) {
     m_tlmDiv = 0;
     this->tlmWrite_drvState(toFpp(st));

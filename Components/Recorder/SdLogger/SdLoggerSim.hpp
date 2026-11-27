@@ -14,6 +14,15 @@ class SdLoggerSim final : public SdLoggerSimComponentBase, private ISdLoggerSink
   explicit SdLoggerSim(const char* compName);
   ~SdLoggerSim() override = default;
 
+  //! 拓樸在 loadParameters 之後呼叫：載入參數、設定角色、開始收／寫紀錄。
+  //! 輸入埠只進佇列（滿了丟最新、不擋呼叫端）；真正寫卡在 schedIn 的 flush。
+  bool startLogging(SdCardRole role = SdCardRole::US_LOG);
+
+  uint32_t writeCount() const { return m_core.writeCount(); }
+  uint32_t dropCount() const { return m_core.dropCount(); }
+  uint32_t sdBusyCount() const { return m_core.sdBusyCount(); }
+  const SdCardSimDevice& media() const { return m_dev; }
+
  private:
   void schedIn_handler(FwIndexType portNum, U32 context) override;
   void imuIn_handler(FwIndexType portNum, const RocketTypes::ImuSample& s) override;

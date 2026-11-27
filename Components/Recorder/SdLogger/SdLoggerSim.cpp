@@ -38,6 +38,12 @@ SdLoggerSim::SdLoggerSim(const char* compName)
       m_model(SdCardModel::MICRO_SDHC_UHS_I_16GB),
       m_role(SdCardRole::DS_LOG) {}
 
+bool SdLoggerSim::startLogging(SdCardRole role) {
+  loadParams();
+  m_role = role;
+  return m_core.start();
+}
+
 F64 SdLoggerSim::now_s() {
   const Fw::Time now = this->getTime();
   return static_cast<F64>(now.getSeconds()) + static_cast<F64>(now.getUSeconds()) * 1e-6;

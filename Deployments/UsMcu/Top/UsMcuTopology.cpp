@@ -3,6 +3,7 @@
 // \brief  拓樸建立：F´ v4.4.1 部署範本＋1 kHz／100 Hz／1 Hz 速率群組
 // ======================================================================
 #include "Deployments/UsMcu/Top/UsMcuTopologyAc.hpp"
+#include <Fw/Logger/Logger.hpp>
 
 namespace UsMcu {
 
@@ -40,6 +41,11 @@ void setupTopology(const TopologyState& state) {
   readParameters();
   loadParameters();
   startTasks(state);
+  // 飛行紀錄器開機即開始收／寫（不靠 GDS START）。CARD_ROLE 設為 US_LOG。
+  // 放在 startTasks 之後，EnterReady 事件才進 logger 任務。
+  if (!sdLogger.startLogging(Components::SdCardRole::US_LOG)) {
+    Fw::Logger::log("UsMcu sdLogger.startLogging failed\n");
+  }
   if (state.hostname != nullptr && state.port != 0) {
     Os::TaskString name("ReceiveTask");
     comDriver.start(name, COMM_PRIORITY, Default::STACK_SIZE);
@@ -55,6 +61,9 @@ void teardownTopology(const TopologyState& state) {
   freeThreads(state);
   comDriver.stop();
   (void)comDriver.join();
+  Fw::Logger::log("UsMcu sdLogger writeCount=%u dropCount=%u sdBusyCount=%u mediaBytes=%lu\n",
+                  sdLogger.writeCount(), sdLogger.dropCount(), sdLogger.sdBusyCount(),
+                  static_cast<unsigned long>(sdLogger.media().image().size()));
   tearDownComponents(state);
   deinitComponents(state);
 }
