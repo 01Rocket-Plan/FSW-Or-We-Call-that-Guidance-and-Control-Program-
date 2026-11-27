@@ -36,6 +36,9 @@ bool PadControllerCore::paramsValid(const PadParams& p) {
   }
   if (!(p.thrustConfirm_s > 0.0) || !(p.liftoffTimeout_s > 0.0)) return false;
   if (!std::isfinite(p.clampOpenTimeout_s) || !std::isfinite(p.liftoffLoadMin_N)) return false;
+  // 荷重元空架帶（Issue #74）：下限 ＜ 0 ＜ 上限，帶子一定要包住 0（空架讀值）。
+  if (!std::isfinite(p.liftoffLoadFloor_N)) return false;
+  if (!(p.liftoffLoadFloor_N < 0.0) || !(p.liftoffLoadMin_N > 0.0)) return false;
   // 傾角窗：有限、不為負、下限 ≤ 上限（Status #11）。
   if (!std::isfinite(p.minTilt_rad) || !std::isfinite(p.maxTilt_rad)) return false;
   if (p.minTilt_rad < 0.0 || p.minTilt_rad > p.maxTilt_rad) return false;
@@ -60,7 +63,7 @@ double PadControllerCore::missionTimeAt(double now_s) const {
 void PadControllerCore::releaseClamp(double T) {
   m_releaseT_s = T;
   m_clampOpenSeen = false;
-  m_loadLow = false;
+  m_loadInBand = false;
   setState(PadState::RELEASED, PadReason::NONE);
 }
 
@@ -312,24 +315,30 @@ PadOutputs PadControllerCore::tick(const PadInputs& in, double now_s) {
     case PadState::RELEASED: {
       // 離軌判定三層（Edward PR #52 審查）：
       //   主判定 offRail 單獨成立就算（夾持開到位開關壞掉也照算）；
-      //   備援 荷重元低於 liftoffLoadMin_N 持續 liftoffLoadHold_s；
-      //   輔助 臍帶逾時單獨不算（可能只是被震斷），要和荷重元低同時成立才算。
+      //   備援 荷重元落在空架帶（liftoffLoadFloor_N ＜ load_N ＜ liftoffLoadMin_N，預設 ±0.5 N）持續 liftoffLoadHold_s；
+      //   輔助 臍帶逾時單獨不算（可能只是被震斷），要和荷重元在空架帶內同時成立才算。
       //   備援／輔助都要先讀到夾持開到位（沒裝開關時不等）：夾持沒開，荷重元掉下來不代表箭走了。
+      // Issue #74：
+      //   - 低於下限（負得多）＝推力大於重量、夾持還在往下拉＝還抓著 → 不算空架，計時歸零。
+      //   - 讀到夾持開到位之前不累積計時（以前會從鬆夾持命令那拍就開始算，開到位時已預先累積）。
+      //   - 讀值一離開空架帶就歸零，回到帶內重新算滿 liftoffLoadHold_s。
       const double T = missionTimeAt(now_s);
       const bool clampCheck = m_p.clampOpenTimeout_s > 0.0;
       if (in.clampOpen) m_clampOpenSeen = true;
-      const bool loadLow = in.load_N < m_p.liftoffLoadMin_N;  // NaN → false（不算離軌）
-      if (loadLow) {
-        if (!m_loadLow) {
-          m_loadLow = true;
-          m_loadLowStartT_s = T;
+      const bool backupAllowed = !clampCheck || m_clampOpenSeen;
+      // NaN → 兩個比較都是 false → 不在帶內（不算離軌）
+      const bool loadInBand = in.load_N > m_p.liftoffLoadFloor_N && in.load_N < m_p.liftoffLoadMin_N;
+      if (backupAllowed && loadInBand) {
+        if (!m_loadInBand) {
+          m_loadInBand = true;
+          m_loadInBandStartT_s = T;
         }
       } else {
-        m_loadLow = false;
+        m_loadInBand = false;
       }
-      const bool loadHeld = m_loadLow && T - m_loadLowStartT_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
-      const bool backupAllowed = !clampCheck || m_clampOpenSeen;
-      if (in.offRail || (backupAllowed && (loadHeld || (loadLow && !m_rocketFresh)))) {
+      const bool loadHeld =
+          m_loadInBand && T - m_loadInBandStartT_s + kTimeEps_s >= m_p.liftoffLoadHold_s;
+      if (in.offRail || (backupAllowed && (loadHeld || (loadInBand && !m_rocketFresh)))) {
         setState(PadState::LIFTED_OFF, PadReason::NONE);
       } else if (clampCheck && !m_clampOpenSeen &&
                  T - m_releaseT_s + kTimeEps_s >= m_p.clampOpenTimeout_s) {
