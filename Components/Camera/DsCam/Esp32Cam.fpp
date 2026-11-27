@@ -1,5 +1,5 @@
 @ DsCam / ESP32-CAM：DS 飛控側驅動（I2C → ICamLink）
-@ 狀態機 1 Hz；擷取與 frameCount 100 Hz。ICamLink 無像素；影像走 imageOut 2KB 分塊（Components.CamImageOut，與上級相機同一個埠型別）。
+@ 狀態機 1 Hz；錄影通知（recFrameCount／CamStatus.frameCount）100 Hz。ICamLink 無像素；影像走 imageOut 2KB 分塊（Components.CamImageOut，與上級相機同一個埠型別）。imageOut.frameNumber 是照片連續編號，不與錄影共用（issue #75）。
 @ 完整錄影亦可落 ESP32-CAM 本機 SD；地面預覽走獨立 IGroundPreviewLink（HTTP 144P）。
 @ 型號 ESP32_CAM、角色 DS_CAM。共用 CamTypes／CamChunkFlag。
 module Components {
@@ -31,7 +31,7 @@ module Components {
     sync command CAPTURE_START()
     sync command CAPTURE_STOP()
 
-    @ 電傳：僅 CamStatus（camState / fault / frameCount / model+role）
+    @ 電傳：僅 CamStatus（camState / fault / frameCount＝錄影通知次數 / model+role）。照片張數不進 CamStatus（欄位不變，issue #75）
     telemetry Status: CamStatus
 
     event StateChanged(from: CamState, to: CamState) \
@@ -42,10 +42,15 @@ module Components {
       severity warning high \
       format "Esp32Cam fault {} detail={}"
 
-    @ 幀超過 FRAME_MAX_BYTES：最後分塊標 TRUNCATED，本幀不計 frameCount，狀態維持 READY
+    @ 幀超過 FRAME_MAX_BYTES：最後分塊標 TRUNCATED，本幀不計 photoCount，狀態維持 READY
     event FrameTruncated(frameNumber: U32, sentBytes: U32) \
       severity warning high \
       format "Esp32Cam frame {} truncated after {} bytes"
+
+    @ 影像埠成功送出一張完整照片（issue #75）。photoNumber 從 1 連續編號；recFrameRef 是送出時已收到的本機錄影幀數（0＝還沒有錄影幀）。不改 CamImageOut／CamStatus／ICamLink。
+    event PhotoEmitted(photoNumber: U32, recFrameRef: U32) \
+      severity activity high \
+      format "Esp32Cam photo {} follows rec frame {}"
 
     param MODEL: CamModel default CamModel.ESP32_CAM
     param ROLE: CamRole default CamRole.DS_CAM
@@ -53,7 +58,7 @@ module Components {
     param MISS_LIMIT: U8 default 3
     @ 幀逾時門檻 M（100 Hz ticks）
     param FRAME_LIMIT: U32 default 20
-    @ 超過此長度：最後分塊 TRUNCATED，不計 frameCount
+    @ 超過此長度：最後分塊 TRUNCATED，不計 photoCount
     param FRAME_MAX_BYTES: U32 default 65536
     @ I2C 時脈 Hz（預設 400 kHz）
     param I2C_CLOCK_HZ: U32 default 400000
@@ -105,6 +110,11 @@ module Components {
     event FrameTruncated(frameNumber: U32, sentBytes: U32) \
       severity warning high \
       format "Esp32CamSim frame {} truncated after {} bytes"
+
+    @ 同 Esp32Cam.PhotoEmitted（issue #75）：照片連續編號＋錄影對時參考
+    event PhotoEmitted(photoNumber: U32, recFrameRef: U32) \
+      severity activity high \
+      format "Esp32CamSim photo {} follows rec frame {}"
 
     param FRAME_MAX_BYTES: U32 default 65536
     @ 同 Esp32Cam.JPEG_QUALITY（esp32-camera README 範例 12；0–63）。Sim 不做 JPEG 編碼，只保留參數。相機組可再改

@@ -58,7 +58,7 @@ void Esp32CamCore::enterFault(CamFault f, uint32_t detail) {
 }
 
 CamStatus Esp32CamCore::status() const {
-  return CamStatus(m_state, m_fault, m_frameCount, m_model, m_role);
+  return CamStatus(m_state, m_fault, m_recFrameCount, m_model, m_role);
 }
 
 bool Esp32CamCore::powerOn() {
@@ -76,7 +76,9 @@ bool Esp32CamCore::powerOn() {
 }
 
 bool Esp32CamCore::reset() {
-  m_frameCount = 0;
+  m_recFrameCount = 0;
+  m_photoCount = 0;
+  m_lastPhotoRecFrameRef = 0;
   m_fault = CamFault::NONE;
   m_missCount = 0;
   m_noFrameTicks = 0;
@@ -124,15 +126,21 @@ bool Esp32CamCore::ingestCapturedFrame(const uint8_t* data, uint32_t length) {
   if (data == nullptr || length == 0) {
     return false;
   }
-  const uint32_t frameNumber = m_frameCount + 1u;
-  const bool accepted = m_streamer.streamFrame(data, length, frameNumber);
+  // 照片用自己的連續編號；錄影通知不佔號碼（issue #75）
+  const uint32_t photoNumber = m_photoCount + 1u;
+  const uint32_t recFrameRef = m_recFrameCount;
+  const bool accepted = m_streamer.streamFrame(data, length, photoNumber);
   if (!accepted) {
-    // 截斷：事件 only，維持 READY／擷取中，不計 frameCount
+    // 截斷：事件 only，維持 READY／擷取中，不計 photoCount、不更新 recFrameRef
     notifyFrameTruncated(length);
     return false;
   }
-  m_frameCount++;
+  m_photoCount = photoNumber;
+  m_lastPhotoRecFrameRef = recFrameRef;
   m_noFrameTicks = 0;
+  if (m_sink != nullptr) {
+    m_sink->onPhotoEmitted(photoNumber, recFrameRef);
+  }
   return true;
 }
 
@@ -269,7 +277,7 @@ void Esp32CamCore::tick100Hz() {
   bool gotFrame = false;
   if (pullByte(&b) && b == kRspFrame) {
     if (consumeFrameNotify()) {
-      m_frameCount++;
+      m_recFrameCount++;
       gotFrame = true;
     }
   }

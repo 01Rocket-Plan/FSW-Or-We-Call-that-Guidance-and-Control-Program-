@@ -31,7 +31,7 @@ class Esp32CamImageStreamer {
   void setFrameMaxBytes(uint32_t n) { m_frameMaxBytes = (n == 0) ? kDefaultFrameMaxBytes : n; }
   uint32_t frameMaxBytes() const { return m_frameMaxBytes; }
 
-  // true = 完整接受（呼叫端應 ++frameCount）；false = 截斷／拒絕（不計 frameCount）
+  // true = 完整接受（呼叫端應 ++photoCount）；false = 截斷／拒絕（不計 photoCount）
   bool streamFrame(const uint8_t* data, uint32_t length, uint32_t frameNumber) {
     if (m_sink == nullptr || data == nullptr || length == 0) {
       return false;

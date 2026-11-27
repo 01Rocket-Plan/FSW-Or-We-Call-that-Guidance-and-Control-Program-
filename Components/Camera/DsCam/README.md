@@ -6,7 +6,11 @@
 - 範圍：`Esp32CamCore` + `Esp32CamSimDevice` + F´ 外殼 `Esp32Cam`／`Esp32CamSim`
 - 飛控連線：I2C → `ICamLink`；時脈預設 400 kHz；`I2C_ADDR`／`I2C_PIN_SDA`／`I2C_PIN_SCL` 為 placeholder（Anatoly 腳位表）
 - 完整錄影：ESP32-CAM 本機 SD（`ILocalSdStore`）；預覽：`IGroundPreviewLink`（不經 ICamLink／遙測）
-- 影像埠：`Components.CamImageOut`（與上級相機共用，issue #32）：2KB `Fw.Buffer` 分塊，`frameNumber`/`chunkIndex`/`CamChunkFlag`；`FRAME_MAX_BYTES` 截斷不計 `frameCount`、維持 READY
+- 影像埠：`Components.CamImageOut`（與上級相機共用，issue #32）：2KB `Fw.Buffer` 分塊，`frameNumber`/`chunkIndex`/`CamChunkFlag`；`FRAME_MAX_BYTES` 截斷不計 `photoCount`、維持 READY
+- **編號（issue #75，SIL 測試發現）**：本機錄影通知與影像埠照片分開計數。
+  - `imageOut.frameNumber`＝照片編號，從 1 連續加一；缺號才代表照片沒送到，或被截斷而未計入。
+  - `CamStatus.frameCount`＝本機錄影通知次數（`recFrameCount`；ICamLink `FRAME_NOTIFY`，sim 約 20 次／秒）。照片不再與錄影共用這個計數器，所以照片號碼不會再跳成 #21、#42。
+  - 每張成功送出的照片會記下當時的 `recFrameRef`（已收到的錄影幀數；0＝還沒有錄影幀），並發事件 `PhotoEmitted(photoNumber, recFrameRef)`，方便兩邊對時。不改 `CamImageOut` 埠型別、不改 `CamStatus` 欄位（欄位不變）、不改 ICamLink 幀通知格式。
 - Rate groups：1 Hz／100 Hz；不碰 1 kHz；不 sleep、不讀系統時間做逾時、不動態配置
 
 封包提案見 `../CamLinkPacket.md`。

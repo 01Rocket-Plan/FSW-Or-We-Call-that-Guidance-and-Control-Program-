@@ -129,4 +129,8 @@ void Esp32Cam::onFault(CamFault code, uint32_t detail) {
   writeTlm();
 }
 
+void Esp32Cam::onPhotoEmitted(uint32_t photoNumber, uint32_t recFrameRef) {
+  this->log_ACTIVITY_HI_PhotoEmitted(photoNumber, recFrameRef);
+}
+
 }  // namespace Components

@@ -1,6 +1,7 @@
 // Esp32CamCore：ESP32-CAM 驅動核心（與 F´ 無關，可在 host 測試）
 // 規則：不 sleep、不讀系統時間、不配置記憶體；時間以 tick 由呼叫端注入。
-// 狀態機於 1 Hz tick；擷取與 frameCount 於 100 Hz tick。
+// 狀態機於 1 Hz tick；錄影通知（recFrameCount）於 100 Hz tick。
+// 影像埠照片另用 photoCount 連續編號（issue #75），不與錄影共用計數器。
 // ICamLink（I2C）只傳指令／狀態／幀數通知；完整錄影與地面預覽在相機側
 // （見 ILocalSdStore／IGroundPreviewLink），不得經 ICamLink 或飛控遙測傳像素。
 #ifndef COMPONENTS_CAMERA_DSCAM_ESP32CAMCORE_HPP
@@ -24,6 +25,11 @@ class ICamSink {
   virtual ~ICamSink() = default;
   virtual void onStateChange(CamState from, CamState to) = 0;
   virtual void onFault(CamFault code, uint32_t detail) = 0;
+  // 影像埠成功送出一張完整照片（issue #75）。預設無動作。
+  virtual void onPhotoEmitted(uint32_t photoNumber, uint32_t recFrameRef) {
+    (void)photoNumber;
+    (void)recFrameRef;
+  }
 };
 
 class Esp32CamCore {
@@ -52,7 +58,7 @@ class Esp32CamCore {
   bool captureStop();
   // 過大／壞幀：事件 only，不進 FAULT（CamFault::FRAME_TRUNCATED）
   void notifyFrameTruncated(uint32_t length);
-  // 2KB 分塊影像輸出（對齊 CamImageOut）；截斷則不計 frameCount、維持 READY
+  // 2KB 分塊影像輸出（對齊 CamImageOut）；截斷則不計 photoCount、維持 READY
   void setImageChunkSink(ICamImageChunkSink* sink) { m_streamer.setSink(sink); }
   void setFrameMaxBytes(uint32_t n) { m_streamer.setFrameMaxBytes(n); }
   uint32_t frameMaxBytes() const { return m_streamer.frameMaxBytes(); }
@@ -62,7 +68,14 @@ class Esp32CamCore {
   CamStatus status() const;
   CamState state() const { return m_state; }
   CamFault fault() const { return m_fault; }
-  uint32_t frameCount() const { return m_frameCount; }
+  // 本機錄影通知次數（ICamLink FRAME_NOTIFY）。CamStatus.frameCount 也是這個。
+  uint32_t recFrameCount() const { return m_recFrameCount; }
+  // 舊名：等同 recFrameCount()（不是照片編號）
+  uint32_t frameCount() const { return m_recFrameCount; }
+  // 影像埠成功送出的照片張數；imageOut.frameNumber 從 1 連續編號（缺號＝照片遺失／截斷未計入）
+  uint32_t photoCount() const { return m_photoCount; }
+  // 最近一張成功照片送出時已收到的錄影幀數（0＝當時還沒有錄影幀）
+  uint32_t lastPhotoRecFrameRef() const { return m_lastPhotoRecFrameRef; }
   bool captureOn() const { return m_captureOn; }
 
  private:
@@ -78,7 +91,9 @@ class Esp32CamCore {
 
   CamState m_state = CamState::OFF;
   CamFault m_fault = CamFault::NONE;
-  uint32_t m_frameCount = 0;
+  uint32_t m_recFrameCount = 0;
+  uint32_t m_photoCount = 0;
+  uint32_t m_lastPhotoRecFrameRef = 0;
 
   CamModel m_model = CamModel::ESP32_CAM;
   CamRole m_role = CamRole::DS_CAM;
