@@ -24,10 +24,18 @@ struct Recorder : public ICamSink {
   uint32_t faults = 0;
   CamFault lastFault = CamFault::NONE;
   CamState lastState = CamState::OFF;
+  uint32_t photos = 0;
+  uint32_t lastPhoto = 0;
+  uint32_t lastRecRef = 0;
   void onStateChange(CamState, CamState to) override { lastState = to; }
   void onFault(CamFault code, uint32_t) override {
     lastFault = code;
     faults++;
+  }
+  void onPhotoEmitted(uint32_t photoNumber, uint32_t recFrameRef) override {
+    photos++;
+    lastPhoto = photoNumber;
+    lastRecRef = recFrameRef;
   }
 };
 
@@ -176,6 +184,9 @@ static void test5_resetAndRehandshake() {
   CHECK(r.core.reset());
   CHECK(r.core.state() == CamState::OFF);
   CHECK(r.core.frameCount() == 0);
+  CHECK(r.core.recFrameCount() == 0);
+  CHECK(r.core.photoCount() == 0);
+  CHECK(r.core.lastPhotoRecFrameRef() == 0);
   CHECK(r.core.fault() == CamFault::NONE);
   CHECK(r.driveToReady());
   CHECK(r.core.state() == CamState::READY);
@@ -204,9 +215,12 @@ static void test7_telemetryFourFields() {
   CHECK(s.get_camState() == CamState::READY);
   CHECK(s.get_fault() == CamFault::NONE);
   CHECK(s.get_frameCount() == 0);
+  CHECK(s.get_frameCount() == r.core.recFrameCount());
+  CHECK(r.core.photoCount() == 0);
   CHECK(s.get_model() == CamModel::ESP32_CAM);
   CHECK(s.get_role() == CamRole::DS_CAM);
   // 結構僅含上述欄位（無影像指標／緩衝）：FPP 自動碼 CamStatus 只有這 5 個 get_
+  // CamStatus.frameCount＝錄影通知次數，不是照片張數（issue #75）
 }
 
 static void test8_i2cClockDefault() {
@@ -260,7 +274,7 @@ static void test10_frameTruncatedEventOnly() {
 }
 
 static void test11_multiChunkImageOut() {
-  std::printf("11) 2KB multi-chunk imageOut (5000 B → 3 chunks, END, frameCount++)\n");
+  std::printf("11) 2KB multi-chunk imageOut (5000 B → 3 chunks, END, photoCount++)\n");
   Rig r;
   ChunkRecorder ch;
   r.core.setImageChunkSink(&ch);
@@ -269,9 +283,18 @@ static void test11_multiChunkImageOut() {
   CHECK(r.core.captureStart());
   uint8_t buf[5000];
   for (uint32_t i = 0; i < sizeof(buf); ++i) buf[i] = static_cast<uint8_t>(i & 0xFF);
-  const uint32_t before = r.core.frameCount();
+  const uint32_t recBefore = r.core.recFrameCount();
+  const uint32_t photoBefore = r.core.photoCount();
   CHECK(r.core.ingestCapturedFrame(buf, sizeof(buf)));
-  CHECK(r.core.frameCount() == before + 1);
+  CHECK(r.core.photoCount() == photoBefore + 1);
+  CHECK(r.core.recFrameCount() == recBefore);  // 照片不佔錄影計數
+  CHECK(r.core.frameCount() == recBefore);
+  CHECK(ch.lastFrame == r.core.photoCount());
+  CHECK(ch.lastFrame == 1);
+  CHECK(r.core.lastPhotoRecFrameRef() == recBefore);
+  CHECK(r.rec.photos == 1);
+  CHECK(r.rec.lastPhoto == 1);
+  CHECK(r.rec.lastRecRef == recBefore);
   CHECK(ch.chunks == 3);  // 2048+2048+904
   CHECK(ch.endChunks == 1);
   CHECK(ch.truncChunks == 0);
@@ -283,7 +306,7 @@ static void test11_multiChunkImageOut() {
 }
 
 static void test12_truncationKeepsReadyNextCounts() {
-  std::printf("12) FRAME_MAX truncate: TRUNCATED|END, stay READY, next frame counts\n");
+  std::printf("12) FRAME_MAX truncate: TRUNCATED|END, stay READY, next photo counts\n");
   Rig r;
   ChunkRecorder ch;
   r.core.setImageChunkSink(&ch);
@@ -292,10 +315,15 @@ static void test12_truncationKeepsReadyNextCounts() {
   CHECK(r.core.captureStart());
   uint8_t big[5000];
   for (uint32_t i = 0; i < sizeof(big); ++i) big[i] = 0xAB;
-  const uint32_t before = r.core.frameCount();
+  const uint32_t recBefore = r.core.recFrameCount();
+  const uint32_t photoBefore = r.core.photoCount();
   const uint32_t faultsBefore = r.rec.faults;
+  const uint32_t photosBefore = r.rec.photos;
   CHECK(!r.core.ingestCapturedFrame(big, sizeof(big)));
-  CHECK(r.core.frameCount() == before);  // not counted
+  CHECK(r.core.photoCount() == photoBefore);  // 截斷不計照片
+  CHECK(r.core.recFrameCount() == recBefore);
+  CHECK(r.core.lastPhotoRecFrameRef() == 0);
+  CHECK(r.rec.photos == photosBefore);
   CHECK(r.core.state() == CamState::READY);
   CHECK(r.core.captureOn());
   CHECK(r.core.fault() == CamFault::NONE);
@@ -304,17 +332,91 @@ static void test12_truncationKeepsReadyNextCounts() {
   CHECK(ch.truncChunks >= 1);
   CHECK(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::END));
   CHECK(ch.lastFlags & static_cast<uint8_t>(CamChunkFlag::TRUNCATED));
-  // next normal frame still counts
+  // next normal photo still counts
   uint8_t ok[100];
   for (uint32_t i = 0; i < sizeof(ok); ++i) ok[i] = 1;
   ch.chunks = 0;
   ch.endChunks = 0;
   ch.truncChunks = 0;
   CHECK(r.core.ingestCapturedFrame(ok, sizeof(ok)));
-  CHECK(r.core.frameCount() == before + 1);
+  CHECK(r.core.photoCount() == photoBefore + 1);
+  CHECK(r.core.recFrameCount() == recBefore);
+  CHECK(ch.lastFrame == 1);
+  CHECK(r.core.lastPhotoRecFrameRef() == recBefore);
   CHECK(r.core.state() == CamState::READY);
   CHECK(ch.endChunks == 1);
   CHECK(ch.truncChunks == 0);
+}
+
+static bool tickUntilRecFrames(Rig& r, uint32_t target, int maxTicks = 400) {
+  for (int i = 0; i < maxTicks; ++i) {
+    if (r.core.recFrameCount() >= target) {
+      return true;
+    }
+    r.step100Hz();
+  }
+  return r.core.recFrameCount() >= target;
+}
+
+static void test13_photoAndRecCountersSeparate() {
+  std::printf("13) issue #75: photos 1,2,3… independent of recording rate; recFrameRef aligns\n");
+  Rig r;
+  ChunkRecorder ch;
+  r.core.setImageChunkSink(&ch);
+  r.core.setFrameMaxBytes(65536);
+  CHECK(r.driveToReady());
+  CHECK(r.core.photoCount() == 0);
+  CHECK(r.core.recFrameCount() == 0);
+  CHECK(r.core.lastPhotoRecFrameRef() == 0);
+  CHECK(r.core.captureStart());
+
+  uint8_t pix[64];
+  for (uint32_t i = 0; i < sizeof(pix); ++i) pix[i] = static_cast<uint8_t>(i);
+
+  // 先累積至少 20 個錄影通知（舊行為會讓第一張照片變成 #21）
+  CHECK(tickUntilRecFrames(r, 20));
+  const uint32_t recA = r.core.recFrameCount();
+  CHECK(recA >= 20);
+  CHECK(r.core.photoCount() == 0);
+  CHECK(r.core.status().get_frameCount() == recA);
+
+  CHECK(r.core.ingestCapturedFrame(pix, sizeof(pix)));
+  CHECK(r.core.photoCount() == 1);
+  CHECK(ch.lastFrame == 1);  // 不是 recA+1
+  CHECK(r.core.recFrameCount() == recA);
+  CHECK(r.core.frameCount() == recA);
+  CHECK(r.core.lastPhotoRecFrameRef() == recA);
+  CHECK(r.rec.photos == 1);
+  CHECK(r.rec.lastPhoto == 1);
+  CHECK(r.rec.lastRecRef == recA);
+  CHECK(r.core.status().get_frameCount() == recA);  // 電傳仍是錄影次數
+
+  CHECK(tickUntilRecFrames(r, recA + 20));
+  const uint32_t recB = r.core.recFrameCount();
+  CHECK(recB >= recA + 20);
+  CHECK(r.core.ingestCapturedFrame(pix, sizeof(pix)));
+  CHECK(r.core.photoCount() == 2);
+  CHECK(ch.lastFrame == 2);  // 連續，不是 recB+1
+  CHECK(r.core.recFrameCount() == recB);
+  CHECK(r.core.lastPhotoRecFrameRef() == recB);
+  CHECK(r.rec.photos == 2);
+  CHECK(r.rec.lastPhoto == 2);
+  CHECK(r.rec.lastRecRef == recB);
+
+  // 中間沒有新的錄影幀：第三張照片仍連續，recFrameRef 維持 recB
+  CHECK(r.core.ingestCapturedFrame(pix, sizeof(pix)));
+  CHECK(r.core.photoCount() == 3);
+  CHECK(ch.lastFrame == 3);
+  CHECK(r.core.recFrameCount() == recB);
+  CHECK(r.core.lastPhotoRecFrameRef() == recB);
+  CHECK(r.rec.lastPhoto == 3);
+  CHECK(r.rec.lastRecRef == recB);
+
+  CHECK(r.core.reset());
+  CHECK(r.core.recFrameCount() == 0);
+  CHECK(r.core.photoCount() == 0);
+  CHECK(r.core.lastPhotoRecFrameRef() == 0);
+  CHECK(r.core.frameCount() == 0);
 }
 
 static int legacyMain() {
@@ -330,12 +432,13 @@ static int legacyMain() {
   test10_frameTruncatedEventOnly();
   test11_multiChunkImageOut();
   test12_truncationKeepsReadyNextCounts();
+  test13_photoAndRecCountersSeparate();
 
   if (g_fail != 0) {
     std::printf("Esp32CamSimTest: FAILED (%d checks)\n", g_fail);
     return 1;
   }
-  std::printf("Esp32CamSimTest: 12/12 passed\n");
+  std::printf("Esp32CamSimTest: 13/13 passed\n");
   return 0;
 }
 

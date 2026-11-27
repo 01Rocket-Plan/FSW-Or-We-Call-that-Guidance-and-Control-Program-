@@ -57,6 +57,7 @@ class Esp32Cam final : public Esp32CamComponentBase, private ICamSink {
 
   void onStateChange(CamState from, CamState to) override;
   void onFault(CamFault code, uint32_t detail) override;
+  void onPhotoEmitted(uint32_t photoNumber, uint32_t recFrameRef) override;
 
   void loadParams();
   void writeTlm();
