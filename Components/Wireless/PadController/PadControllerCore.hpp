@@ -22,9 +22,11 @@
 //
 // 離軌判定（鬆夾持後，Edward PR #52 審查）：
 //   1. 主判定：離軌開關 offRail，單獨成立就算（未來可能是獨立部署的驅動，這裡只當輸入）。
-//   2. 備援：荷重元 load_N 低於 liftoffLoadMin_N 且持續 liftoffLoadHold_s。
-//   3. 輔助：臍帶逾時（umbilicalTimeout_s）單獨不算；要和「荷重元低於 liftoffLoadMin_N」同時成立才算。
+//   2. 備援：荷重元 load_N 落在「空架帶」liftoffLoadFloor_N ＜ load_N ＜ liftoffLoadMin_N（預設 −0.5～+0.5 N）
+//      且持續 liftoffLoadHold_s。低於下限（負得多）＝推力大於重量、夾持還在往下拉＝還抓著，不算（Issue #74）。
+//   3. 輔助：臍帶逾時（umbilicalTimeout_s）單獨不算；要和「荷重元在空架帶內」同時成立才算。
 //   2、3 只在已讀到夾持開到位（clampOpen）後才算：夾持沒開時荷重元掉下來不代表箭走了。
+//   持續計時也要等讀到夾持開到位才開始累積（夾持沒開前不預先累積）；讀值一離開空架帶就歸零重算（Issue #74）。
 //
 // 任務時間 T（Edward PR #52 審查 2026-11-14：只有一條時間軸，參考 SpaceX 的 T−／T+）：
 //   T＝0＝點火信號正式發出那一拍（COUNTDOWN 走完 → IGNITION）。之前是 T−，之後是 T+。
@@ -130,9 +132,14 @@ struct PadParams {
   // 20 ms 確認＋1 ms 裕度＋20 ms 夾持動作＝41 ms，剩 9 ms 給推力訊號抖動。
   // 也就是推力最晚要在 T+30 ms 那一拍出現（T+29 ms 是最後一個沒推力的樣本 → T+49 確認、T+50 鬆）；再晚就不鬆。
   double releaseDeadline_s = 0.05;
-  // 離軌備援（荷重元，假設硬體）：讀值低於 liftoffLoadMin_N 且持續 liftoffLoadHold_s → 箭已不壓在架上。
+  // 離軌備援（荷重元，假設硬體）：讀值落在空架帶 liftoffLoadFloor_N ＜ load_N ＜ liftoffLoadMin_N
+  // 且持續 liftoffLoadHold_s → 箭已不壓在架上，也沒被夾持拉著。
+  // liftoffLoadMin_N 是空架帶上限（名稱沿用，避免改 F´ 參數 ID）。
   double liftoffLoadMin_N = 0.5;
   double liftoffLoadHold_s = 0.05;
+  // 空架帶下限（Issue #74，Edward 2026-11-28）：低於這個值代表推力大於重量、夾持還在往下拉（還抓著），
+  // 不准啟動荷重元備援。只有在 ±0.5 N 內浮動才算「真的沒東西了」。必須 ＜ 0 ＜ liftoffLoadMin_N。
+  double liftoffLoadFloor_N = -0.5;
   // 夾持開到位回饋（限位開關，假設硬體）：下令鬆夾持後這段時間內沒讀到 → NO_LIFTOFF／CLAMP_STUCK。
   // ≤ 0 表示這套架沒有裝開到位開關，不做這項檢查（荷重元備援也就不必等開到位）。
   double clampOpenTimeout_s = 0.1;
@@ -185,6 +192,7 @@ class PadControllerCore {
   bool paramsOk() const { return m_paramsOk; }
   //! 參數檢查：時間參數有限且不為負、thrustConfirm_s／liftoffTimeout_s＞0，
   //! 傾角窗 minTilt_rad／maxTilt_rad 有限、不為負且 minTilt_rad ≤ maxTilt_rad，
+  //! 荷重元空架帶 liftoffLoadFloor_N ＜ 0 ＜ liftoffLoadMin_N（有限），
   //! 且 thrustConfirm_s＋releaseMargin_s＋clampActuatorLatency_s ≤ releaseDeadline_s。
   static bool paramsValid(const PadParams& p);
 
@@ -257,8 +265,8 @@ class PadControllerCore {
   double m_confirmT_s = 0.0;            // 推力確認的 T（之後等 releaseMargin_s 才鬆）
   double m_releaseT_s = 0.0;            // 發鬆夾持命令的 T
   bool m_clampOpenSeen = false;         // 鬆夾持後是否讀到過夾持開到位（鎖存）
-  bool m_loadLow = false;               // 荷重元現在是否連續低於 liftoffLoadMin_N
-  double m_loadLowStartT_s = 0.0;       // 這段「荷重元低」的起點 T
+  bool m_loadInBand = false;            // 荷重元是否（在允許備援之後）連續落在空架帶內
+  double m_loadInBandStartT_s = 0.0;    // 這段「空架帶內」的起點 T（最早是讀到夾持開到位那一拍）
 
   PadInputs m_lastIn{};
   PadOutputs m_lastOut{};

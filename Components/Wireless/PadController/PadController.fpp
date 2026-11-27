@@ -52,9 +52,9 @@ module Components {
     param liftoffTimeout_s: F64 default 1.0
     @ 鬆夾持期限：從 T＝0 起算（點火延遲當 0，Issue #56），T＝0.05 之後還沒鬆 → 不鬆、繼續夾住（有過推力 → HOLD_ABORT／LATE_RELEASE；沒推力 → HANG_FIRE）
     param releaseDeadline_s: F64 default 0.05
-    @ 離軌備援：荷重元讀值低於此值（N，假設值）
+    @ 離軌備援：荷重元空架帶上限（N，假設值）；讀值要在 liftoffLoadFloor_N～liftoffLoadMin_N 之間（不含邊界）才算空架
     param liftoffLoadMin_N: F64 default 0.5
-    @ 離軌備援：荷重元低於 liftoffLoadMin_N 要持續多久才算離軌（假設值）
+    @ 離軌備援：荷重元在空架帶內要持續多久才算離軌（假設值）；讀到夾持開到位後才開始計時，離開空架帶就歸零
     param liftoffLoadHold_s: F64 default 0.05
     @ 下令鬆夾持後多久內要讀到夾持開到位，否則 NO_LIFTOFF／CLAMP_STUCK（假設值；≤ 0＝沒裝開到位開關、不檢查）
     param clampOpenTimeout_s: F64 default 0.1
@@ -70,6 +70,9 @@ module Components {
     @ 留 ±3° 是因為架子安裝誤差、傾角感測器雜訊、風；與 PadParams 預設一致。
     @ 放在參數清單最後，既有參數的自動 ID 不變
     param minTilt_rad: F64 default 0.0349066
+    @ 離軌備援：荷重元空架帶下限（N，Issue #74）；低於此值＝夾持還在往下拉（還抓著），不准啟動備援。必須 ＜ 0 ＜ liftoffLoadMin_N
+    @ 放在參數清單最後，既有參數的自動 ID 不變
+    param liftoffLoadFloor_N: F64 default -0.5
 
     telemetry State: Components.PadState
     telemetry LastReason: Components.PadReason

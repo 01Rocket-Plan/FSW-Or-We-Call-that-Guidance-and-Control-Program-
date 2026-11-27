@@ -882,8 +882,8 @@ void testUmbilicalLossAloneNotLiftoff() {
   CHECK(r.out.clampRelease && !r.out.igniterOn && !r.clampReleasedThenLocked);
 }
 
-// 荷重元備援：低於 liftoffLoadMin_N 持續 liftoffLoadHold_s（0.05 s）→ LIFTED_OFF；
-// 臍帶斷＋荷重元低同時成立 → 不必等持續時間。
+// 荷重元備援：在空架帶內持續 liftoffLoadHold_s（0.05 s）→ LIFTED_OFF；
+// 臍帶斷＋荷重元在空架帶內同時成立 → 不必等持續時間。
 void testLoadCellLiftoff() {
   {
     Rig r;
@@ -919,6 +919,166 @@ void testLoadCellLiftoff() {
     r.run(0.02);
     CHECK(r.pad.state() == PadState::NO_LIFTOFF);
     CHECK(r.pad.lastReason() == PadReason::CLAMP_STUCK);
+  }
+}
+
+// Issue #74：荷重元備援只在空架帶（預設 −0.5 N ＜ load_N ＜ +0.5 N）內成立。
+// 推力大於重量時夾持在往下拉，荷重元是負的＝還抓著，不准啟動備援；
+// 讀到夾持開到位前不累積計時；讀值離開空架帶就歸零重算。
+void releaseNowManualClamp(Rig& r, double loadAtRelease_N) {
+  r.autoClamp = false;  // 夾持開到位由測試自己控制
+  reachIgnition(r);
+  r.in.thrustOk = true;
+  r.in.load_N = loadAtRelease_N;
+  for (int i = 0; i < 100 && r.pad.state() == PadState::IGNITION; ++i) r.step();
+  CHECK(r.pad.state() == PadState::RELEASED);
+}
+
+void testLoadCellBandIssue74() {
+  {
+    // 1a. 夾持還抓著、荷重元強烈為負（−30 N）：就算夾持開到位開關已經讀到（開關誤報）也不算離軌，
+    //     一路到 liftoffTimeout_s → NO_LIFTOFF。
+    Rig r;
+    releaseNowManualClamp(r, -30.0);
+    r.in.clampOpen = true;
+    r.run(0.5);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.run(0.6);
+    CHECK(r.pad.state() == PadState::NO_LIFTOFF);
+    CHECK(r.pad.lastReason() == PadReason::NO_LIFTOFF);
+  }
+  {
+    // 1b. 沒裝開到位開關（clampOpenTimeout_s＝0，備援不必等開到位）：負荷重（還抓著）不能被當成離軌。
+    //     修正前這裡 0.05 s 就會誤判 LIFTED_OFF。
+    Rig r;
+    PadParams pp;
+    pp.clampOpenTimeout_s = 0.0;
+    CHECK(r.pad.configure(pp));
+    releaseNowManualClamp(r, -30.0);
+    r.run(0.5);
+    CHECK(r.pad.state() == PadState::RELEASED);
+  }
+  {
+    // 1c. 輔助判定（臍帶逾時＋荷重元）也一樣：負荷重不算「沒東西」。
+    Rig r;
+    releaseNowManualClamp(r, 20.0);
+    r.in.clampOpen = true;
+    r.uart.connected = false;
+    r.run(0.6);  // 臍帶逾時
+    CHECK(!r.pad.rocketLinkOk());
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = -30.0;
+    r.run(0.1);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = 0.0;  // 回到空架帶 → 輔助判定成立
+    r.step();
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    // 2a. 計時不預先累積（Issue #74 實測時序）：鬆夾持後夾持還沒開的 19 ms 荷重元為負，
+    //     開到位那拍起讀值回到帶內 → 要從開到位那拍重新算滿 liftoffLoadHold_s（50 ms）。
+    Rig r;
+    releaseNowManualClamp(r, -30.0);
+    r.run(0.019);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.clampOpen = true;
+    r.in.load_N = 0.1;
+    for (int i = 0; i < 50; ++i) {  // 開到位那拍＋之後 49 拍（49 ms）還不算
+      r.step();
+      CHECK(r.pad.state() == PadState::RELEASED);
+    }
+    r.step();  // 開到位後 50 ms
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    // 2b. 夾持還沒開時讀值已在帶內（例如夾持動作中讀值剛好掉到 0 附近）也不累積：
+    //     開到位前 40 ms 在帶內，開到位後仍要再滿 50 ms。修正前開到位後 10 ms 就會成立。
+    Rig r;
+    releaseNowManualClamp(r, 0.0);
+    r.run(0.04);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.clampOpen = true;
+    for (int i = 0; i < 50; ++i) {
+      r.step();
+      CHECK(r.pad.state() == PadState::RELEASED);
+    }
+    r.step();
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    // 3. 開到位後在帶內（含帶內的負值 −0.3 N）持續 liftoffLoadHold_s → 備援成立。
+    Rig r;
+    releaseNowManualClamp(r, -30.0);
+    r.run(0.02);
+    r.in.clampOpen = true;
+    r.in.load_N = -0.3;
+    for (int i = 0; i < 50; ++i) {
+      r.step();
+      CHECK(r.pad.state() == PadState::RELEASED);
+    }
+    r.step();
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+    CHECK(r.pad.lastReason() == PadReason::NONE);
+  }
+  {
+    // 3b. 邊界不含：剛好 −0.5 N／+0.5 N 不算在帶內。
+    Rig r;
+    releaseNowManualClamp(r, 20.0);
+    r.in.clampOpen = true;
+    r.in.load_N = -0.5;
+    r.run(0.2);
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = 0.5;
+    r.run(0.2);
+    CHECK(r.pad.state() == PadState::RELEASED);
+  }
+  {
+    // 4. 離開空架帶的單拍突波會把計時歸零（負向、正向各一次）。
+    Rig r;
+    releaseNowManualClamp(r, -30.0);
+    r.run(0.02);
+    r.in.clampOpen = true;
+    r.in.load_N = 0.1;
+    r.run(0.04);  // 帶內 40 ms
+    r.in.load_N = -5.0;  // 負向突波（夾持／導軌又拉了一下）
+    r.step();
+    r.in.load_N = 0.1;
+    r.run(0.04);  // 重新算的 40 ms：還不夠
+    CHECK(r.pad.state() == PadState::RELEASED);
+    r.in.load_N = 5.0;  // 正向突波
+    r.step();
+    r.in.load_N = 0.1;
+    for (int i = 0; i < 50; ++i) {
+      r.step();
+      CHECK(r.pad.state() == PadState::RELEASED);
+    }
+    r.step();
+    CHECK(r.pad.state() == PadState::LIFTED_OFF);
+  }
+  {
+    // 5. 參數檢查：空架帶要包住 0、要有限。
+    PadParams d;
+    CHECK(PadControllerCore::paramsValid(d));
+    CHECK(d.liftoffLoadFloor_N == -0.5 && d.liftoffLoadMin_N == 0.5);
+    PadParams b = d;
+    b.liftoffLoadFloor_N = 0.0;
+    CHECK(!PadControllerCore::paramsValid(b));
+    b = d;
+    b.liftoffLoadFloor_N = std::numeric_limits<double>::quiet_NaN();
+    CHECK(!PadControllerCore::paramsValid(b));
+    b = d;
+    b.liftoffLoadMin_N = 0.0;
+    CHECK(!PadControllerCore::paramsValid(b));
+    b = d;
+    b.liftoffLoadFloor_N = -std::numeric_limits<double>::infinity();
+    CHECK(!PadControllerCore::paramsValid(b));
+    // NaN 讀值不在帶內、不算離軌
+    Rig r;
+    releaseNowManualClamp(r, 20.0);
+    r.in.clampOpen = true;
+    r.in.load_N = std::numeric_limits<double>::quiet_NaN();
+    r.run(0.2);
+    CHECK(r.pad.state() == PadState::RELEASED);
   }
 }
 
@@ -1109,6 +1269,7 @@ static int PadLinkLegacyMain() {
   testOffRailAloneLiftsOff();
   testUmbilicalLossAloneNotLiftoff();
   testLoadCellLiftoff();
+  testLoadCellBandIssue74();
   testShortLoadDropNotLiftoff();
   testClampStuck();
   testNoLiftoffAfterRelease();
@@ -1116,7 +1277,7 @@ static int PadLinkLegacyMain() {
   testRocketVetoSeenByRocket();
   testUmbilicalLinkRxRules();
   if (g_fail == 0) {
-    std::printf("PadLinkHostTest: all 32 test groups passed\n");
+    std::printf("PadLinkHostTest: all 33 test groups passed\n");
     return 0;
   }
   std::printf("PadLinkHostTest: %d CHECK(s) FAILED\n", g_fail);

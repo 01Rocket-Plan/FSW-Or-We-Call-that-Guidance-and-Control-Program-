@@ -116,8 +116,8 @@ ARM 以 BAD_PARAMS 拒絕；已在 ARMED／COUNTDOWN 時改成不合理 → 退�
 **架怎麼判定箭離軌了？**（鬆夾持之後，三層）
 1. **主判定：離軌開關 `offRail`**，單獨成立就算 LIFTED_OFF（即使沒讀到夾持開到位，因為開到位開關可能壞掉）。
    離軌開關之後可能做成獨立部署的驅動；這裡只把它當成輸入（`PadIoSample.offRail`），不開新部署。
-2. **備援：架下荷重元 `load_N`**，低於 `liftoffLoadMin_N`（0.5 N）且持續 `liftoffLoadHold_s`（5e-2 s）就算離軌。
-3. **輔助：臍帶逾時**（`umbilicalTimeout_s`）**單獨不算**（可能只是被震斷）；要和「荷重元低於 `liftoffLoadMin_N`」同時成立才算（此時不必等持續時間）。
+2. **備援：架下荷重元 `load_N`**，落在空架帶 `liftoffLoadFloor_N` ＜ `load_N` ＜ `liftoffLoadMin_N`（預設 −0.5～+0.5 N，不含邊界）且持續 `liftoffLoadHold_s`（5e-2 s）就算離軌（Issue #74）。低於下限＝推力大於重量、夾持還在往下拉（還抓著），不准啟動備援。持續計時要等讀到夾持開到位才開始累積，讀值一離開空架帶就歸零重算。
+3. **輔助：臍帶逾時**（`umbilicalTimeout_s`）**單獨不算**（可能只是被震斷）；要和「荷重元在空架帶內」同時成立才算（此時不必等持續時間）。
 
 2、3 只在讀到夾持開到位之後才算：夾持沒開時，箭在拉夾持，荷重元讀值也可能掉下來，不代表箭走了。
 三層都不成立、超過 `liftoffTimeout_s` → NO_LIFTOFF，通知人員不要靠近。`thrustOk` 仍是獨立的布林輸入（驅動可以從荷重元換算）。
@@ -137,7 +137,8 @@ CLAMP_STUCK 之後是終態，之後才觸發的離軌開關不會再改成 LIFT
 |---|---|
 | 夾持開到位開關 `clampOpen` | 限位開關，開到位＝true；型號、腳位未定 |
 | 架下荷重元 `load_N` | 量箭體對架的力（含夾持拉力），單位 N；箭靜置時約等於重量，離軌後趨近 0 |
-| `liftoffLoadMin_N` | 0.5 N |
+| `liftoffLoadMin_N` | 0.5 N（空架帶上限；名稱沿用） |
+| `liftoffLoadFloor_N` | −0.5 N（空架帶下限，Issue #74；必須 ＜ 0 ＜ `liftoffLoadMin_N`） |
 | `liftoffLoadHold_s` | 5e-2 s |
 | `clampActuatorLatency_s` | 2e-2 s（繼電器／舵機動作時間，HIL 實測後修正） |
 | `releaseMargin_s` | 1e-3 s（1 kHz 一拍） |
